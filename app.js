@@ -240,23 +240,10 @@ function styleBaseBuildingsPalette() {
   const layers = glMap.getStyle().layers || [];
   for (const layer of layers) {
     if (layer.type === "fill-extrusion") {
-      // Color podiums and surrounding buildings by height with Vegas sandstone, bronze, and glass tones
-      glMap.setPaintProperty(layer.id, "fill-extrusion-color", [
-        "interpolate",
-        ["linear"],
-        ["coalesce", ["get", "render_height"], 12],
-        0,
-        "#d8cbb8",
-        18,
-        "#c9b49a",
-        40,
-        "#8f7a60",
-        85,
-        "#4d6b8e",
-        140,
-        "#cba259",
-      ]);
-      glMap.setPaintProperty(layer.id, "fill-extrusion-opacity", 0.72);
+      // Keep the native MapLibre extrusion layer active at 0.004 opacity (< 1/255 alpha, invisible)
+      // so MapLibre decodes all `openmaptiles` building footprints for `querySourceFeatures`
+      // without drawing any duplicate grey boxes.
+      glMap.setPaintProperty(layer.id, "fill-extrusion-opacity", 0.004);
     }
   }
 }
