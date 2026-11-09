@@ -1,13 +1,9 @@
 /**
- * Las Vegas Strip — Google Maps Carbon Copy & Autonomous Vehicle Simulation
- *
- * Dual-Engine Architecture:
- * 1. Instant 3D WebGL Map Engine (MapLibre GL + Google Maps Hybrid/Road/Traffic Tiles + 3D Extruded Strip Buildings + Real OSRM Road Routing)
- *    Guarantees immediate, zero-error 3D rendering of the entire Las Vegas Strip even if a Google AI Studio key does not have Maps JS API activated yet.
- * 2. Native Google Maps JS SDK (`google.maps.Map` + `Map3DElement`) when activated on the key, with automatic `gm_authFailure` recovery.
+ * Las Vegas Strip — Three.js 3D Resorts & Landmarks + Google Maps Hybrid/Traffic & AV Simulation
+ * Inspired by abrhamhabtu/vegas-strip-v2
  */
 
-const VEGAS_STRIP_CENTER = { lat: 36.1127, lng: -115.1728 }; // Bellagio / Center Strip
+const VEGAS_STRIP_CENTER = { lat: 36.1127, lng: -115.1735 }; // Bellagio / Paris / Center Strip
 
 const PRESET_ROUTES = {
   "full-strip": {
@@ -54,33 +50,37 @@ const PRESET_ROUTES = {
 };
 
 const LANDMARKS = [
-  { name: "Welcome to Las Vegas Sign", lat: 36.0820, lng: -115.1728, category: "Landmark" },
-  { name: "Mandalay Bay", lat: 36.0919, lng: -115.1752, category: "Resort" },
-  { name: "Allegiant Stadium", lat: 36.0908, lng: -115.1833, category: "Stadium" },
-  { name: "Luxor Pyramid", lat: 36.0955, lng: -115.1761, category: "Resort" },
-  { name: "Excalibur", lat: 36.0988, lng: -115.1754, category: "Resort" },
-  { name: "MGM Grand", lat: 36.1024, lng: -115.1699, category: "Resort" },
-  { name: "New York-New York", lat: 36.1024, lng: -115.1745, category: "Resort" },
-  { name: "T-Mobile Arena", lat: 36.1028, lng: -115.1784, category: "Arena" },
-  { name: "Aria Resort", lat: 36.1072, lng: -115.1766, category: "Resort" },
-  { name: "The Cosmopolitan", lat: 36.1098, lng: -115.1739, category: "Resort" },
-  { name: "Bellagio Fountains", lat: 36.1127, lng: -115.1743, category: "Landmark" },
-  { name: "Paris Las Vegas", lat: 36.1125, lng: -115.1707, category: "Resort" },
-  { name: "Caesars Palace", lat: 36.1162, lng: -115.1745, category: "Resort" },
-  { name: "The Venetian", lat: 36.1212, lng: -115.1697, category: "Resort" },
-  { name: "The Sphere", lat: 36.1213, lng: -115.1620, category: "Venue" },
-  { name: "Wynn Las Vegas", lat: 36.1265, lng: -115.1657, category: "Resort" },
-  { name: "Resorts World", lat: 36.1345, lng: -115.1691, category: "Resort" },
-  { name: "The STRAT Tower", lat: 36.1475, lng: -115.1566, category: "Landmark" },
-  { name: "Fremont Street", lat: 36.1707, lng: -115.1439, category: "Downtown" },
-  { name: "Harry Reid Airport (LAS)", lat: 36.0840, lng: -115.1537, category: "Airport" },
+  { name: "Welcome Sign", lat: 36.0820, lng: -115.1728, category: "Landmark", color: "#ffbf00" },
+  { name: "Mandalay Bay", lat: 36.0919, lng: -115.1752, category: "Resort", color: "#ffd25a" },
+  { name: "Allegiant Stadium", lat: 36.0908, lng: -115.1833, category: "Stadium", color: "#d8dee9" },
+  { name: "Luxor Pyramid", lat: 36.0955, lng: -115.1761, category: "Resort", color: "#9fd8ff" },
+  { name: "Excalibur", lat: 36.0988, lng: -115.1754, category: "Resort", color: "#ff6b6b" },
+  { name: "MGM Grand", lat: 36.1024, lng: -115.1699, category: "Resort", color: "#3dff9a" },
+  { name: "New York-New York", lat: 36.1024, lng: -115.1745, category: "Resort", color: "#ffd27d" },
+  { name: "T-Mobile Arena", lat: 36.1028, lng: -115.1784, category: "Arena", color: "#ff4fa3" },
+  { name: "Aria Resort", lat: 36.1072, lng: -115.1766, category: "Resort", color: "#8ec5ff" },
+  { name: "The Cosmopolitan", lat: 36.1098, lng: -115.1739, category: "Resort", color: "#6ea8ff" },
+  { name: "Bellagio Fountains", lat: 36.1127, lng: -115.1743, category: "Landmark", color: "#ffd9a0" },
+  { name: "Paris & Eiffel Tower", lat: 36.1125, lng: -115.1722, category: "Resort", color: "#ff9e44" },
+  { name: "Caesars Palace", lat: 36.1162, lng: -115.1745, category: "Resort", color: "#fff1d6" },
+  { name: "High Roller Wheel", lat: 36.1177, lng: -115.1681, category: "Landmark", color: "#ff2ae2" },
+  { name: "Hard Rock Guitar", lat: 36.1212, lng: -115.1741, category: "Resort", color: "#00c8ff" },
+  { name: "The Venetian", lat: 36.1212, lng: -115.1697, category: "Resort", color: "#ffdca6" },
+  { name: "The Sphere", lat: 36.1213, lng: -115.1620, category: "Venue", color: "#ff3d6e" },
+  { name: "Wynn Las Vegas", lat: 36.1265, lng: -115.1657, category: "Resort", color: "#ffc76b" },
+  { name: "Trump Tower", lat: 36.1295, lng: -115.1727, category: "Resort", color: "#ffe066" },
+  { name: "Resorts World", lat: 36.1345, lng: -115.1691, category: "Resort", color: "#ff335c" },
+  { name: "Fontainebleau", lat: 36.1362, lng: -115.1628, category: "Resort", color: "#5ea0ff" },
+  { name: "The STRAT Tower", lat: 36.1475, lng: -115.1566, category: "Landmark", color: "#ff5c5c" },
+  { name: "Fremont St Canopy", lat: 36.1707, lng: -115.1439, category: "Downtown", color: "#ff8800" },
 ];
 
 let glMap = null;
+let threeStripLayer = null;
 let glEgoMarker = null;
 let glEgoInnerEl = null;
 let is3DView = true;
-let isSatelliteView = false;
+let isSatelliteView = true; // Default to Google Hybrid Satellite + Three.js 3D Buildings
 let isTrafficVisible = true;
 
 // AV Simulation State
@@ -104,54 +104,33 @@ function getApiKey() {
   return localStorage.getItem("VEGAS_GOOGLE_MAPS_API_KEY") || "";
 }
 
-// Catch Google Maps JS SDK authentication failure cleanly so it never breaks the UI
-window.gm_authFailure = function () {
-  console.warn("Google Maps JS SDK reported gm_authFailure for this API key. Running on 3D WebGL Vegas Strip Engine.");
-  const dot = document.getElementById("engine-badge-dot");
-  const txt = document.getElementById("engine-badge-text");
-  if (dot) {
-    dot.classList.remove("ok");
-    dot.classList.add("warn");
-  }
-  if (txt) txt.textContent = "3D Engine (Key Needs Maps API)";
-  const diag = document.getElementById("api-diagnostic-msg");
-  if (diag) {
-    diag.textContent =
-      "Google Maps SDK returned an auth/activation notice for your API key (common when an AI Studio key hasn't had 'Maps JavaScript API' enabled in Google Cloud Console yet). The app is actively running on the built-in 3D Las Vegas Strip Engine with Google Map Tiles.";
-  }
-  // Ensure WebGL map is visible
-  document.getElementById("map-gl").classList.remove("hidden");
-  document.getElementById("map-gmaps").classList.add("hidden");
-};
-
 function initApp() {
   setupUIHandlers();
   initWebGLVegasMap();
 }
 
 function initWebGLVegasMap() {
-  // Base style using OpenFreeMap Liberty vector tiles (for real 3D building extrusions) + Google Maps Hybrid/Road/Traffic raster layers
   glMap = new maplibregl.Map({
     container: "map-gl",
     style: "https://tiles.openfreemap.org/styles/liberty",
     center: [VEGAS_STRIP_CENTER.lng, VEGAS_STRIP_CENTER.lat],
-    zoom: 16.2,
-    pitch: 60,
-    bearing: 15,
+    zoom: 16.3,
+    pitch: 64,
+    bearing: 18,
     antialias: true,
-    maxPitch: 80,
+    maxPitch: 82,
   });
 
   glMap.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
   glMap.on("load", () => {
-    // Add Google Maps Satellite/Hybrid & Road & Traffic tile sources
+    // 1. Add Google Maps Satellite/Hybrid & Live Traffic tile layers
     if (!glMap.getSource("google-satellite")) {
       glMap.addSource("google-satellite", {
         type: "raster",
         tiles: ["https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"],
         tileSize: 256,
-        attribution: "Map data © Google",
+        attribution: "Map data © Google, Three.js 3D Resorts",
       });
     }
 
@@ -163,7 +142,6 @@ function initWebGLVegasMap() {
       });
     }
 
-    // Find the first label/building layer so satellite sits underneath 3D buildings
     const layers = glMap.getStyle().layers || [];
     let firstBuildingOrSymbolId = undefined;
     for (const layer of layers) {
@@ -182,7 +160,9 @@ function initWebGLVegasMap() {
           visibility: isSatelliteView ? "visible" : "none",
         },
         paint: {
-          "raster-opacity": 0.95,
+          "raster-opacity": 0.94,
+          "raster-contrast": 0.08,
+          "raster-saturation": 0.12,
         },
       },
       firstBuildingOrSymbolId
@@ -197,16 +177,16 @@ function initWebGLVegasMap() {
           visibility: isTrafficVisible ? "visible" : "none",
         },
         paint: {
-          "raster-opacity": 0.85,
+          "raster-opacity": 0.88,
         },
       },
       firstBuildingOrSymbolId
     );
 
-    // Enhance 3D building extrusions across the Las Vegas Strip
-    enhance3DBuildingsLayer();
+    // 2. Style base OSM 3D extrusions with height-varied warm desert/glass palette (like vegas-strip-v2)
+    styleBaseBuildingsPalette();
 
-    // Add Route GeoJSON source & glow layers for AV corridor
+    // 3. Add AV Route GeoJSON source & neon line layers
     glMap.addSource("av-route", {
       type: "geojson",
       data: {
@@ -222,14 +202,11 @@ function initWebGLVegasMap() {
       id: "av-route-glow",
       type: "line",
       source: "av-route",
-      layout: {
-        "line-join": "round",
-        "line-cap": "round",
-      },
+      layout: { "line-join": "round", "line-cap": "round" },
       paint: {
-        "line-color": "#4285f4",
-        "line-width": 12,
-        "line-opacity": 0.3,
+        "line-color": "#00ff88",
+        "line-width": 14,
+        "line-opacity": 0.32,
       },
     });
 
@@ -237,30 +214,49 @@ function initWebGLVegasMap() {
       id: "av-route-line",
       type: "line",
       source: "av-route",
-      layout: {
-        "line-join": "round",
-        "line-cap": "round",
-      },
+      layout: { "line-join": "round", "line-cap": "round" },
       paint: {
         "line-color": "#4285f4",
-        "line-width": 5,
-        "line-opacity": 0.95,
+        "line-width": 5.5,
+        "line-opacity": 0.96,
       },
     });
 
-    // Render interactive Landmark pins along the Strip
+    // 4. Mount the Three.js Custom 3D Layer (21 Hero Resorts, Landmarks & 3D Robotaxi)
+    if (window.createVegasThreeLayer) {
+      threeStripLayer = window.createVegasThreeLayer();
+      glMap.addLayer(threeStripLayer);
+    }
+
+    // 5. Render interactive Landmark badges
     renderLandmarkMarkers();
 
-    // Load default Full Strip AV Corridor
+    // 6. Load default Full Strip AV Corridor
     loadPresetRoute("full-strip");
   });
 }
 
-function enhance3DBuildingsLayer() {
+function styleBaseBuildingsPalette() {
   const layers = glMap.getStyle().layers || [];
   for (const layer of layers) {
     if (layer.type === "fill-extrusion") {
-      glMap.setPaintProperty(layer.id, "fill-extrusion-opacity", 0.86);
+      // Color podiums and surrounding buildings by height with Vegas sandstone, bronze, and glass tones
+      glMap.setPaintProperty(layer.id, "fill-extrusion-color", [
+        "interpolate",
+        ["linear"],
+        ["coalesce", ["get", "render_height"], 12],
+        0,
+        "#d8cbb8",
+        18,
+        "#c9b49a",
+        40,
+        "#8f7a60",
+        85,
+        "#4d6b8e",
+        140,
+        "#cba259",
+      ]);
+      glMap.setPaintProperty(layer.id, "fill-extrusion-opacity", 0.72);
     }
   }
 }
@@ -269,11 +265,13 @@ function renderLandmarkMarkers() {
   LANDMARKS.forEach((lm) => {
     const el = document.createElement("div");
     el.className = "landmark-pin";
+    el.style.borderColor = lm.color;
+    el.style.color = lm.color;
     el.textContent = lm.name;
     el.title = `${lm.name} (${lm.category})`;
     el.addEventListener("click", (e) => {
       e.stopPropagation();
-      flyToLocation(lm.lat, lm.lng, 16.8, is3DView ? 62 : 0, 20);
+      flyToLocation(lm.lat, lm.lng, 16.5, is3DView ? 64 : 0, 20);
     });
 
     new maplibregl.Marker({ element: el, anchor: "bottom" })
@@ -282,14 +280,14 @@ function renderLandmarkMarkers() {
   });
 }
 
-function flyToLocation(lat, lng, zoom = 16.5, tilt = 60, heading = 15) {
+function flyToLocation(lat, lng, zoom = 16.4, tilt = 64, heading = 15) {
   if (glMap) {
     glMap.flyTo({
       center: [lng, lat],
       zoom: zoom,
       pitch: is3DView ? tilt : 0,
       bearing: heading,
-      duration: 1600,
+      duration: 1500,
       essential: true,
     });
   }
@@ -301,7 +299,6 @@ async function loadPresetRoute(routeKey) {
 
   stopSimulation("READY");
 
-  // Query OSRM real road geometry along Las Vegas Strip for accurate lane-snapped path
   const coordsQuery = preset.waypoints.map((w) => `${w.lng},${w.lat}`).join(";");
   const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordsQuery}?overview=full&geometries=geojson`;
 
@@ -309,21 +306,17 @@ async function loadPresetRoute(routeKey) {
     const res = await fetch(osrmUrl);
     const data = await res.json();
     if (data && data.routes && data.routes[0] && data.routes[0].geometry) {
-      const coords = data.routes[0].geometry.coordinates; // [[lng, lat], ...]
-      buildRouteFromLngLatPairs(coords);
+      buildRouteFromLngLatPairs(data.routes[0].geometry.coordinates);
       return;
     }
   } catch (err) {
-    console.warn("OSRM road router fallback to dense Strip waypoint interpolation:", err);
+    console.warn("OSRM fallback to Strip waypoints:", err);
   }
 
-  // Fallback dense interpolation if offline
-  const fallbackCoords = preset.waypoints.map((w) => [w.lng, w.lat]);
-  buildRouteFromLngLatPairs(fallbackCoords);
+  buildRouteFromLngLatPairs(preset.waypoints.map((w) => [w.lng, w.lat]));
 }
 
 function buildRouteFromLngLatPairs(lngLatArray) {
-  // Update MapLibre route line
   if (glMap && glMap.getSource("av-route")) {
     glMap.getSource("av-route").setData({
       type: "Feature",
@@ -365,7 +358,7 @@ function buildRouteFromLngLatPairs(lngLatArray) {
 }
 
 function computeHaversineMiles(lat1, lon1, lat2, lon2) {
-  const R = 3958.7613; // Earth radius in miles
+  const R = 3958.7613;
   const toRad = (d) => (d * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
@@ -413,6 +406,12 @@ function placeEgoVehicleAt(miles) {
   const pose = interpolatePoseAtMiles(miles);
   if (!glMap) return;
 
+  // Update 3D Three.js Robotaxi model pose
+  if (threeStripLayer && threeStripLayer.updateEgoVehiclePose) {
+    threeStripLayer.updateEgoVehiclePose(pose.lat, pose.lng, pose.heading);
+  }
+
+  // Update HUD beacon marker
   if (!glEgoMarker) {
     const wrapper = document.createElement("div");
     wrapper.className = "ego-car-marker";
@@ -441,7 +440,7 @@ function placeEgoVehicleAt(miles) {
     glMap.jumpTo({
       center: [pose.lng, pose.lat],
       bearing: pose.heading,
-      pitch: is3DView ? 64 : 0,
+      pitch: is3DView ? 65 : 0,
     });
   }
 }
@@ -495,8 +494,8 @@ function startSimulation() {
     const pose = interpolatePoseAtMiles(simProgressMiles);
     glMap.easeTo({
       center: [pose.lng, pose.lat],
-      zoom: 17.2,
-      pitch: is3DView ? 64 : 0,
+      zoom: 17.0,
+      pitch: is3DView ? 65 : 0,
       bearing: pose.heading,
       duration: 600,
     });
@@ -521,14 +520,12 @@ async function handlePlaceSearch() {
   const query = document.getElementById("place-search-input").value.trim();
   if (!query) return;
 
-  // First check built-in Strip landmarks for instant match
   const localMatch = LANDMARKS.find((l) => l.name.toLowerCase().includes(query.toLowerCase()));
   if (localMatch) {
-    flyToLocation(localMatch.lat, localMatch.lng, 16.8, 62, 15);
+    flyToLocation(localMatch.lat, localMatch.lng, 16.5, 64, 15);
     return;
   }
 
-  // Otherwise geocode within the Las Vegas Valley
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
       query + " Las Vegas"
@@ -536,68 +533,36 @@ async function handlePlaceSearch() {
     const res = await fetch(url);
     const items = await res.json();
     if (items && items[0]) {
-      flyToLocation(parseFloat(items[0].lat), parseFloat(items[0].lon), 16.5, 60, 0);
+      flyToLocation(parseFloat(items[0].lat), parseFloat(items[0].lon), 16.4, 62, 0);
     }
   } catch (e) {
     console.warn("Search error:", e);
   }
 }
 
-function testGoogleMapsSDK() {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    alert("Please enter an API key first.");
-    return;
-  }
-  const existing = document.getElementById("gmaps-sdk");
-  if (existing) existing.remove();
-
-  const script = document.createElement("script");
-  script.id = "gmaps-sdk";
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
-    apiKey
-  )}&v=alpha&libraries=places,geometry,maps3d`;
-  script.async = true;
-  script.onload = () => {
-    document.getElementById("api-modal").classList.add("hidden");
-    const gmapDiv = document.getElementById("map-gmaps");
-    gmapDiv.classList.remove("hidden");
-    new google.maps.Map(gmapDiv, {
-      center: VEGAS_STRIP_CENTER,
-      zoom: 16,
-      tilt: 45,
-      mapTypeId: "hybrid",
-    });
-  };
-  document.head.appendChild(script);
-}
-
 function setupUIHandlers() {
-  // Corridor Landmark Chips
   document.querySelectorAll("#landmark-chips .chip").forEach((chip) => {
     chip.addEventListener("click", () => {
       document.querySelectorAll("#landmark-chips .chip").forEach((c) => c.classList.remove("active"));
       chip.classList.add("active");
       const lat = parseFloat(chip.dataset.lat);
       const lng = parseFloat(chip.dataset.lng);
-      const zoom = parseFloat(chip.dataset.zoom || "16.5");
-      const tilt = parseFloat(chip.dataset.tilt || "60");
+      const zoom = parseFloat(chip.dataset.zoom || "16.4");
+      const tilt = parseFloat(chip.dataset.tilt || "64");
       const heading = parseFloat(chip.dataset.heading || "0");
       flyToLocation(lat, lng, zoom, tilt, heading);
     });
   });
 
-  // Search box
   document.getElementById("search-go-btn").addEventListener("click", handlePlaceSearch);
   document.getElementById("place-search-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") handlePlaceSearch();
   });
 
   document.getElementById("reset-strip-btn").addEventListener("click", () => {
-    flyToLocation(VEGAS_STRIP_CENTER.lat, VEGAS_STRIP_CENTER.lng, 16.2, 60, 15);
+    flyToLocation(VEGAS_STRIP_CENTER.lat, VEGAS_STRIP_CENTER.lng, 16.3, 64, 18);
   });
 
-  // 3D vs 2D Mode
   const mode3dBtn = document.getElementById("mode-3d-btn");
   const mode2dBtn = document.getElementById("mode-2d-btn");
 
@@ -605,7 +570,7 @@ function setupUIHandlers() {
     is3DView = true;
     mode3dBtn.classList.add("active");
     mode2dBtn.classList.remove("active");
-    if (glMap) glMap.easeTo({ pitch: 60, duration: 700 });
+    if (glMap) glMap.easeTo({ pitch: 64, duration: 700 });
   });
 
   mode2dBtn.addEventListener("click", () => {
@@ -615,7 +580,6 @@ function setupUIHandlers() {
     if (glMap) glMap.easeTo({ pitch: 0, bearing: 0, duration: 700 });
   });
 
-  // Satellite Layer (Google Hybrid Tiles)
   const satBtn = document.getElementById("toggle-satellite-btn");
   satBtn.addEventListener("click", () => {
     isSatelliteView = !isSatelliteView;
@@ -629,7 +593,6 @@ function setupUIHandlers() {
     }
   });
 
-  // Live Google Traffic Layer
   const trafficBtn = document.getElementById("toggle-traffic-btn");
   trafficBtn.addEventListener("click", () => {
     isTrafficVisible = !isTrafficVisible;
@@ -643,7 +606,6 @@ function setupUIHandlers() {
     }
   });
 
-  // Camera HUD
   document.getElementById("cam-rotate-left").addEventListener("click", () => {
     if (glMap) glMap.easeTo({ bearing: glMap.getBearing() - 35, duration: 400 });
   });
@@ -652,14 +614,13 @@ function setupUIHandlers() {
   });
   document.getElementById("cam-tilt-toggle").addEventListener("click", () => {
     if (!glMap) return;
-    const nextPitch = glMap.getPitch() > 20 ? 0 : 62;
+    const nextPitch = glMap.getPitch() > 20 ? 0 : 64;
     is3DView = nextPitch > 0;
     mode3dBtn.classList.toggle("active", is3DView);
     mode2dBtn.classList.toggle("active", !is3DView);
     glMap.easeTo({ pitch: nextPitch, duration: 500 });
   });
 
-  // AV Controls
   document.getElementById("preset-route").addEventListener("change", (e) => {
     loadPresetRoute(e.target.value);
   });
@@ -671,7 +632,7 @@ function setupUIHandlers() {
     simProgressMiles = 0;
     placeEgoVehicleAt(0);
     const pose = interpolatePoseAtMiles(0);
-    flyToLocation(pose.lat, pose.lng, 16.5, 60, pose.heading);
+    flyToLocation(pose.lat, pose.lng, 16.5, 64, pose.heading);
   });
 
   const speedRange = document.getElementById("av-speed-multiplier");
@@ -680,7 +641,6 @@ function setupUIHandlers() {
     document.getElementById("speed-mult-label").textContent = `${speedMultiplier}x`;
   });
 
-  // API Key Modal
   const apiModal = document.getElementById("api-modal");
   document.getElementById("api-key-btn").addEventListener("click", () => {
     document.getElementById("api-key-input").value = getApiKey();
@@ -701,8 +661,6 @@ function setupUIHandlers() {
     }
     apiModal.classList.add("hidden");
   });
-
-  document.getElementById("try-gmaps-sdk-btn").addEventListener("click", testGoogleMapsSDK);
 }
 
 window.addEventListener("DOMContentLoaded", initApp);

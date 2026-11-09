@@ -3,10 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Las Vegas Strip — 3D Map & AV Simulation Testbed</title>
-  <!-- MapLibre GL for instant 3D buildings & vector/satellite rendering when Google Maps SDK key is pending activation -->
+  <title>Las Vegas Strip — Three.js + Google Maps 3D & AV Simulation</title>
+  <!-- MapLibre GL + Three.js for 3D Las Vegas Strip Hero Resorts, Landmarks & Google Map Tiles -->
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
   <link rel="stylesheet" href="styles.css" />
   <!-- Load local config if present (gitignored) -->
   <script src="config.local.js" onerror="console.info('No config.local.js found; using stored or fallback config.')"></script>
@@ -15,14 +16,14 @@
   <!-- Top Floating Google Maps-style Search & Mode Bar -->
   <header class="top-bar">
     <div class="search-panel">
-      <div class="brand-badge" title="Las Vegas Strip Digital Twin">
+      <div class="brand-badge" title="Las Vegas Strip 3D Digital Twin">
         <span class="pin-dot"></span>
-        <span class="brand-title">Vegas Maps</span>
+        <span class="brand-title">Vegas Strip 3D</span>
       </div>
       <input
         id="place-search-input"
         type="text"
-        placeholder="Search Las Vegas Strip, casinos, intersections..."
+        placeholder="Search resorts, casinos, intersections..."
         autocomplete="off"
       />
       <button id="search-go-btn" class="icon-btn" title="Search Las Vegas">
@@ -35,25 +36,26 @@
 
     <!-- Quick Jump Corridor Chips -->
     <div class="corridor-chips" id="landmark-chips">
-      <button class="chip active" data-lat="36.1127" data-lng="-115.1728" data-zoom="16.5" data-tilt="60" data-heading="15">Bellagio / Center Strip</button>
-      <button class="chip" data-lat="36.0820" data-lng="-115.1728" data-zoom="17" data-tilt="65" data-heading="0">Welcome Sign / South Strip</button>
-      <button class="chip" data-lat="36.0908" data-lng="-115.1833" data-zoom="16" data-tilt="60" data-heading="45">Allegiant Stadium & Mandalay</button>
-      <button class="chip" data-lat="36.1015" data-lng="-115.1725" data-zoom="16.5" data-tilt="60" data-heading="10">MGM Grand / Tropicana</button>
-      <button class="chip" data-lat="36.1212" data-lng="-115.1620" data-zoom="16.5" data-tilt="65" data-heading="310">The Sphere & Venetian</button>
-      <button class="chip" data-lat="36.1265" data-lng="-115.1657" data-zoom="16.5" data-tilt="60" data-heading="20">Wynn / North Strip</button>
-      <button class="chip" data-lat="36.1707" data-lng="-115.1439" data-zoom="16.5" data-tilt="55" data-heading="295">Fremont St / Downtown</button>
-      <button class="chip" data-lat="36.0840" data-lng="-115.1537" data-zoom="14.5" data-tilt="45" data-heading="0">Harry Reid Airport (LAS)</button>
+      <button class="chip active" data-lat="36.1127" data-lng="-115.1735" data-zoom="16.4" data-tilt="64" data-heading="15">Bellagio & Paris Eiffel</button>
+      <button class="chip" data-lat="36.0955" data-lng="-115.1761" data-zoom="16.4" data-tilt="65" data-heading="25">Luxor Pyramid & Excalibur</button>
+      <button class="chip" data-lat="36.0908" data-lng="-115.1800" data-zoom="16.0" data-tilt="62" data-heading="45">Allegiant Stadium & Mandalay</button>
+      <button class="chip" data-lat="36.1024" data-lng="-115.1725" data-zoom="16.5" data-tilt="64" data-heading="15">MGM Grand & NY-NY</button>
+      <button class="chip" data-lat="36.1213" data-lng="-115.1650" data-zoom="16.3" data-tilt="65" data-heading="310">The Sphere, Venetian & High Roller</button>
+      <button class="chip" data-lat="36.1265" data-lng="-115.1665" data-zoom="16.3" data-tilt="64" data-heading="20">Wynn, Encore & Trump</button>
+      <button class="chip" data-lat="36.1350" data-lng="-115.1660" data-zoom="16.0" data-tilt="64" data-heading="25">Resorts World & Fontainebleau</button>
+      <button class="chip" data-lat="36.1475" data-lng="-115.1566" data-zoom="16.2" data-tilt="65" data-heading="15">The STRAT Tower</button>
+      <button class="chip" data-lat="36.1707" data-lng="-115.1439" data-zoom="16.5" data-tilt="60" data-heading="295">Fremont St Canopy</button>
     </div>
 
     <!-- Map Mode & Layer Controls -->
     <div class="layer-controls">
-      <button id="mode-3d-btn" class="mode-btn active">3D Buildings</button>
-      <button id="mode-2d-btn" class="mode-btn">2D Top-Down</button>
-      <button id="toggle-satellite-btn" class="mode-btn">Satellite</button>
+      <button id="mode-3d-btn" class="mode-btn active">Three.js 3D</button>
+      <button id="mode-2d-btn" class="mode-btn">2D Map</button>
+      <button id="toggle-satellite-btn" class="mode-btn active">Google Hybrid</button>
       <button id="toggle-traffic-btn" class="mode-btn active">Traffic</button>
       <button id="api-key-btn" class="mode-btn subtle" title="API Key & Engine Status">
         <span id="engine-badge-dot" class="status-dot ok"></span>
-        <span id="engine-badge-text">Engine</span>
+        <span id="engine-badge-text">Three.js + Google</span>
       </button>
     </div>
   </header>
@@ -62,7 +64,6 @@
   <main class="map-stage">
     <div id="map-gl" class="map-canvas"></div>
     <div id="map-gmaps" class="map-canvas hidden"></div>
-    <div id="map-3d-gmaps" class="map-canvas hidden"></div>
   </main>
 
   <!-- Camera Tilt / Heading HUD Controls (bottom right) -->
@@ -76,8 +77,8 @@
   <aside class="av-panel" id="av-panel">
     <div class="av-header">
       <div>
-        <h2>AV Strip Simulation</h2>
-        <p class="subtitle">Las Vegas Blvd Corridor Telemetry</p>
+        <h2>Robotaxi Strip Simulation</h2>
+        <p class="subtitle">Three.js 3D AV + Las Vegas Blvd Telemetry</p>
       </div>
       <span class="status-pill" id="sim-status">READY</span>
     </div>
@@ -139,25 +140,25 @@
   <!-- Engine & API Key Diagnostic Modal -->
   <div id="api-modal" class="modal-backdrop hidden">
     <div class="modal-card">
-      <h3>Map Engine & Google Maps API Key</h3>
+      <h3>Three.js + Google Maps Platform Configuration</h3>
       <p id="api-diagnostic-msg">
-        Configure your Google Maps Platform key or switch between the 3D WebGL Vegas Strip Engine and Google Maps JS SDK.
+        Configure your Google Maps API key or inspect the Three.js 3D Resort & Landmark renderer.
       </p>
       <label class="modal-label" for="api-key-input">Google Maps / AI Studio API Key</label>
       <input id="api-key-input" type="text" placeholder="AIzaSy..." />
       <div class="modal-note">
-        <strong>Note:</strong> If your key was created in Google AI Studio for Gemini, enable the
-        <em>Maps JavaScript API</em> in your Google Cloud Console for direct Google SDK rendering.
-        Until enabled, the built-in <strong>3D WebGL Vegas Strip Engine</strong> renders Google Map tiles, 3D Strip buildings, and AV simulation automatically.
+        <strong>Three.js + Google Hybrid Active:</strong> All 21 Las Vegas Strip hero resorts and landmarks
+        (MGM emerald tower, Wynn bronze arcs, Luxor pyramid & beam, animated Sphere, Bellagio fountains,
+        Eiffel Tower, High Roller, Guitar Hotel, etc.) are rendered in real time with Three.js over Google Maps satellite & traffic layers.
       </div>
       <div class="modal-actions">
-        <button id="save-api-key-btn" class="primary-btn">Save & Reload</button>
-        <button id="try-gmaps-sdk-btn" class="secondary-btn">Test Google SDK</button>
+        <button id="save-api-key-btn" class="primary-btn">Save Key</button>
         <button id="close-api-modal-btn" class="secondary-btn">Close</button>
       </div>
     </div>
   </div>
 
+  <script src="three-strip.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
