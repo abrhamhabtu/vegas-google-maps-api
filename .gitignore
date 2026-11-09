@@ -1,0 +1,15 @@
+# Environment variables and local API keys (NEVER commit live API keys)
+.env
+.env.*
+!.env.example
+config.local.js
+
+# Dependencies
+node_modules/
+dist/
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
+*.log
