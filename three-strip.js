@@ -1260,6 +1260,12 @@ window.createVegasThreeLayer = function () {
       egoCarGroup.rotation.y = Math.PI - rad;
     },
 
+    setBuildingsVisible: function (visible) {
+      if (buildingsGroup) buildingsGroup.visible = visible;
+      if (landmarksGroup) landmarksGroup.visible = visible;
+      if (this.map) this.map.triggerRepaint();
+    },
+
     render: function (gl, matrix) {
       const elapsed = clock.getElapsedTime();
       if (!this._lastSync || elapsed - this._lastSync > 0.75) {

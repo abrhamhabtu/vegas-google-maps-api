@@ -1,50 +1,56 @@
 /**
- * Las Vegas Strip — Three.js 3D Resorts & Landmarks + Google Maps Hybrid/Traffic & AV Simulation
- * Inspired by abrhamhabtu/vegas-strip-v2
+ * Las Vegas Strip — Google Maps Carbon Copy (High-DPI Lane-Level Street Tiles + Three.js 3D Resorts + Multi-Lane AV Fleet)
+ *
+ * Uses Google Maps Retina Road Tiles (`mt0..3.google.com/vt/lyrs=m&hl=en&scale=2` up to zoom 22) as the primary ground
+ * layer so every individual dashed lane line, turn pocket arrow, crosswalk zebra stripe, median, and POI icon matches
+ * Google Maps 1:1 (including `S Las Vegas Blvd`, `Bruno Mars Dr`, and `MGM Rd`).
  */
 
-const VEGAS_STRIP_CENTER = { lat: 36.1127, lng: -115.1735 }; // Bellagio / Paris / Center Strip
+const MGM_BRUNO_MARS_INTERSECTION = { lat: 36.10305, lng: -115.17275 }; // Exact view from the user's Google Maps screenshot
+const VEGAS_STRIP_CENTER = { lat: 36.1127, lng: -115.1735 };
 
 const PRESET_ROUTES = {
   "full-strip": {
-    name: "Full Las Vegas Strip (Welcome Sign → Wynn)",
+    name: "S Las Vegas Blvd Northbound (Welcome Sign → MGM → Bellagio → Wynn)",
     waypoints: [
-      { lat: 36.0820, lng: -115.1728 }, // Welcome to Fabulous Las Vegas Sign
-      { lat: 36.0919, lng: -115.1731 }, // Mandalay Bay
-      { lat: 36.1015, lng: -115.1727 }, // MGM Grand / Tropicana Ave
-      { lat: 36.1088, lng: -115.1728 }, // Cosmopolitan / Harmon Ave
-      { lat: 36.1147, lng: -115.1727 }, // Bellagio / Flamingo Rd
-      { lat: 36.1212, lng: -115.1697 }, // The Venetian / Mirage
-      { lat: 36.1265, lng: -115.1657 }, // Wynn Las Vegas
-      { lat: 36.1310, lng: -115.1636 }, // Encore North Strip
+      { lat: 36.0820, lng: -115.1728 },
+      { lat: 36.0919, lng: -115.1731 },
+      { lat: 36.1015, lng: -115.1726 },
+      { lat: 36.1031, lng: -115.1726 }, // MGM Rd / Bruno Mars Dr Northbound carriageway
+      { lat: 36.1088, lng: -115.1727 },
+      { lat: 36.1147, lng: -115.1726 },
+      { lat: 36.1212, lng: -115.1695 },
+      { lat: 36.1265, lng: -115.1656 },
+      { lat: 36.1310, lng: -115.1635 },
+    ],
+  },
+  "strip-southbound": {
+    name: "S Las Vegas Blvd Southbound (Wynn → Bellagio → MGM → Mandalay Bay)",
+    waypoints: [
+      { lat: 36.1310, lng: -115.1639 },
+      { lat: 36.1265, lng: -115.1660 },
+      { lat: 36.1147, lng: -115.1730 },
+      { lat: 36.1031, lng: -115.1729 }, // MGM Rd / Bruno Mars Dr Southbound carriageway
+      { lat: 36.0919, lng: -115.1734 },
+    ],
+  },
+  "mgm-bruno-loop": {
+    name: "MGM Rd ↔ Bruno Mars Dr ↔ S Las Vegas Blvd Turn Lanes",
+    waypoints: [
+      { lat: 36.10302, lng: -115.17435 }, // Bruno Mars Dr Eastbound approach
+      { lat: 36.10308, lng: -115.17275 }, // Intersection at S Las Vegas Blvd & MGM Rd
+      { lat: 36.10550, lng: -115.17265 }, // Northbound S Las Vegas Blvd
+      { lat: 36.10150, lng: -115.17290 }, // Southbound S Las Vegas Blvd
     ],
   },
   "sphere-loop": {
     name: "Center Strip → The Sphere → Bellagio Loop",
     waypoints: [
-      { lat: 36.1127, lng: -115.1728 }, // Bellagio
-      { lat: 36.1238, lng: -115.1686 }, // Sands Ave / Venetian
-      { lat: 36.1213, lng: -115.1605 }, // The Sphere / Koval Ln
-      { lat: 36.1145, lng: -115.1642 }, // Flamingo Rd East
-      { lat: 36.1127, lng: -115.1728 }, // Return to Bellagio
-    ],
-  },
-  "airport-connector": {
-    name: "Harry Reid Airport (LAS) → MGM → Caesars Palace",
-    waypoints: [
-      { lat: 36.0854, lng: -115.1506 }, // LAS Airport Terminal 1
-      { lat: 36.1008, lng: -115.1545 }, // Paradise & Tropicana
-      { lat: 36.1015, lng: -115.1725 }, // MGM Grand / LV Blvd
-      { lat: 36.1162, lng: -115.1732 }, // Caesars Palace
-    ],
-  },
-  "downtown-run": {
-    name: "North Strip (Sahara) → Fremont Street Downtown",
-    waypoints: [
-      { lat: 36.1425, lng: -115.1566 }, // Sahara Ave & LV Blvd
-      { lat: 36.1475, lng: -115.1558 }, // The STRAT
-      { lat: 36.1592, lng: -115.1483 }, // Arts District
-      { lat: 36.1699, lng: -115.1398 }, // Fremont Street Experience
+      { lat: 36.1127, lng: -115.1728 },
+      { lat: 36.1238, lng: -115.1686 },
+      { lat: 36.1213, lng: -115.1605 },
+      { lat: 36.1145, lng: -115.1642 },
+      { lat: 36.1127, lng: -115.1728 },
     ],
   },
 };
@@ -77,11 +83,14 @@ const LANDMARKS = [
 
 let glMap = null;
 let threeStripLayer = null;
+let landmarkDomMarkers = [];
 let glEgoMarker = null;
 let glEgoInnerEl = null;
+let companionMarkers = []; // Companion AV fleet markers driving in adjacent lanes
 let is3DView = true;
-let isSatelliteView = true; // Default to Google Hybrid Satellite + Three.js 3D Buildings
-let isTrafficVisible = true;
+let show3DBuildings = true;
+let isSatelliteView = false; // Default to Google Maps Road & Lane tiles (`lyrs=m&scale=2`) so all lanes & turn arrows are crystal clear!
+let isTrafficVisible = false; // Default off so traffic bars don't cover dashed lane dividers
 
 // AV Simulation State
 let routePoints = []; // [{lat, lng, distMiles, heading}]
@@ -90,8 +99,9 @@ let simRunning = false;
 let simProgressMiles = 0;
 let simAnimationFrame = null;
 let lastFrameTime = 0;
-let speedMultiplier = 2;
-const BASE_AV_SPEED_MPH = 35.0;
+let speedMultiplier = 1;
+let selectedLaneIndex = 0; // -1 = left lane (-3.5m), 0 = center lane (0m), +1 = right lane (+3.5m)
+const BASE_AV_SPEED_MPH = 28.0;
 
 function getApiKey() {
   if (
@@ -110,13 +120,15 @@ function initApp() {
 }
 
 function initWebGLVegasMap() {
+  // Start right at the MGM Rd / Bruno Mars Dr / S Las Vegas Blvd intersection at high zoom so the user immediately sees the Google Maps lanes!
   glMap = new maplibregl.Map({
     container: "map-gl",
     style: "https://tiles.openfreemap.org/styles/liberty",
-    center: [VEGAS_STRIP_CENTER.lng, VEGAS_STRIP_CENTER.lat],
-    zoom: 16.3,
-    pitch: 64,
-    bearing: 18,
+    center: [MGM_BRUNO_MARS_INTERSECTION.lng, MGM_BRUNO_MARS_INTERSECTION.lat],
+    zoom: 18.8,
+    pitch: 45,
+    bearing: 0,
+    maxZoom: 21.5,
     antialias: true,
     maxPitch: 82,
   });
@@ -124,32 +136,67 @@ function initWebGLVegasMap() {
   glMap.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
   glMap.on("load", () => {
-    // 1. Add Google Maps Satellite/Hybrid & Live Traffic tile layers
-    if (!glMap.getSource("google-satellite")) {
-      glMap.addSource("google-satellite", {
-        type: "raster",
-        tiles: ["https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"],
-        tileSize: 256,
-        attribution: "Map data © Google, Three.js 3D Resorts",
-      });
-    }
-
-    if (!glMap.getSource("google-traffic")) {
-      glMap.addSource("google-traffic", {
-        type: "raster",
-        tiles: ["https://mt1.google.com/vt/lyrs=h,traffic&x={x}&y={y}&z={z}"],
-        tileSize: 256,
-      });
-    }
-
+    // 1. Hide OpenFreeMap's own 2D roads/landuse/labels so they NEVER cover or clash with Google Maps' official street & lane tiles!
+    // Keep ONLY the `building` layer at 0.004 opacity so Three.js can read all exact OSM 3D building footprints.
     const layers = glMap.getStyle().layers || [];
-    let firstBuildingOrSymbolId = undefined;
+    let buildingLayerId = undefined;
+
     for (const layer of layers) {
-      if (layer.type === "fill-extrusion" || layer.type === "symbol") {
-        firstBuildingOrSymbolId = layer.id;
-        break;
+      if (layer.type === "fill-extrusion") {
+        buildingLayerId = layer.id;
+        glMap.setPaintProperty(layer.id, "fill-extrusion-opacity", 0.004);
+      } else {
+        glMap.setLayoutProperty(layer.id, "visibility", "none");
       }
     }
+
+    // 2. Add Official Google Maps High-DPI Retina Street & Lane Tiles (`lyrs=m&scale=2` up to zoom 22)
+    // This renders the exact grey-blue streets, dashed lane lines, turn-lane arrows, crosswalks, and POI icons from Google Maps!
+    glMap.addSource("google-roadmap-lanes", {
+      type: "raster",
+      tiles: [
+        "https://mt0.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2",
+        "https://mt1.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2",
+        "https://mt2.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2",
+        "https://mt3.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2",
+      ],
+      tileSize: 256,
+      maxzoom: 22,
+      attribution: "Map data ©2026 Google",
+    });
+
+    // 3. Add Google Maps Satellite Hybrid (`lyrs=y&scale=2`) & Live Traffic (`lyrs=h,traffic`)
+    glMap.addSource("google-satellite", {
+      type: "raster",
+      tiles: [
+        "https://mt0.google.com/vt/lyrs=y&hl=en&x={x}&y={y}&z={z}&scale=2",
+        "https://mt1.google.com/vt/lyrs=y&hl=en&x={x}&y={y}&z={z}&scale=2",
+      ],
+      tileSize: 256,
+      maxzoom: 22,
+    });
+
+    glMap.addSource("google-traffic", {
+      type: "raster",
+      tiles: ["https://mt1.google.com/vt/lyrs=h,traffic&hl=en&x={x}&y={y}&z={z}&scale=2"],
+      tileSize: 256,
+      maxzoom: 22,
+    });
+
+    glMap.addLayer(
+      {
+        id: "google-roadmap-layer",
+        type: "raster",
+        source: "google-roadmap-lanes",
+        layout: {
+          visibility: isSatelliteView ? "none" : "visible",
+        },
+        paint: {
+          "raster-fade-duration": 0,
+        },
+      },
+      buildingLayerId
+    );
 
     glMap.addLayer(
       {
@@ -160,12 +207,10 @@ function initWebGLVegasMap() {
           visibility: isSatelliteView ? "visible" : "none",
         },
         paint: {
-          "raster-opacity": 0.94,
-          "raster-contrast": 0.08,
-          "raster-saturation": 0.12,
+          "raster-fade-duration": 0,
         },
       },
-      firstBuildingOrSymbolId
+      buildingLayerId
     );
 
     glMap.addLayer(
@@ -177,16 +222,13 @@ function initWebGLVegasMap() {
           visibility: isTrafficVisible ? "visible" : "none",
         },
         paint: {
-          "raster-opacity": 0.88,
+          "raster-opacity": 0.85,
         },
       },
-      firstBuildingOrSymbolId
+      buildingLayerId
     );
 
-    // 2. Style base OSM 3D extrusions with height-varied warm desert/glass palette (like vegas-strip-v2)
-    styleBaseBuildingsPalette();
-
-    // 3. Add AV Route GeoJSON source & neon line layers
+    // 4. Add Subtle AV Lane Path Guide Line (thin & translucent so Google Maps lane markings stay visible underneath!)
     glMap.addSource("av-route", {
       type: "geojson",
       data: {
@@ -199,53 +241,30 @@ function initWebGLVegasMap() {
     });
 
     glMap.addLayer({
-      id: "av-route-glow",
-      type: "line",
-      source: "av-route",
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: {
-        "line-color": "#00ff88",
-        "line-width": 14,
-        "line-opacity": 0.32,
-      },
-    });
-
-    glMap.addLayer({
       id: "av-route-line",
       type: "line",
       source: "av-route",
       layout: { "line-join": "round", "line-cap": "round" },
       paint: {
-        "line-color": "#4285f4",
-        "line-width": 5.5,
-        "line-opacity": 0.96,
+        "line-color": "#1a73e8",
+        "line-width": 3.5,
+        "line-opacity": 0.55,
+        "line-dasharray": [2, 2],
       },
     });
 
-    // 4. Mount the Three.js Custom 3D Layer (21 Hero Resorts, Landmarks & 3D Robotaxi)
+    // 5. Mount the Three.js Custom 3D Layer (Resorts, Landmarks & 3D Robotaxis)
     if (window.createVegasThreeLayer) {
       threeStripLayer = window.createVegasThreeLayer();
       glMap.addLayer(threeStripLayer);
     }
 
-    // 5. Render interactive Landmark badges
+    // 6. Render interactive Landmark badges
     renderLandmarkMarkers();
 
-    // 6. Load default Full Strip AV Corridor
-    loadPresetRoute("full-strip");
+    // 7. Load default Full Strip AV Corridor & position vehicle at MGM Rd / Bruno Mars Dr
+    loadPresetRoute("full-strip", true);
   });
-}
-
-function styleBaseBuildingsPalette() {
-  const layers = glMap.getStyle().layers || [];
-  for (const layer of layers) {
-    if (layer.type === "fill-extrusion") {
-      // Keep the native MapLibre extrusion layer active at 0.004 opacity (< 1/255 alpha, invisible)
-      // so MapLibre decodes all `openmaptiles` building footprints for `querySourceFeatures`
-      // without drawing any duplicate grey boxes.
-      glMap.setPaintProperty(layer.id, "fill-extrusion-opacity", 0.004);
-    }
-  }
 }
 
 function renderLandmarkMarkers() {
@@ -258,29 +277,45 @@ function renderLandmarkMarkers() {
     el.title = `${lm.name} (${lm.category})`;
     el.addEventListener("click", (e) => {
       e.stopPropagation();
-      flyToLocation(lm.lat, lm.lng, 16.5, is3DView ? 64 : 0, 20);
+      flyToLocation(lm.lat, lm.lng, 17.2, is3DView ? 60 : 0, 15);
     });
 
-    new maplibregl.Marker({ element: el, anchor: "bottom" })
+    const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
       .setLngLat([lm.lng, lm.lat])
       .addTo(glMap);
+    landmarkDomMarkers.push(marker);
   });
 }
 
-function flyToLocation(lat, lng, zoom = 16.4, tilt = 64, heading = 15) {
+function flyToLocation(lat, lng, zoom = 17.0, tilt = 60, heading = 0) {
   if (glMap) {
     glMap.flyTo({
       center: [lng, lat],
       zoom: zoom,
-      pitch: is3DView ? tilt : 0,
+      pitch: tilt,
       bearing: heading,
-      duration: 1500,
+      duration: 1300,
       essential: true,
     });
   }
 }
 
-async function loadPresetRoute(routeKey) {
+/**
+ * Offset a (lat, lng) coordinate laterally by `lateralMeters` perpendicular to `headingDeg`
+ * (+lateralMeters shifts right of travel direction, -lateralMeters shifts left of travel direction)
+ * so autonomous vehicles drive inside specific Google Maps lanes!
+ */
+function offsetLatLngByLaneMeters(lat, lng, headingDeg, lateralMeters) {
+  const rightAngleRad = ((headingDeg + 90) * Math.PI) / 180;
+  const dNorthMeters = Math.cos(rightAngleRad) * lateralMeters;
+  const dEastMeters = Math.sin(rightAngleRad) * lateralMeters;
+  const dLat = (dNorthMeters / 6378137) * (180 / Math.PI);
+  const dLng =
+    (dEastMeters / (6378137 * Math.cos((lat * Math.PI) / 180))) * (180 / Math.PI);
+  return { lat: lat + dLat, lng: lng + dLng };
+}
+
+async function loadPresetRoute(routeKey, startNearMgm = false) {
   const preset = PRESET_ROUTES[routeKey];
   if (!preset) return;
 
@@ -293,17 +328,20 @@ async function loadPresetRoute(routeKey) {
     const res = await fetch(osrmUrl);
     const data = await res.json();
     if (data && data.routes && data.routes[0] && data.routes[0].geometry) {
-      buildRouteFromLngLatPairs(data.routes[0].geometry.coordinates);
+      buildRouteFromLngLatPairs(data.routes[0].geometry.coordinates, startNearMgm);
       return;
     }
   } catch (err) {
     console.warn("OSRM fallback to Strip waypoints:", err);
   }
 
-  buildRouteFromLngLatPairs(preset.waypoints.map((w) => [w.lng, w.lat]));
+  buildRouteFromLngLatPairs(
+    preset.waypoints.map((w) => [w.lng, w.lat]),
+    startNearMgm
+  );
 }
 
-function buildRouteFromLngLatPairs(lngLatArray) {
+function buildRouteFromLngLatPairs(lngLatArray, startNearMgm = false) {
   if (glMap && glMap.getSource("av-route")) {
     glMap.getSource("av-route").setData({
       type: "Feature",
@@ -316,10 +354,12 @@ function buildRouteFromLngLatPairs(lngLatArray) {
 
   const pts = [];
   let cumulativeMiles = 0;
+  let mgmStartMiles = 0;
+  let minMgmDist = Infinity;
 
   for (let i = 0; i < lngLatArray.length; i++) {
     const [lng, lat] = lngLatArray[i];
-    let heading = 15;
+    let heading = 0;
     if (i > 0) {
       const [prevLng, prevLat] = lngLatArray[i - 1];
       const stepMiles = computeHaversineMiles(prevLat, prevLng, lat, lng);
@@ -328,6 +368,15 @@ function buildRouteFromLngLatPairs(lngLatArray) {
     } else if (lngLatArray.length > 1) {
       const [nextLng, nextLat] = lngLatArray[1];
       heading = computeBearingDegrees(lat, lng, nextLat, nextLng);
+    }
+
+    const dToMgm = Math.hypot(
+      lat - MGM_BRUNO_MARS_INTERSECTION.lat,
+      lng - MGM_BRUNO_MARS_INTERSECTION.lng
+    );
+    if (dToMgm < minMgmDist) {
+      minMgmDist = dToMgm;
+      mgmStartMiles = cumulativeMiles;
     }
 
     pts.push({
@@ -340,8 +389,8 @@ function buildRouteFromLngLatPairs(lngLatArray) {
 
   routePoints = pts;
   totalRouteMiles = pts.length ? pts[pts.length - 1].distMiles : 0;
-  simProgressMiles = 0;
-  placeEgoVehicleAt(0);
+  simProgressMiles = startNearMgm ? mgmStartMiles : 0;
+  placeEgoVehicleAt(simProgressMiles);
 }
 
 function computeHaversineMiles(lat1, lon1, lat2, lon2) {
@@ -368,7 +417,11 @@ function computeBearingDegrees(lat1, lon1, lat2, lon2) {
 
 function interpolatePoseAtMiles(targetMiles) {
   if (!routePoints.length) {
-    return { lat: VEGAS_STRIP_CENTER.lat, lng: VEGAS_STRIP_CENTER.lng, heading: 15 };
+    return {
+      lat: MGM_BRUNO_MARS_INTERSECTION.lat,
+      lng: MGM_BRUNO_MARS_INTERSECTION.lng,
+      heading: 0,
+    };
   }
   if (targetMiles <= 0) return routePoints[0];
   if (targetMiles >= totalRouteMiles) return routePoints[routePoints.length - 1];
@@ -390,15 +443,23 @@ function interpolatePoseAtMiles(targetMiles) {
 }
 
 function placeEgoVehicleAt(miles) {
-  const pose = interpolatePoseAtMiles(miles);
+  const basePose = interpolatePoseAtMiles(miles);
   if (!glMap) return;
 
-  // Update 3D Three.js Robotaxi model pose
+  // Apply lateral lane offset (each Google Maps lane is ~3.5m wide)
+  const lateralMeters = selectedLaneIndex * 3.5;
+  const lanePos = offsetLatLngByLaneMeters(
+    basePose.lat,
+    basePose.lng,
+    basePose.heading,
+    lateralMeters
+  );
+  const pose = { lat: lanePos.lat, lng: lanePos.lng, heading: basePose.heading };
+
   if (threeStripLayer && threeStripLayer.updateEgoVehiclePose) {
     threeStripLayer.updateEgoVehiclePose(pose.lat, pose.lng, pose.heading);
   }
 
-  // Update HUD beacon marker
   if (!glEgoMarker) {
     const wrapper = document.createElement("div");
     wrapper.className = "ego-car-marker";
@@ -414,11 +475,13 @@ function placeEgoVehicleAt(miles) {
     glEgoMarker.setLngLat([pose.lng, pose.lat]);
   }
 
+  const mapBearing = glMap.getBearing();
   if (glEgoInnerEl) {
-    const mapBearing = glMap.getBearing();
-    const relRotation = pose.heading - mapBearing;
-    glEgoInnerEl.style.transform = `rotate(${relRotation}deg)`;
+    glEgoInnerEl.style.transform = `rotate(${pose.heading - mapBearing}deg)`;
   }
+
+  // Also update 2 companion autonomous vehicles in adjacent lanes (Waymo & Zoox)
+  updateCompanionFleet(miles, mapBearing);
 
   updateTelemetryUI(pose, miles);
 
@@ -426,10 +489,40 @@ function placeEgoVehicleAt(miles) {
   if (followCam && simRunning) {
     glMap.jumpTo({
       center: [pose.lng, pose.lat],
-      bearing: pose.heading,
-      pitch: is3DView ? 65 : 0,
+      bearing: is3DView ? pose.heading : 0,
     });
   }
+}
+
+function updateCompanionFleet(egoMiles, mapBearing) {
+  const specs = [
+    { offsetMiles: 0.025, laneIdx: -1, color: "#4285f4", label: "Waymo" },
+    { offsetMiles: -0.02, laneIdx: 1, color: "#fbbc04", label: "Zoox" },
+  ];
+
+  specs.forEach((sp, idx) => {
+    const m = Math.max(0, Math.min(totalRouteMiles, (egoMiles + sp.offsetMiles) % (totalRouteMiles || 1)));
+    const bPose = interpolatePoseAtMiles(m);
+    const lPos = offsetLatLngByLaneMeters(bPose.lat, bPose.lng, bPose.heading, sp.laneIdx * 3.5);
+
+    if (!companionMarkers[idx]) {
+      const wrap = document.createElement("div");
+      wrap.className = "ego-car-marker";
+      const inner = document.createElement("div");
+      inner.className = "ego-car-inner";
+      inner.style.background = sp.color;
+      inner.style.boxShadow = `0 0 12px ${sp.color}`;
+      inner.textContent = "▲";
+      wrap.appendChild(inner);
+      const marker = new maplibregl.Marker({ element: wrap, anchor: "center" })
+        .setLngLat([lPos.lng, lPos.lat])
+        .addTo(glMap);
+      companionMarkers[idx] = { marker, inner };
+    } else {
+      companionMarkers[idx].marker.setLngLat([lPos.lng, lPos.lat]);
+      companionMarkers[idx].inner.style.transform = `rotate(${bPose.heading - mapBearing}deg)`;
+    }
+  });
 }
 
 function updateTelemetryUI(pose, miles) {
@@ -454,10 +547,7 @@ function stepSimulation(timestamp) {
   simProgressMiles += milesPerSecond * dtSeconds;
 
   if (simProgressMiles >= totalRouteMiles) {
-    simProgressMiles = totalRouteMiles;
-    placeEgoVehicleAt(simProgressMiles);
-    stopSimulation("COMPLETED");
-    return;
+    simProgressMiles = 0;
   }
 
   placeEgoVehicleAt(simProgressMiles);
@@ -466,9 +556,6 @@ function stepSimulation(timestamp) {
 
 function startSimulation() {
   if (!routePoints.length) return;
-  if (simProgressMiles >= totalRouteMiles) {
-    simProgressMiles = 0;
-  }
   simRunning = true;
   lastFrameTime = 0;
   const statusEl = document.getElementById("sim-status");
@@ -476,18 +563,6 @@ function startSimulation() {
   statusEl.classList.add("running");
   document.getElementById("av-start-btn").disabled = true;
   document.getElementById("av-pause-btn").disabled = false;
-
-  if (document.getElementById("av-follow-cam").checked && glMap) {
-    const pose = interpolatePoseAtMiles(simProgressMiles);
-    glMap.easeTo({
-      center: [pose.lng, pose.lat],
-      zoom: 17.0,
-      pitch: is3DView ? 65 : 0,
-      bearing: pose.heading,
-      duration: 600,
-    });
-  }
-
   simAnimationFrame = requestAnimationFrame(stepSimulation);
 }
 
@@ -509,7 +584,7 @@ async function handlePlaceSearch() {
 
   const localMatch = LANDMARKS.find((l) => l.name.toLowerCase().includes(query.toLowerCase()));
   if (localMatch) {
-    flyToLocation(localMatch.lat, localMatch.lng, 16.5, 64, 15);
+    flyToLocation(localMatch.lat, localMatch.lng, 17.5, is3DView ? 60 : 0, 15);
     return;
   }
 
@@ -520,10 +595,19 @@ async function handlePlaceSearch() {
     const res = await fetch(url);
     const items = await res.json();
     if (items && items[0]) {
-      flyToLocation(parseFloat(items[0].lat), parseFloat(items[0].lon), 16.4, 62, 0);
+      flyToLocation(parseFloat(items[0].lat), parseFloat(items[0].lon), 18.5, is3DView ? 50 : 0, 0);
     }
   } catch (e) {
     console.warn("Search error:", e);
+  }
+}
+
+function set3DBuildingsVisibility(visible) {
+  show3DBuildings = visible;
+  const bldgBtn = document.getElementById("toggle-bldg-btn");
+  if (bldgBtn) bldgBtn.classList.toggle("active", show3DBuildings);
+  if (threeStripLayer && threeStripLayer.setBuildingsVisible) {
+    threeStripLayer.setBuildingsVisible(show3DBuildings);
   }
 }
 
@@ -534,9 +618,22 @@ function setupUIHandlers() {
       chip.classList.add("active");
       const lat = parseFloat(chip.dataset.lat);
       const lng = parseFloat(chip.dataset.lng);
-      const zoom = parseFloat(chip.dataset.zoom || "16.4");
-      const tilt = parseFloat(chip.dataset.tilt || "64");
+      const zoom = parseFloat(chip.dataset.zoom || "17.0");
+      const tilt = parseFloat(chip.dataset.tilt || "0");
       const heading = parseFloat(chip.dataset.heading || "0");
+
+      // If jumping to a high-zoom intersection (zoom >= 18.5), switch cleanly to top-down lane view
+      if (zoom >= 18.5 && tilt === 0) {
+        is3DView = false;
+        set3DBuildingsVisibility(false);
+        document.getElementById("mode-lanes-btn").classList.add("active");
+        document.getElementById("mode-3d-btn").classList.remove("active");
+      } else {
+        is3DView = true;
+        set3DBuildingsVisibility(true);
+        document.getElementById("mode-3d-btn").classList.add("active");
+        document.getElementById("mode-lanes-btn").classList.remove("active");
+      }
       flyToLocation(lat, lng, zoom, tilt, heading);
     });
   });
@@ -546,37 +643,61 @@ function setupUIHandlers() {
     if (e.key === "Enter") handlePlaceSearch();
   });
 
+  // "Lanes View" button jumps straight to the MGM Rd / Bruno Mars Dr / S Las Vegas Blvd lane view from the screenshot
   document.getElementById("reset-strip-btn").addEventListener("click", () => {
-    flyToLocation(VEGAS_STRIP_CENTER.lat, VEGAS_STRIP_CENTER.lng, 16.3, 64, 18);
+    is3DView = false;
+    set3DBuildingsVisibility(false);
+    document.getElementById("mode-lanes-btn").classList.add("active");
+    document.getElementById("mode-3d-btn").classList.remove("active");
+    flyToLocation(MGM_BRUNO_MARS_INTERSECTION.lat, MGM_BRUNO_MARS_INTERSECTION.lng, 19.1, 0, 0);
   });
 
+  const modeLanesBtn = document.getElementById("mode-lanes-btn");
   const mode3dBtn = document.getElementById("mode-3d-btn");
-  const mode2dBtn = document.getElementById("mode-2d-btn");
+
+  modeLanesBtn.addEventListener("click", () => {
+    is3DView = false;
+    modeLanesBtn.classList.add("active");
+    mode3dBtn.classList.remove("active");
+    set3DBuildingsVisibility(false);
+    if (glMap) {
+      glMap.easeTo({ pitch: 0, bearing: 0, zoom: Math.max(glMap.getZoom(), 18.8), duration: 600 });
+    }
+  });
 
   mode3dBtn.addEventListener("click", () => {
     is3DView = true;
     mode3dBtn.classList.add("active");
-    mode2dBtn.classList.remove("active");
-    if (glMap) glMap.easeTo({ pitch: 64, duration: 700 });
+    modeLanesBtn.classList.remove("active");
+    set3DBuildingsVisibility(true);
+    if (glMap) {
+      glMap.easeTo({ pitch: 60, duration: 600 });
+    }
   });
 
-  mode2dBtn.addEventListener("click", () => {
-    is3DView = false;
-    mode2dBtn.classList.add("active");
-    mode3dBtn.classList.remove("active");
-    if (glMap) glMap.easeTo({ pitch: 0, bearing: 0, duration: 700 });
+  document.getElementById("toggle-bldg-btn").addEventListener("click", () => {
+    set3DBuildingsVisibility(!show3DBuildings);
   });
 
   const satBtn = document.getElementById("toggle-satellite-btn");
   satBtn.addEventListener("click", () => {
     isSatelliteView = !isSatelliteView;
     satBtn.classList.toggle("active", isSatelliteView);
-    if (glMap && glMap.getLayer("google-satellite-layer")) {
-      glMap.setLayoutProperty(
-        "google-satellite-layer",
-        "visibility",
-        isSatelliteView ? "visible" : "none"
-      );
+    if (glMap) {
+      if (glMap.getLayer("google-satellite-layer")) {
+        glMap.setLayoutProperty(
+          "google-satellite-layer",
+          "visibility",
+          isSatelliteView ? "visible" : "none"
+        );
+      }
+      if (glMap.getLayer("google-roadmap-layer")) {
+        glMap.setLayoutProperty(
+          "google-roadmap-layer",
+          "visibility",
+          isSatelliteView ? "none" : "visible"
+        );
+      }
     }
   });
 
@@ -601,25 +722,27 @@ function setupUIHandlers() {
   });
   document.getElementById("cam-tilt-toggle").addEventListener("click", () => {
     if (!glMap) return;
-    const nextPitch = glMap.getPitch() > 20 ? 0 : 64;
+    const nextPitch = glMap.getPitch() > 15 ? 0 : 60;
     is3DView = nextPitch > 0;
     mode3dBtn.classList.toggle("active", is3DView);
-    mode2dBtn.classList.toggle("active", !is3DView);
+    modeLanesBtn.classList.toggle("active", !is3DView);
     glMap.easeTo({ pitch: nextPitch, duration: 500 });
   });
 
   document.getElementById("preset-route").addEventListener("change", (e) => {
-    loadPresetRoute(e.target.value);
+    loadPresetRoute(e.target.value, false);
+  });
+
+  document.getElementById("lane-select").addEventListener("change", (e) => {
+    selectedLaneIndex = parseFloat(e.target.value || "0");
+    placeEgoVehicleAt(simProgressMiles);
   });
 
   document.getElementById("av-start-btn").addEventListener("click", startSimulation);
   document.getElementById("av-pause-btn").addEventListener("click", () => stopSimulation("PAUSED"));
   document.getElementById("av-reset-btn").addEventListener("click", () => {
     stopSimulation("READY");
-    simProgressMiles = 0;
-    placeEgoVehicleAt(0);
-    const pose = interpolatePoseAtMiles(0);
-    flyToLocation(pose.lat, pose.lng, 16.5, 64, pose.heading);
+    placeEgoVehicleAt(simProgressMiles);
   });
 
   const speedRange = document.getElementById("av-speed-multiplier");

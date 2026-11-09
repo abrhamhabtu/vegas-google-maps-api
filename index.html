@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Las Vegas Strip — Three.js + Google Maps 3D & AV Simulation</title>
-  <!-- MapLibre GL + Three.js for 3D Las Vegas Strip Hero Resorts, Landmarks & Google Map Tiles -->
+  <title>Las Vegas Strip — Google Maps Lane-Level Streets, Three.js 3D & AV Simulation</title>
+  <!-- MapLibre GL + Three.js for Google Maps Retina Street Lanes & 3D Las Vegas Strip Resorts -->
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
@@ -16,46 +16,46 @@
   <!-- Top Floating Google Maps-style Search & Mode Bar -->
   <header class="top-bar">
     <div class="search-panel">
-      <div class="brand-badge" title="Las Vegas Strip 3D Digital Twin">
+      <div class="brand-badge" title="Las Vegas Strip Google Maps Carbon Copy">
         <span class="pin-dot"></span>
-        <span class="brand-title">Vegas Strip 3D</span>
+        <span class="brand-title">Google Maps Vegas</span>
       </div>
       <input
         id="place-search-input"
         type="text"
-        placeholder="Search resorts, casinos, intersections..."
+        placeholder="Search Google Maps Las Vegas Strip..."
         autocomplete="off"
       />
       <button id="search-go-btn" class="icon-btn" title="Search Las Vegas">
         Search
       </button>
-      <button id="reset-strip-btn" class="icon-btn" title="Recenter on Las Vegas Strip">
-        Strip Center
+      <button id="reset-strip-btn" class="icon-btn" title="Jump to MGM Rd & Bruno Mars Dr Lanes">
+        Lanes View
       </button>
     </div>
 
     <!-- Quick Jump Corridor Chips -->
     <div class="corridor-chips" id="landmark-chips">
-      <button class="chip active" data-lat="36.1127" data-lng="-115.1735" data-zoom="16.4" data-tilt="64" data-heading="15">Bellagio & Paris Eiffel</button>
-      <button class="chip" data-lat="36.0955" data-lng="-115.1761" data-zoom="16.4" data-tilt="65" data-heading="25">Luxor Pyramid & Excalibur</button>
-      <button class="chip" data-lat="36.0908" data-lng="-115.1800" data-zoom="16.0" data-tilt="62" data-heading="45">Allegiant Stadium & Mandalay</button>
-      <button class="chip" data-lat="36.1024" data-lng="-115.1725" data-zoom="16.5" data-tilt="64" data-heading="15">MGM Grand & NY-NY</button>
-      <button class="chip" data-lat="36.1213" data-lng="-115.1650" data-zoom="16.3" data-tilt="65" data-heading="310">The Sphere, Venetian & High Roller</button>
-      <button class="chip" data-lat="36.1265" data-lng="-115.1665" data-zoom="16.3" data-tilt="64" data-heading="20">Wynn, Encore & Trump</button>
-      <button class="chip" data-lat="36.1350" data-lng="-115.1660" data-zoom="16.0" data-tilt="64" data-heading="25">Resorts World & Fontainebleau</button>
-      <button class="chip" data-lat="36.1475" data-lng="-115.1566" data-zoom="16.2" data-tilt="65" data-heading="15">The STRAT Tower</button>
-      <button class="chip" data-lat="36.1707" data-lng="-115.1439" data-zoom="16.5" data-tilt="60" data-heading="295">Fremont St Canopy</button>
+      <button class="chip active" data-lat="36.10305" data-lng="-115.17275" data-zoom="19.1" data-tilt="0" data-heading="0">MGM Rd & Bruno Mars Dr (Lanes)</button>
+      <button class="chip" data-lat="36.1127" data-lng="-115.1735" data-zoom="16.6" data-tilt="62" data-heading="15">Bellagio & Paris 3D</button>
+      <button class="chip" data-lat="36.1024" data-lng="-115.1726" data-zoom="17.2" data-tilt="60" data-heading="15">MGM Grand & NY-NY 3D</button>
+      <button class="chip" data-lat="36.0955" data-lng="-115.1761" data-zoom="16.5" data-tilt="62" data-heading="25">Luxor & Mandalay Bay 3D</button>
+      <button class="chip" data-lat="36.1147" data-lng="-115.1728" data-zoom="19.0" data-tilt="0" data-heading="0">Flamingo × Strip Intersection</button>
+      <button class="chip" data-lat="36.1213" data-lng="-115.1650" data-zoom="16.4" data-tilt="64" data-heading="310">The Sphere & Venetian 3D</button>
+      <button class="chip" data-lat="36.1265" data-lng="-115.1665" data-zoom="16.5" data-tilt="62" data-heading="20">Wynn & Encore 3D</button>
+      <button class="chip" data-lat="36.1707" data-lng="-115.1439" data-zoom="17.0" data-tilt="58" data-heading="295">Fremont St Downtown</button>
     </div>
 
     <!-- Map Mode & Layer Controls -->
     <div class="layer-controls">
-      <button id="mode-3d-btn" class="mode-btn active">Three.js 3D</button>
-      <button id="mode-2d-btn" class="mode-btn">2D Map</button>
-      <button id="toggle-satellite-btn" class="mode-btn active">Google Hybrid</button>
-      <button id="toggle-traffic-btn" class="mode-btn active">Traffic</button>
+      <button id="mode-lanes-btn" class="mode-btn">2D Street Lanes</button>
+      <button id="mode-3d-btn" class="mode-btn active">3D + Street Lanes</button>
+      <button id="toggle-bldg-btn" class="mode-btn active" title="Show/Hide Three.js 3D Buildings">3D Buildings</button>
+      <button id="toggle-satellite-btn" class="mode-btn">Satellite</button>
+      <button id="toggle-traffic-btn" class="mode-btn">Traffic</button>
       <button id="api-key-btn" class="mode-btn subtle" title="API Key & Engine Status">
         <span id="engine-badge-dot" class="status-dot ok"></span>
-        <span id="engine-badge-text">Three.js + Google</span>
+        <span id="engine-badge-text">Google Streets @2x</span>
       </button>
     </div>
   </header>
@@ -69,7 +69,7 @@
   <!-- Camera Tilt / Heading HUD Controls (bottom right) -->
   <div class="camera-hud">
     <button id="cam-rotate-left" class="hud-btn" title="Rotate Camera Left">⟲</button>
-    <button id="cam-tilt-toggle" class="hud-btn" title="Toggle 3D Tilt">3D Tilt</button>
+    <button id="cam-tilt-toggle" class="hud-btn" title="Toggle 2D Top-Down vs 3D Tilt">2D / 3D</button>
     <button id="cam-rotate-right" class="hud-btn" title="Rotate Camera Right">⟳</button>
   </div>
 
@@ -77,24 +77,33 @@
   <aside class="av-panel" id="av-panel">
     <div class="av-header">
       <div>
-        <h2>Robotaxi Strip Simulation</h2>
-        <p class="subtitle">Three.js 3D AV + Las Vegas Blvd Telemetry</p>
+        <h2>Robotaxi Lane Simulation</h2>
+        <p class="subtitle">Multi-Lane S Las Vegas Blvd Fleet</p>
       </div>
       <span class="status-pill" id="sim-status">READY</span>
     </div>
 
     <div class="av-route-selector">
-      <label for="preset-route">Corridor Route</label>
+      <label for="preset-route">Corridor & Lane Assignment</label>
       <select id="preset-route">
-        <option value="full-strip">Full Las Vegas Strip (Welcome Sign → Wynn)</option>
+        <option value="full-strip">S Las Vegas Blvd Northbound (Right/Center/Left Lanes)</option>
+        <option value="strip-southbound">S Las Vegas Blvd Southbound (Wynn → Mandalay Lanes)</option>
+        <option value="mgm-bruno-loop">MGM Rd ↔ Bruno Mars Dr ↔ S Las Vegas Blvd Turn Lanes</option>
         <option value="sphere-loop">Center Strip → The Sphere → Bellagio Loop</option>
-        <option value="airport-connector">Harry Reid Airport → MGM → Caesars Palace</option>
-        <option value="downtown-run">North Strip (Sahara) → Fremont Street</option>
+      </select>
+    </div>
+
+    <div class="av-route-selector">
+      <label for="lane-select">Active Ego Lane Offset</label>
+      <select id="lane-select">
+        <option value="-1">Lane 1 — Inner / Left Turn Pocket (-3.5m)</option>
+        <option value="0" selected>Lane 2 — Center Thru Lane (0.0m)</option>
+        <option value="1">Lane 3 — Curb / Right Thru Lane (+3.5m)</option>
       </select>
     </div>
 
     <div class="av-controls">
-      <button id="av-start-btn" class="primary-btn">Start AV Run</button>
+      <button id="av-start-btn" class="primary-btn">Start AV Fleet</button>
       <button id="av-pause-btn" class="secondary-btn" disabled>Pause</button>
       <button id="av-reset-btn" class="secondary-btn">Reset</button>
     </div>
@@ -102,11 +111,11 @@
     <div class="av-options">
       <label class="checkbox-label">
         <input type="checkbox" id="av-follow-cam" checked />
-        Lock 3D Chase Camera to Ego Vehicle
+        Follow Ego Vehicle Camera
       </label>
       <div class="speed-control">
-        <label for="av-speed-multiplier">Sim Speed: <span id="speed-mult-label">2x</span></label>
-        <input type="range" id="av-speed-multiplier" min="1" max="10" value="2" />
+        <label for="av-speed-multiplier">Sim Speed: <span id="speed-mult-label">1x</span></label>
+        <input type="range" id="av-speed-multiplier" min="1" max="8" value="1" />
       </div>
     </div>
 
@@ -117,18 +126,18 @@
       </div>
       <div class="telemetry-card">
         <span class="t-label">HEADING</span>
-        <span class="t-value" id="tel-heading">15° NNE</span>
+        <span class="t-value" id="tel-heading">0° N</span>
       </div>
       <div class="telemetry-card">
         <span class="t-label">LATITUDE</span>
-        <span class="t-value" id="tel-lat">36.08200</span>
+        <span class="t-value" id="tel-lat">36.10305</span>
       </div>
       <div class="telemetry-card">
         <span class="t-label">LONGITUDE</span>
-        <span class="t-value" id="tel-lng">-115.17280</span>
+        <span class="t-value" id="tel-lng">-115.17275</span>
       </div>
       <div class="telemetry-card wide">
-        <span class="t-label">ROUTE PROGRESS</span>
+        <span class="t-label">LANE CORRIDOR PROGRESS</span>
         <div class="progress-bar-bg">
           <div class="progress-bar-fill" id="tel-progress-bar"></div>
         </div>
@@ -140,16 +149,14 @@
   <!-- Engine & API Key Diagnostic Modal -->
   <div id="api-modal" class="modal-backdrop hidden">
     <div class="modal-card">
-      <h3>Three.js + Google Maps Platform Configuration</h3>
+      <h3>Google Maps @2x Lane Tiles + Three.js 3D Configuration</h3>
       <p id="api-diagnostic-msg">
-        Configure your Google Maps API key or inspect the Three.js 3D Resort & Landmark renderer.
+        Rendering official Google Maps high-DPI street & lane tiles (`lyrs=m&scale=2` up to zoom 22) with individual dashed lanes, turn arrows, crosswalks, and Three.js 3D resorts.
       </p>
       <label class="modal-label" for="api-key-input">Google Maps / AI Studio API Key</label>
       <input id="api-key-input" type="text" placeholder="AIzaSy..." />
       <div class="modal-note">
-        <strong>Three.js + Google Hybrid Active:</strong> All 21 Las Vegas Strip hero resorts and landmarks
-        (MGM emerald tower, Wynn bronze arcs, Luxor pyramid & beam, animated Sphere, Bellagio fountains,
-        Eiffel Tower, High Roller, Guitar Hotel, etc.) are rendered in real time with Three.js over Google Maps satellite & traffic layers.
+        <strong>Tip:</strong> Zoom in (`zoom 18–21`) or click <strong>2D Street Lanes</strong> in the top bar to see every Google Maps lane divider, painted turn arrow, crosswalk, and traffic signal cleanly without 3D building occlusion.
       </div>
       <div class="modal-actions">
         <button id="save-api-key-btn" class="primary-btn">Save Key</button>
