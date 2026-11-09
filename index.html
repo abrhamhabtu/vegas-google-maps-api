@@ -3,10 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Las Vegas Strip — Google Maps Platform & AV Simulation Testbed</title>
+  <title>Las Vegas Strip — 3D Map & AV Simulation Testbed</title>
+  <!-- MapLibre GL for instant 3D buildings & vector/satellite rendering when Google Maps SDK key is pending activation -->
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link rel="stylesheet" href="styles.css" />
   <!-- Load local config if present (gitignored) -->
-  <script src="config.local.js" onerror="console.info('No config.local.js found; falling back to stored or user-provided API key.')"></script>
+  <script src="config.local.js" onerror="console.info('No config.local.js found; using stored or fallback config.')"></script>
 </head>
 <body>
   <!-- Top Floating Google Maps-style Search & Mode Bar -->
@@ -22,6 +25,9 @@
         placeholder="Search Las Vegas Strip, casinos, intersections..."
         autocomplete="off"
       />
+      <button id="search-go-btn" class="icon-btn" title="Search Las Vegas">
+        Search
+      </button>
       <button id="reset-strip-btn" class="icon-btn" title="Recenter on Las Vegas Strip">
         Strip Center
       </button>
@@ -29,31 +35,42 @@
 
     <!-- Quick Jump Corridor Chips -->
     <div class="corridor-chips" id="landmark-chips">
-      <button class="chip active" data-lat="36.1147" data-lng="-115.1728" data-zoom="16" data-tilt="60" data-heading="15">Bellagio / Center Strip</button>
+      <button class="chip active" data-lat="36.1127" data-lng="-115.1728" data-zoom="16.5" data-tilt="60" data-heading="15">Bellagio / Center Strip</button>
       <button class="chip" data-lat="36.0820" data-lng="-115.1728" data-zoom="17" data-tilt="65" data-heading="0">Welcome Sign / South Strip</button>
       <button class="chip" data-lat="36.0908" data-lng="-115.1833" data-zoom="16" data-tilt="60" data-heading="45">Allegiant Stadium & Mandalay</button>
       <button class="chip" data-lat="36.1015" data-lng="-115.1725" data-zoom="16.5" data-tilt="60" data-heading="10">MGM Grand / Tropicana</button>
       <button class="chip" data-lat="36.1212" data-lng="-115.1620" data-zoom="16.5" data-tilt="65" data-heading="310">The Sphere & Venetian</button>
-      <button class="chip" data-lat="36.1265" data-lng="-115.1657" data-zoom="16" data-tilt="60" data-heading="20">Wynn / North Strip</button>
-      <button class="chip" data-lat="36.1707" data-lng="-115.1439" data-zoom="16" data-tilt="55" data-heading="295">Fremont St / Downtown</button>
+      <button class="chip" data-lat="36.1265" data-lng="-115.1657" data-zoom="16.5" data-tilt="60" data-heading="20">Wynn / North Strip</button>
+      <button class="chip" data-lat="36.1707" data-lng="-115.1439" data-zoom="16.5" data-tilt="55" data-heading="295">Fremont St / Downtown</button>
       <button class="chip" data-lat="36.0840" data-lng="-115.1537" data-zoom="14.5" data-tilt="45" data-heading="0">Harry Reid Airport (LAS)</button>
     </div>
 
     <!-- Map Mode & Layer Controls -->
     <div class="layer-controls">
-      <button id="mode-2d-btn" class="mode-btn active">2D / Vector Map</button>
-      <button id="mode-3d-btn" class="mode-btn">Photorealistic 3D</button>
-      <button id="toggle-traffic-btn" class="mode-btn active">Traffic</button>
+      <button id="mode-3d-btn" class="mode-btn active">3D Buildings</button>
+      <button id="mode-2d-btn" class="mode-btn">2D Top-Down</button>
       <button id="toggle-satellite-btn" class="mode-btn">Satellite</button>
-      <button id="api-key-btn" class="mode-btn subtle" title="Configure API Key">API Key</button>
+      <button id="toggle-traffic-btn" class="mode-btn active">Traffic</button>
+      <button id="api-key-btn" class="mode-btn subtle" title="API Key & Engine Status">
+        <span id="engine-badge-dot" class="status-dot ok"></span>
+        <span id="engine-badge-text">Engine</span>
+      </button>
     </div>
   </header>
 
   <!-- Main Map Containers -->
   <main class="map-stage">
-    <div id="map-2d" class="map-canvas"></div>
-    <div id="map-3d-container" class="map-canvas hidden"></div>
+    <div id="map-gl" class="map-canvas"></div>
+    <div id="map-gmaps" class="map-canvas hidden"></div>
+    <div id="map-3d-gmaps" class="map-canvas hidden"></div>
   </main>
+
+  <!-- Camera Tilt / Heading HUD Controls (bottom right) -->
+  <div class="camera-hud">
+    <button id="cam-rotate-left" class="hud-btn" title="Rotate Camera Left">⟲</button>
+    <button id="cam-tilt-toggle" class="hud-btn" title="Toggle 3D Tilt">3D Tilt</button>
+    <button id="cam-rotate-right" class="hud-btn" title="Rotate Camera Right">⟳</button>
+  </div>
 
   <!-- Autonomous Vehicle (AV) Simulation Dock -->
   <aside class="av-panel" id="av-panel">
@@ -62,7 +79,7 @@
         <h2>AV Strip Simulation</h2>
         <p class="subtitle">Las Vegas Blvd Corridor Telemetry</p>
       </div>
-      <span class="status-pill" id="sim-status">IDLE</span>
+      <span class="status-pill" id="sim-status">READY</span>
     </div>
 
     <div class="av-route-selector">
@@ -84,10 +101,10 @@
     <div class="av-options">
       <label class="checkbox-label">
         <input type="checkbox" id="av-follow-cam" checked />
-        Lock Chase Camera to Ego Vehicle
+        Lock 3D Chase Camera to Ego Vehicle
       </label>
       <div class="speed-control">
-        <label for="av-speed-multiplier">Sim Speed: <span id="speed-mult-label">1x</span></label>
+        <label for="av-speed-multiplier">Sim Speed: <span id="speed-mult-label">2x</span></label>
         <input type="range" id="av-speed-multiplier" min="1" max="10" value="2" />
       </div>
     </div>
@@ -99,11 +116,11 @@
       </div>
       <div class="telemetry-card">
         <span class="t-label">HEADING</span>
-        <span class="t-value" id="tel-heading">0° N</span>
+        <span class="t-value" id="tel-heading">15° NNE</span>
       </div>
       <div class="telemetry-card">
         <span class="t-label">LATITUDE</span>
-        <span class="t-value" id="tel-lat">36.11470</span>
+        <span class="t-value" id="tel-lat">36.08200</span>
       </div>
       <div class="telemetry-card">
         <span class="t-label">LONGITUDE</span>
@@ -114,23 +131,29 @@
         <div class="progress-bar-bg">
           <div class="progress-bar-fill" id="tel-progress-bar"></div>
         </div>
-        <span class="t-sub" id="tel-distance">0.0 / 0.0 mi</span>
+        <span class="t-sub" id="tel-distance">0.00 / 3.65 mi</span>
       </div>
     </div>
   </aside>
 
-  <!-- API Key Modal (shown only if no config.local.js or localStorage key is found) -->
+  <!-- Engine & API Key Diagnostic Modal -->
   <div id="api-modal" class="modal-backdrop hidden">
     <div class="modal-card">
-      <h3>Google Maps Platform API Key</h3>
-      <p>
-        Enter your Google Maps API key to load the Las Vegas Strip map tiles, Places, and Routes.
-        Keys are saved locally in your browser's <code>localStorage</code> and never committed to Git.
+      <h3>Map Engine & Google Maps API Key</h3>
+      <p id="api-diagnostic-msg">
+        Configure your Google Maps Platform key or switch between the 3D WebGL Vegas Strip Engine and Google Maps JS SDK.
       </p>
-      <input id="api-key-input" type="password" placeholder="AIzaSy..." />
+      <label class="modal-label" for="api-key-input">Google Maps / AI Studio API Key</label>
+      <input id="api-key-input" type="text" placeholder="AIzaSy..." />
+      <div class="modal-note">
+        <strong>Note:</strong> If your key was created in Google AI Studio for Gemini, enable the
+        <em>Maps JavaScript API</em> in your Google Cloud Console for direct Google SDK rendering.
+        Until enabled, the built-in <strong>3D WebGL Vegas Strip Engine</strong> renders Google Map tiles, 3D Strip buildings, and AV simulation automatically.
+      </div>
       <div class="modal-actions">
-        <button id="save-api-key-btn" class="primary-btn">Load Map</button>
-        <button id="close-api-modal-btn" class="secondary-btn">Cancel</button>
+        <button id="save-api-key-btn" class="primary-btn">Save & Reload</button>
+        <button id="try-gmaps-sdk-btn" class="secondary-btn">Test Google SDK</button>
+        <button id="close-api-modal-btn" class="secondary-btn">Close</button>
       </div>
     </div>
   </div>

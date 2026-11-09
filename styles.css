@@ -32,6 +32,8 @@ body, html {
 }
 
 .map-canvas {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
 }
@@ -67,7 +69,7 @@ body, html {
   border-radius: 28px;
   padding: 6px 8px 6px 14px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
-  min-width: 340px;
+  min-width: 360px;
 }
 
 .brand-badge {
@@ -99,7 +101,7 @@ body, html {
   border: none;
   color: var(--text-main);
   font-size: 0.9rem;
-  width: 220px;
+  width: 210px;
   outline: none;
 }
 
@@ -129,7 +131,7 @@ body, html {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  max-width: calc(100vw - 720px);
+  max-width: calc(100vw - 820px);
   padding: 2px 4px;
   scrollbar-width: none;
 }
@@ -163,7 +165,8 @@ body, html {
 .layer-controls {
   margin-left: auto;
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
   background: var(--bg-glass);
   backdrop-filter: blur(12px);
   padding: 5px;
@@ -173,6 +176,9 @@ body, html {
 }
 
 .mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: transparent;
   color: var(--text-muted);
   border: none;
@@ -196,6 +202,56 @@ body, html {
 .mode-btn.subtle {
   border-left: 1px solid var(--border-subtle);
   border-radius: 0 18px 18px 0;
+  padding-left: 10px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.ok {
+  background: var(--accent-green);
+  box-shadow: 0 0 6px var(--accent-green);
+}
+
+.status-dot.warn {
+  background: var(--accent-gold);
+  box-shadow: 0 0 6px var(--accent-gold);
+}
+
+/* Camera HUD */
+.camera-hud {
+  position: fixed;
+  bottom: 24px;
+  right: 60px;
+  z-index: 20;
+  display: flex;
+  gap: 6px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+.hud-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hud-btn:hover {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
 }
 
 /* AV Simulation Panel */
@@ -203,7 +259,7 @@ body, html {
   position: fixed;
   bottom: 24px;
   left: 16px;
-  width: 340px;
+  width: 345px;
   background: var(--bg-glass);
   backdrop-filter: blur(16px);
   border: 1px solid var(--border-subtle);
@@ -379,7 +435,53 @@ body, html {
   width: 0%;
   height: 100%;
   background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
-  transition: width 0.1s linear;
+  transition: width 0.08s linear;
+}
+
+/* Custom Ego Car & Landmark Markers */
+.ego-car-marker {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.ego-car-inner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(52, 168, 83, 0.95);
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 0 16px rgba(52, 168, 83, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  transform-origin: center center;
+}
+
+.landmark-pin {
+  background: rgba(20, 24, 33, 0.9);
+  color: #fbbc04;
+  border: 1px solid rgba(251, 188, 4, 0.6);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s;
+}
+
+.landmark-pin:hover {
+  transform: scale(1.08);
+  background: #fbbc04;
+  color: #111;
 }
 
 /* Modal */
@@ -395,7 +497,7 @@ body, html {
 }
 
 .modal-card {
-  width: 420px;
+  width: 460px;
   background: var(--bg-panel);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
@@ -408,10 +510,17 @@ body, html {
 }
 
 .modal-card p {
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   color: var(--text-muted);
   line-height: 1.45;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
+}
+
+.modal-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 5px;
 }
 
 .modal-card input {
@@ -422,6 +531,17 @@ body, html {
   background: #0d1017;
   color: var(--text-main);
   font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+
+.modal-note {
+  font-size: 0.78rem;
+  color: #cbd2e1;
+  background: rgba(66, 133, 244, 0.12);
+  border: 1px solid rgba(66, 133, 244, 0.3);
+  border-radius: 8px;
+  padding: 10px 12px;
+  line-height: 1.45;
   margin-bottom: 14px;
 }
 
