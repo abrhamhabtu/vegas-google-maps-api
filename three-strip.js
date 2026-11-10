@@ -1,121 +1,116 @@
-/** Vegas v2 models over the existing Google map, sharing MapLibre's WebGL context. */
+/** The reference city's road users and geometry, on the existing Google map. */
 import { ORIGIN, toLocal, mercatorSouth, adaptVertexShader } from './landmarks/georeference.mjs';
+import { decode } from './landmarks/vendor/core/data.js';
 import { theme } from './landmarks/vendor/core/theme.js';
-import { buildBuildings } from './landmarks/vendor/map/buildings.js';
-import { buildLandmarks } from './landmarks/vendor/landmarks/landmarks.js';
-import { buildResorts } from './landmarks/vendor/landmarks/resorts.js';
-import { buildArenas } from './landmarks/vendor/landmarks/arenas.js';
-import { buildGuitar } from './landmarks/vendor/landmarks/guitar.js';
-import { buildDetails } from './landmarks/vendor/landmarks/details.js';
-import { welcomeSign } from './landmarks/vendor/landmarks/welcome.js';
+import { Shadows } from './landmarks/vendor/core/shadows.js';
+import { buildCity } from './world/city.js';
+import { startFleet } from './world/fleet-runtime.js';
 
 const THREE = window.THREE;
-const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-const decodePoints = p => Array.from({ length: p.length / 2 }, (_, i) => [p[i * 2] / 10, p[i * 2 + 1] / 10]);
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+window.VEGAS_ROAD_WORLD_ENABLED = true;
+document.documentElement.classList.add('world-enabled');
 
-function decodeSnapshot(raw) {
-  if (raw.origin.lat !== ORIGIN.lat || raw.origin.lon !== ORIGIN.lon) throw new Error('Landmark coordinate origin does not match the map adapter.');
-  const decode = row => ({ ...row, pts: decodePoints(row.p) });
-  return {
-    ...raw,
-    buildings: raw.buildings.map(decode),
-    areas: raw.areas.map(decode),
-    roads: raw.roads.map(decode),
-    walks: raw.walks.map(decode),
-    rail: raw.rail.map(decode),
-    pois: raw.pois.map(p => ({ ...p, x: p.p[0] / 10, z: p.p[1] / 10 })),
-  };
-}
-
-// All materials project in the same geographic frame, including instances and built-ins.
 function prepareMaterials(root) {
-  const materials = new Set();
   root.traverse(object => {
-    for (const material of [].concat(object.material || [])) materials.add(material);
+    for (const material of [].concat(object.material || [])) {
+      if (material.userData.vegasProjected) continue;
+      material.userData.vegasProjected = true;
+      const previous = material.onBeforeCompile;
+      material.onBeforeCompile = function(shader, renderer) {
+        previous.call(this, shader, renderer);
+        shader.vertexShader = adaptVertexShader(shader.vertexShader, THREE.ShaderChunk.project_vertex);
+      };
+      material.customProgramCacheKey = () => 'vegas-mercator-city-r160-v2';
+      material.needsUpdate = true;
+    }
   });
-  for (const material of materials) {
-    if (material.userData.vegasProjected) continue;
-    material.userData.vegasProjected = true;
-    const previousCompile = material.onBeforeCompile;
-    material.onBeforeCompile = function(shader, renderer) {
-      previousCompile.call(this, shader, renderer);
-      shader.vertexShader = adaptVertexShader(shader.vertexShader, THREE.ShaderChunk.project_vertex);
-    };
-    material.customProgramCacheKey = () => 'vegas-mercator-r160-v1';
-    material.needsUpdate = true;
-  }
-}
-
-function createEgoCar() {
-  const group = new THREE.Group();
-  const paint = new THREE.MeshBasicMaterial({ color: '#e8f0ed' });
-  const glass = new THREE.MeshBasicMaterial({ color: '#183b46' });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.95, 1.05, 4.7), paint);
-  body.position.y = 0.8;
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.7, 2.5), glass);
-  cabin.position.set(0, 1.6, 0.1);
-  const lidar = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.25, 12), glass);
-  lidar.position.y = 2.1;
-  const ring = new THREE.Mesh(new THREE.RingGeometry(3.2, 3.45, 40).rotateX(-Math.PI / 2),
-    new THREE.MeshBasicMaterial({ color: '#24bba2', transparent: true, opacity: 0.6, depthWrite: false }));
-  ring.position.y = 0.2;
-  group.add(body, cabin, lidar, ring);
-  return group;
 }
 
 window.createVegasThreeLayer = function() {
   const scene = new THREE.Scene();
-  // Source glow shaders explicitly use exponential fog uniforms.
   scene.fog = new THREE.FogExp2(theme.c('fog'), 0.00003);
   const camera = new THREE.PerspectiveCamera();
   camera.matrixAutoUpdate = false;
-  const city = new THREE.Group();
-  const ego = createEgoCar();
-  ego.visible = false;
-  scene.add(city, ego);
-  const animations = [];
-  const frustum = new THREE.Frustum();
-  const mvp = new THREE.Matrix4();
-  const target = new THREE.Vector3();
-  let renderer, map, timer, abortController;
-  let disposed = false, visible = true, ready = false;
-  let lastTime = 0, animationTime = 0;
+  const ambient = new THREE.HemisphereLight('#dceeff', '#70716b', 1.1);
+  const sun = new THREE.DirectionalLight('#fff0d8', 1.1);
+  scene.add(ambient, sun);
+  const animations = [], simulationAnimations = [], disposers = [], scheduled = new Set();
+  const frustum = new THREE.Frustum(), mvp = new THREE.Matrix4(), target = new THREE.Vector3();
+  let renderer, map, city, runtime, timer, simulationTimer, abortController, shadows;
+  let disposed = false, visible = true, detailed = true, labelsEnabled = true, ready = false;
+  let lastRender = 0, lastTick = 0, animationTime = 0, simulationTime = 0;
   let themeName = 'day';
 
   const requestFrame = () => { if (!disposed && !document.hidden) map?.triggerRepaint(); };
-  const engine = {
-    animate(object, update, bounds) { animations.push({ object, update, bounds }); },
-  };
-
-  function status(text, state) {
+  function status(text, state = 'loading') {
     const element = document.getElementById('scene-status');
     if (element) { element.textContent = text; element.dataset.state = state; }
     document.documentElement.dataset.scene = state;
   }
+  const engine = {
+    scene, camera, afterRender: [], updaters: [],
+    get canvas() { return map.getCanvas(); },
+    get renderer() { return renderer; },
+    get shadowSize() { return theme.uniforms.uNight.value < 0.7 ? 1024 : 0; },
+    animate(object, update, bounds) {
+      const entry = { object, update, bounds };
+      (object.name === 'road users' ? simulationAnimations : animations).push(entry);
+    },
+    invalidate: requestFrame,
+    progress: status,
+    yield: () => new Promise(resolve => setTimeout(resolve, 0)),
+    schedule(callback, delay) {
+      const id = setTimeout(() => { scheduled.delete(id); if (!disposed) callback(); }, delay);
+      scheduled.add(id);
+      return id;
+    },
+    listen(object, type, listener, options) {
+      object.addEventListener(type, listener, options);
+      disposers.push(() => object.removeEventListener(type, listener, options));
+    },
+  };
+
+  // This clock is independent of camera motion, landmark culling and reduced-motion
+  // decoration. The source Driver still substeps each update for its actual physics.
+  function tick() {
+    clearTimeout(simulationTimer);
+    if (disposed || document.hidden || !runtime) return;
+    const now = performance.now() / 1000;
+    const dt = Math.min(0.1, Math.max(0, now - (lastTick || now)));
+    lastTick = now;
+    if (!runtime.fleet.paused) {
+      simulationTime += dt;
+      for (const animation of simulationAnimations) animation.update({ t: simulationTime, dt });
+    }
+    runtime.controls.advance(dt);
+    requestFrame();
+    simulationTimer = setTimeout(tick, 33);
+  }
 
   async function load() {
-    status('Loading landmarks…', 'loading');
+    status('Preparing Las Vegas…');
     try {
       abortController = new AbortController();
       const response = await fetch('landmarks/footprints.json', { signal: abortController.signal });
-      if (!response.ok) throw new Error(`Footprints: HTTP ${response.status}`);
-      const data = decodeSnapshot(await response.json());
+      if (!response.ok) throw new Error(`City data: HTTP ${response.status}`);
+      const raw = await response.json();
       if (disposed) return;
-      // These builders share the same source snapshot and replacement ownership rules.
-      city.add(buildLandmarks(data, engine));
-      city.add(buildArenas(data, engine));
-      city.add(buildGuitar(data, engine));
-      city.add(buildResorts(data, engine).group);
-      city.add(buildDetails(data, engine));
-      city.add(welcomeSign(null, engine));
-      const mask = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
-      mask.needsUpdate = true;
-      city.add(buildBuildings(data, {
-        canopies: new Set(), mask,
-        maskOrigin: new THREE.Vector2(0, 0), maskSize: new THREE.Vector2(1, 1),
-      }).group);
-      city.updateMatrixWorld(true);
+      if (raw.origin.lat !== ORIGIN.lat || raw.origin.lon !== ORIGIN.lon) throw new Error('City coordinate origin does not match the map.');
+      const data = decode(raw);
+      await engine.yield();
+      if (disposed) return;
+      city = await buildCity(data, engine);
+      if (disposed) return;
+      scene.add(city.buildings, city.roads, city.detail);
+      city.buildings.visible = visible;
+      city.roads.visible = city.detail.visible = detailed;
+      scene.updateMatrixWorld(true);
       prepareMaterials(scene);
+      runtime = startFleet(map, data, city, engine, prepareMaterials);
+      runtime.labels.enabled = labelsEnabled;
+      shadows = new Shadows(engine, () => runtime.controls.cur);
+      for (const root of [city.buildings, city.detail]) shadows.addCasters(root);
       for (const animation of animations) {
         if (!animation.bounds || animation.bounds.radius > 2000) {
           animation.bounds = new THREE.Box3().setFromObject(animation.object).getBoundingSphere(new THREE.Sphere());
@@ -123,13 +118,14 @@ window.createVegasThreeLayer = function() {
       }
       theme.apply(themeName);
       ready = true;
-      status('Landmarks ready', 'ready');
+      status('Live city · Zoox, Waymo & Tesla', 'ready');
       requestFrame();
+      tick();
       window.dispatchEvent(new CustomEvent('vegas-landmarks-ready', { detail: { footprints: data.buildings.length } }));
     } catch (error) {
       if (disposed || error.name === 'AbortError') return;
-      status('Landmarks unavailable · reload to retry', 'error');
-      console.error('Unable to load Vegas landmarks:', error);
+      status('City unavailable · reload to retry', 'error');
+      console.error('Unable to prepare Las Vegas:', error);
     }
   }
 
@@ -139,17 +135,18 @@ window.createVegasThreeLayer = function() {
       map = mapInstance;
       const origin = maplibregl.MercatorCoordinate.fromLngLat([ORIGIN.lon, ORIGIN.lat], 0);
       const scale = origin.meterInMercatorCoordinateUnits();
-      // Source is +east/+up/+south; Mercator is +east/+south/+up.
       this.modelMatrix = new THREE.Matrix4().set(
-        scale, 0, 0, origin.x,
-        0, 0, scale, origin.y,
-        0, scale, 0, origin.z,
-        0, 0, 0, 1,
+        scale, 0, 0, origin.x, 0, 0, scale, origin.y,
+        0, scale, 0, origin.z, 0, 0, 0, 1,
       );
       renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
       renderer.autoClear = false;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
-      document.addEventListener('visibilitychange', requestFrame);
+      engine.listen(document, 'visibilitychange', () => {
+        clearTimeout(timer); clearTimeout(simulationTimer);
+        lastTick = 0;
+        if (!document.hidden) { requestFrame(); tick(); }
+      });
       load();
     },
     setTheme(name) {
@@ -160,69 +157,81 @@ window.createVegasThreeLayer = function() {
     },
     setBuildingsVisible(next) {
       visible = next;
-      city.visible = next;
-      clearTimeout(timer);
+      if (city) city.buildings.visible = next;
       requestFrame();
     },
-    updateEgoVehiclePose(lat, lng, heading) {
-      const [x, z] = toLocal(lat, lng);
-      ego.position.set(x, 0.1, z);
-      ego.rotation.y = -heading * Math.PI / 180;
-      ego.visible = true;
+    setStreetsVisible(next) {
+      detailed = next;
+      if (city) city.roads.visible = city.detail.visible = next;
       requestFrame();
     },
+    setLabelsVisible(next) {
+      labelsEnabled = next;
+      if (runtime) { runtime.labels.enabled = next; runtime.labels.lastKey = ''; runtime.labels.update(); }
+      requestFrame();
+    },
+    getFollowElevation() { return runtime?.controls.targetElevation || 0; },
+    stopFollowing() {
+      if (runtime) {
+        if (runtime.controls.driving) runtime.fleet.setManual(false);
+        runtime.fleet.following = false;
+        runtime.fleet.onChange();
+      }
+    },
+    updateEgoVehiclePose() { /* The imported Fleet owns all road users. */ },
     render(gl, matrix) {
       if (disposed) return;
       clearTimeout(timer);
-      const now = performance.now() / 1000;
-      const dt = Math.min(now - (lastTime || now), 0.1);
-      lastTime = now;
+      const now = performance.now() / 1000, dt = Math.min(now - (lastRender || now), 0.1);
+      lastRender = now;
       const transitioning = theme.step(dt);
       scene.fog.color.copy(theme.c('fog'));
       scene.fog.density = theme.current.fogDensity * 0.35;
       animationTime += reducedMotion.matches ? 0 : dt;
       theme.uniforms.uTime.value = animationTime;
-
+      sun.position.copy(theme.uniforms.uSunDir.value).multiplyScalar(1000);
+      sun.intensity = theme.uniforms.uSun.value;
+      ambient.intensity = theme.uniforms.uAmbient.value;
       mvp.fromArray(matrix).multiply(this.modelMatrix);
       frustum.setFromProjectionMatrix(mvp);
-      let animateVisible = false;
-      if (visible && ready && map.getZoom() > 12) {
-        for (const animation of animations) {
-          if (animation.bounds && !frustum.intersectsSphere(animation.bounds)) continue;
-          animation.update({ t: animationTime, dt });
-          animateVisible = true;
-        }
-      }
 
-      // Give glass and reflective facades a real camera position while retaining
-      // MapLibre's exact view/projection matrix for geometry placement.
-      const center = map.getCenter();
-      const [cx, cz] = toLocal(center.lat, center.lng);
+      const center = map.getCenter(), [cx, cz] = toLocal(center.lat, center.lng);
       const pitch = map.getPitch() * Math.PI / 180, bearing = map.getBearing() * Math.PI / 180;
       const pixelsPerMeter = 512 * 2 ** map.getZoom() / (2 * Math.PI * 6378137 * Math.cos(center.lat * Math.PI / 180));
       const distance = map.getCanvas().clientHeight * 1.5 / pixelsPerMeter;
-      const horizontal = distance * Math.sin(pitch);
-      camera.position.set(cx - Math.sin(bearing) * horizontal, distance * Math.cos(pitch), mercatorSouth(cz) + Math.cos(bearing) * horizontal);
+      const horizontal = distance * Math.sin(pitch), elevation = this.getFollowElevation();
+      camera.position.set(cx - Math.sin(bearing) * horizontal, elevation + distance * Math.cos(pitch), mercatorSouth(cz) + Math.cos(bearing) * horizontal);
       camera.up.set(0, 1, 0);
-      camera.lookAt(target.set(cx, 0, mercatorSouth(cz)));
-      camera.updateMatrix();
-      camera.updateMatrixWorld(true);
+      camera.lookAt(target.set(cx, elevation, mercatorSouth(cz)));
+      camera.updateMatrix(); camera.updateMatrixWorld(true);
       camera.projectionMatrix.multiplyMatrices(mvp, camera.matrixWorld);
       camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+      runtime?.controls.sync();
 
+      renderer.resetState();
+      let updating = false;
+      const simulationFrame = { t: simulationTime, dt: runtime?.fleet.paused ? 0 : dt };
+      for (const updater of engine.updaters) updating = updater(simulationFrame) || updating;
+      if (ready) {
+        for (const animation of animations) {
+          if (!animation.object.parent || (animation.bounds && !frustum.intersectsSphere(animation.bounds))) continue;
+          animation.update({ t: animationTime, dt });
+        }
+      }
       renderer.resetState();
       renderer.clearDepth();
       renderer.render(scene, camera);
-      // Map interactions render at native cadence; ambient shows run at 20fps.
-      if (!document.hidden && (transitioning || (animateVisible && !reducedMotion.matches))) {
-        timer = setTimeout(requestFrame, transitioning ? 16 : 50);
-      }
+      for (const callback of engine.afterRender) callback({ t: simulationTime, dt });
+      if (!document.hidden && (transitioning || updating || (!runtime && ready))) timer = setTimeout(requestFrame, transitioning ? 16 : 50);
     },
     onRemove() {
       disposed = true;
-      clearTimeout(timer);
+      clearTimeout(timer); clearTimeout(simulationTimer);
       abortController?.abort();
-      document.removeEventListener('visibilitychange', requestFrame);
+      for (const id of scheduled) clearTimeout(id);
+      for (const dispose of disposers) dispose();
+      runtime?.destroy();
+      shadows?.rt?.dispose();
       const geometries = new Set(), materials = new Set(), textures = new Set();
       scene.traverse(object => {
         if (object.geometry) geometries.add(object.geometry);

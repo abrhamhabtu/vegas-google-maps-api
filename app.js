@@ -130,9 +130,10 @@ function initWebGLVegasMap() {
     zoom: 16.3,
     pitch: 55,
     bearing: -12,
-    maxZoom: 21.5,
+    maxZoom: 23.5,
     antialias: true,
     maxPitch: 82,
+    transformCameraUpdate: () => ({ elevation: threeStripLayer?.getFollowElevation?.() || 0 }),
   });
 
   // Navigation lives in the compact camera dock; keep map attribution unobstructed.
@@ -258,10 +259,10 @@ function initWebGLVegasMap() {
     }
 
     // 6. Render interactive Landmark badges
-    renderLandmarkMarkers();
+    if (!window.VEGAS_ROAD_WORLD_ENABLED) renderLandmarkMarkers();
 
     // 7. Load default Full Strip AV Corridor & position vehicle at MGM Rd / Bruno Mars Dr
-    loadPresetRoute("full-strip", true);
+    if (!window.VEGAS_ROAD_WORLD_ENABLED) loadPresetRoute("full-strip", true);
   });
 }
 
@@ -287,6 +288,7 @@ function renderLandmarkMarkers() {
 
 function flyToLocation(lat, lng, zoom = 17.0, tilt = 60, heading = 0) {
   if (glMap) {
+    threeStripLayer?.stopFollowing?.();
     glMap.flyTo({
       center: [lng, lat],
       zoom: zoom,

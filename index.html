@@ -8,7 +8,9 @@
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <link rel="stylesheet" href="styles.css?v=codex-landmarks-1" />
+  <link rel="stylesheet" href="styles.css?v=living-city-1" />
+  <link rel="stylesheet" href="world/fleet-panel.css?v=living-city-1" />
+  <link rel="stylesheet" href="world/city.css?v=living-city-1" />
   <!-- Load local config if present (gitignored) -->
   <script src="config.local.js" onerror="console.info('No config.local.js found; using stored or fallback config.')"></script>
 </head>
@@ -59,6 +61,10 @@
         <button class="chip" data-view="fremont" data-lat="36.1707" data-lng="-115.1439" data-zoom="17.0" data-tilt="58" data-heading="295"><span>Fremont Street</span><small>DOWNTOWN</small></button>
         <button class="chip" data-view="welcome" data-lat="36.0820593" data-lng="-115.1727735" data-zoom="19.1" data-tilt="57" data-heading="0"><span>Welcome to Las Vegas sign</span><small>LANDMARK</small></button>
         <button class="chip" data-view="lanes" data-lat="36.10305" data-lng="-115.17275" data-zoom="19.1" data-tilt="0" data-heading="0"><span>MGM Road × Bruno Mars Drive</span><small>STREET LANES</small></button>
+        <button class="chip" data-view="bridges" data-lat="36.10035" data-lng="-115.1728" data-zoom="18.2" data-tilt="72" data-heading="0"><span>South Strip pedestrian bridges</span><small>STREET LEVEL</small></button>
+        <button class="chip" data-view="i15" data-lat="36.1004" data-lng="-115.1828" data-zoom="16.7" data-tilt="65" data-heading="-25"><span>I-15 & Tropicana interchange</span><small>FREEWAY BRIDGES</small></button>
+        <button class="chip" data-view="flamingo-bridge" data-lat="36.1147" data-lng="-115.1823" data-zoom="17.1" data-tilt="65" data-heading="-20"><span>Flamingo over I-15</span><small>FREEWAY BRIDGE</small></button>
+        <button class="chip" data-view="aria-tram" data-lat="36.1072" data-lng="-115.1762" data-zoom="18.2" data-tilt="66" data-heading="-20"><span>ARIA tram & valet drives</span><small>RAIL CLEARANCE</small></button>
       </div>
       <p id="places-empty" class="empty-state hidden">No matching landmarks.</p>
     </section>
@@ -75,6 +81,8 @@
       <button id="toggle-bldg-btn" class="mode-btn active" aria-pressed="true">3D buildings <span>ON</span></button>
       <button id="toggle-satellite-btn" class="mode-btn" aria-pressed="false">Satellite <span>OFF</span></button>
       <button id="toggle-traffic-btn" class="mode-btn" aria-pressed="false">Live traffic <span>OFF</span></button>
+      <button id="toggle-streets-btn" class="mode-btn active" aria-pressed="true">City streets & bridges <span>ON</span></button>
+      <button id="toggle-labels-btn" class="mode-btn active" aria-pressed="true">Landmark badges <span>ON</span></button>
       <button id="api-key-btn" class="mode-btn subtle" title="Map settings"><span id="engine-badge-dot" class="status-dot ok"></span><span id="engine-badge-text">Google map settings</span></button>
     </div>
   </header>
@@ -96,6 +104,8 @@
   <div class="map-hint">Drag to explore <span>·</span> Shift + drag to orbit <span>·</span> Scroll to zoom</div>
   <button id="show-controls" class="floating-button hidden">Show controls</button>
   <div id="map-announcement" class="sr-only" role="status" aria-live="polite"></div>
+  <div id="labels" aria-hidden="true"></div>
+  <div id="driving-ui" aria-label="Vehicle testing"></div>
 
   <!-- Autonomous Vehicle (AV) Simulation Dock -->
   <aside class="av-panel collapsed" id="av-panel" aria-label="Robotaxi simulation">

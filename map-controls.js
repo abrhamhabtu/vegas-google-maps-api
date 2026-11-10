@@ -63,6 +63,12 @@ window.setupMapChrome = function({ getMap, getLayer }) {
       golden: { saturation: -0.12, max: 0.92, min: 0.025, contrast: 0.04 },
       night: { saturation: -0.75, max: 0.40, min: 0.015, contrast: 0.14 },
     }[currentTheme];
+    const sky = {
+      day: ['#6ea8e8', '#dfe9f2', '#d6e0e8'],
+      golden: ['#4b6fa8', '#ffc58a', '#e9b98e'],
+      night: ['#050814', '#161d36', '#121628'],
+    }[currentTheme];
+    map.setSky({ 'sky-color': sky[0], 'horizon-color': sky[1], 'fog-color': sky[2], 'sky-horizon-blend': 0.65, 'horizon-fog-blend': 0.5 });
     for (const id of ['google-roadmap-layer', 'google-satellite-layer']) {
       if (!map.getLayer(id)) continue;
       map.setPaintProperty(id, 'raster-saturation', palette.saturation);
@@ -88,6 +94,15 @@ window.setupMapChrome = function({ getMap, getLayer }) {
     announce(`${name === 'golden' ? 'Sunset' : name} lighting`);
   }
   document.querySelectorAll('.theme-btn').forEach(button => button.addEventListener('click', () => setTheme(button.dataset.theme)));
+  for (const [id, method] of [['toggle-streets-btn', 'setStreetsVisible'], ['toggle-labels-btn', 'setLabelsVisible']]) {
+    byId(id).addEventListener('click', () => {
+      const button = byId(id), selected = !button.classList.contains('active');
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', String(selected));
+      button.lastElementChild.textContent = selected ? 'ON' : 'OFF';
+      getLayer()?.[method](selected);
+    });
+  }
 
   const panel = byId('av-panel'), panelBody = byId('av-panel-body'), collapse = byId('av-panel-toggle');
   collapse.addEventListener('click', () => {
@@ -133,6 +148,7 @@ window.setupMapChrome = function({ getMap, getLayer }) {
       closePanels(true); showControls(); return;
     }
     if (!byId('api-modal').classList.contains('hidden')) return;
+    if (window.vegasFleet?.selected.phase === 'manual') return;
     if (event.altKey || event.ctrlKey || event.metaKey || /INPUT|SELECT|TEXTAREA/.test(event.target.tagName) || event.target.isContentEditable) return;
     switch (event.key.toLowerCase()) {
       case 't': setTheme(['day', 'golden', 'night'][(['day', 'golden', 'night'].indexOf(currentTheme) + 1) % 3]); break;
@@ -169,6 +185,7 @@ window.setupMapChrome = function({ getMap, getLayer }) {
     const map = getMap();
     map.scrollZoom.setWheelZoomRate(1 / 600);
     map.on('rotate', () => { byId('compass-needle').style.transform = `rotate(${-map.getBearing()}deg)`; });
+    map.on('dragstart', () => getLayer()?.stopFollowing?.());
     setTheme(hash.get('theme') || 'day');
     const view = hash.get('view');
     const chip = [...document.querySelectorAll('#landmark-chips .chip')].find(item => item.dataset.view === view);

@@ -1,0 +1,173 @@
+/* Original ride.ts controls, using the map's day / golden / night tokens. */
+#driving-ui {
+  position: fixed;
+  inset: 0;
+  z-index: 16;
+  pointer-events: none;
+  --fleet-surface: var(--panel);
+  --fleet-surface-hi: var(--panel-solid, var(--panel));
+  --fleet-muted: var(--text-muted);
+  --fleet-text: var(--text-main);
+  --fleet-wash: var(--hover, rgba(127, 127, 127, .12));
+  --fleet-on-accent: #fff;
+}
+body[data-theme='night'] #driving-ui { --fleet-on-accent: #172a28; }
+body[data-theme='golden'] #driving-ui { --fleet-on-accent: #fffaf5; }
+#driving-ui > * { pointer-events: auto; }
+#driving-ui .ride,
+#driving-ui .dr-pill,
+#driving-ui .lab,
+#driving-ui .lab-toggle {
+  color: var(--fleet-text);
+  background: var(--fleet-surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow, 0 4px 24px #182c3b19);
+  backdrop-filter: blur(22px) saturate(1.25);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  font-size: 12px;
+}
+.hide-chrome #driving-ui,
+#driving-ui.dr-hidden > *,
+#driving-ui [hidden] { display: none !important; }
+body.fleet-panel-mounted.fleet-following .view-caption,
+body.fleet-panel-mounted.fleet-following .map-hint { display: none; }
+#driving-ui button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+#driving-ui button:focus-visible,
+#driving-ui select:focus-visible,
+#driving-ui input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#driving-ui button:hover { background-color: var(--fleet-wash); }
+#driving-ui .ride {
+  position: absolute;
+  left: 20px;
+  bottom: max(36px, env(safe-area-inset-bottom));
+  width: 292px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100dvh - 196px);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 13px;
+}
+#driving-ui .ride-head { display: flex; gap: 4px; align-items: center; flex: none; }
+#driving-ui .ride-head .seg { flex: 1; min-width: 0; }
+#driving-ui .ride-fold { width: 24px; height: 32px; display: grid; place-items: center; flex: none; border-radius: 6px; color: var(--fleet-muted); }
+#driving-ui .ride-fold svg { width: 12px; height: 12px; transition: transform .18s; }
+#driving-ui .ride.folded .ride-fold svg { transform: rotate(180deg); }
+#driving-ui .ride.folded .ride-body { display: none; }
+#driving-ui .ride-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 2px; scrollbar-width: thin; overscroll-behavior: contain; }
+#driving-ui .seg { display: flex; gap: 2px; padding: 3px; background: var(--fleet-wash); border-radius: 8px; min-width: 0; }
+#driving-ui .seg button { display: flex; flex: 1; align-items: center; justify-content: center; gap: 4px; min-width: 0; min-height: 28px; padding: 4px; border-radius: 6px; color: var(--fleet-muted); font-size: 11px; font-weight: 600; white-space: nowrap; transition: background .15s, color .15s; }
+#driving-ui .seg i { width: 7px; height: 7px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px #0002; }
+#driving-ui .seg button.on { background: var(--fleet-surface-hi); color: var(--fleet-text); box-shadow: 0 1px 3px #0001; }
+#driving-ui .seg-mode button { padding: 4px 2px; font-size: 10px; }
+#driving-ui .seg-mode button[data-key='madmax'].on { background: #c63831; color: #fff; }
+#driving-ui .seg-mode button[data-key='hurry'].on { background: #a65312; color: #fff; }
+#driving-ui .ride-book { display: flex; flex-direction: column; gap: 6px; }
+#driving-ui .ride-row { display: flex; align-items: center; gap: 8px; }
+#driving-ui .ride-row > span { width: 48px; flex: none; color: var(--fleet-muted); font-size: 11px; }
+#driving-ui .ride-row select { flex: 1; min-width: 0; width: auto; min-height: 34px; padding: 4px 6px; font: inherit; font-size: 11px; font-weight: 600; color: var(--fleet-text); background: var(--fleet-wash); border: 1px solid var(--line); border-radius: 7px; }
+#driving-ui .ride-go { min-height: 36px; border-radius: 8px; background: var(--accent); color: var(--fleet-on-accent); font-weight: 650; transition: filter .15s; }
+#driving-ui .ride-go:hover { background: var(--accent); filter: brightness(1.08); }
+#driving-ui .ride-trip { position: relative; display: flex; flex-direction: column; gap: 4px; }
+#driving-ui .ride-title { padding-right: 48px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
+#driving-ui .ride-sub { color: var(--fleet-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+#driving-ui .ride-bar { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+#driving-ui .ride-bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 2px; transition: width .25s linear; }
+#driving-ui .ride-cancel { position: absolute; top: -4px; right: 0; min-height: 28px; padding: 4px; border-radius: 5px; color: var(--fleet-muted); font-size: 11px; font-weight: 600; }
+#driving-ui .ride-keys { padding: 4px 0; color: var(--fleet-muted); font-size: 10px; text-align: center; line-height: 1.8; }
+#driving-ui .ride-keys kbd { font: inherit; font-weight: 600; background: var(--fleet-wash); border: 1px solid var(--line); border-radius: 3px; padding: 1px 3px; margin-right: 2px; }
+#driving-ui .ride-recentre { min-height: 30px; border-radius: 7px; color: var(--accent); font-size: 11px; font-weight: 600; }
+#driving-ui .fleet-transport { display: flex; gap: 4px; align-items: center; border-top: 1px solid var(--line); padding-top: 8px; }
+#driving-ui .fleet-city-status { flex: 1; color: var(--fleet-muted); font-size: 10px; white-space: nowrap; }
+#driving-ui .fleet-city-status::before { display: inline-block; content: ''; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: var(--accent); }
+#driving-ui .fleet-transport[data-paused='true'] .fleet-city-status::before { background: var(--fleet-muted); }
+#driving-ui .fleet-transport button { min-height: 30px; padding: 3px 6px; border-radius: 6px; color: var(--fleet-muted); font-size: 10px; font-weight: 600; white-space: nowrap; }
+#driving-ui .fleet-pause { background: var(--fleet-wash); color: var(--fleet-text); }
+#driving-ui .dr-pill {
+  position: absolute;
+  top: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: calc(100vw - 48px);
+  min-height: 36px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+#driving-ui .dr-pill > b { min-width: 20px; font-size: 18px; line-height: 1; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.04em; text-align: right; }
+#driving-ui .dr-unit { color: var(--fleet-muted); font-size: 10px; margin-left: -4px; }
+#driving-ui .dr-limit { flex: none; padding: 1px 3px; background: #fff; border: 1.5px solid #1c1c1c; border-radius: 4px; color: #1c1c1c; font-size: 10px; line-height: 1.2; font-weight: 750; font-variant-numeric: tabular-nums; }
+#driving-ui .dr-turn,
+#driving-ui .dr-think { min-width: 0; padding-left: 8px; border-left: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; }
+#driving-ui .dr-turn { max-width: 240px; font-weight: 600; }
+#driving-ui .dr-think { color: var(--fleet-muted); }
+#driving-ui .dr-think.alarm { color: #bf352e; font-weight: 700; }
+body[data-theme='night'] #driving-ui .dr-think.alarm { color: #ff9288; }
+#driving-ui .lab-toggle { position: absolute; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 6px; align-items: center; min-height: 32px; padding: 4px 14px; border-radius: 999px; color: var(--fleet-muted); font-size: 11px; font-weight: 600; }
+#driving-ui .lab-toggle svg { width: 14px; height: 14px; }
+#driving-ui .lab-toggle.on { color: var(--accent); }
+#driving-ui .lab { position: absolute; left: 50%; bottom: max(56px, calc(env(safe-area-inset-bottom) + 44px)); transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; width: min(540px, calc(100vw - 660px)); min-width: 0; max-height: calc(100dvh - 196px); padding: 10px; border-radius: 13px; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
+#driving-ui .lab-chips { display: flex; gap: 4px; min-width: 0; padding: 2px; overflow-x: auto; scrollbar-width: thin; overscroll-behavior-x: contain; }
+#driving-ui .lab-chips button { flex: none; min-height: 28px; padding: 4px 8px; border-radius: 999px; background: var(--fleet-wash); color: var(--fleet-muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
+#driving-ui .lab-chips button.on { background: var(--accent); color: var(--fleet-on-accent); }
+#driving-ui .lab-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+#driving-ui .lab-traffic { display: flex; gap: 6px; align-items: center; flex: 1 1 140px; min-width: 0; color: var(--fleet-muted); font-size: 11px; }
+#driving-ui .lab-traffic input { flex: 1; min-width: 40px; width: 60px; min-height: 24px; accent-color: var(--accent); }
+#driving-ui .lab-traffic b { width: 18px; flex: none; color: var(--fleet-text); font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+#driving-ui .seg-cam { flex: none; }
+#driving-ui .seg-cam button { padding: 3px 7px; }
+#driving-ui .lab-reset { min-height: 30px; padding: 4px; border-radius: 6px; color: var(--fleet-muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
+#driving-ui .lab-stats { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; padding-top: 2px; }
+#driving-ui .lab-stats > div { display: flex; flex-direction: column; gap: 3px; align-items: center; min-width: 0; text-align: center; }
+#driving-ui .lab-stats b { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+#driving-ui .lab-stats span { color: var(--fleet-muted); font-size: 9px; line-height: 1.3; overflow-wrap: anywhere; }
+#driving-ui .lab-result { color: #1b7946; font-size: 11px; line-height: 1.4; font-weight: 600; text-align: center; overflow-wrap: anywhere; }
+#driving-ui .lab-result.bad { color: #bf352e; }
+body[data-theme='night'] #driving-ui .lab-result { color: #89d9b0; }
+body[data-theme='night'] #driving-ui .lab-result.bad { color: #ff9288; }
+@media (max-width: 960px) {
+  #driving-ui .lab { width: calc(100vw - 28px); bottom: max(104px, calc(env(safe-area-inset-bottom) + 92px)); }
+  #driving-ui .ride { left: 14px; max-width: calc(100vw - 100px); }
+}
+@media (max-width: 850px) {
+  body.fleet-panel-mounted .top-bar { flex-wrap: wrap; gap: 8px; }
+  body.fleet-panel-mounted .top-bar .search-panel { flex: 1 0 100%; }
+  body.fleet-panel-mounted .top-bar > .floating-button { order: 4; height: 44px; padding: 0 10px; gap: 6px; }
+  body.fleet-panel-mounted .theme-btn { padding: 0 8px; font-size: 11px; }
+  #driving-ui .dr-pill { top: 130px; max-width: calc(100vw - 28px); }
+  #driving-ui .dr-turn { max-width: 180px; }
+  #driving-ui .ride { max-height: calc(100dvh - 234px); }
+  #driving-ui .lab { max-height: calc(100dvh - 282px); }
+}
+@media (max-width: 520px) {
+  body.fleet-panel-mounted .theme-btn { font-size: 0; padding: 0 7px; }
+  body.fleet-panel-mounted .theme-btn span { font-size: 18px; }
+  body.fleet-panel-mounted .top-bar > .floating-button { font-size: 11px; }
+  #driving-ui .ride { bottom: max(54px, calc(env(safe-area-inset-bottom) + 42px)); width: calc(100vw - 28px); max-width: calc(100vw - 28px); }
+  #driving-ui .ride.folded { width: min(292px, calc(100vw - 100px)); }
+  #driving-ui .ride-head .seg button { min-height: 32px; font-size: 10px; }
+  #driving-ui .ride-body .seg button { min-height: 34px; }
+  #driving-ui .ride-row select { min-height: 38px; }
+  #driving-ui .ride-go { min-height: 40px; }
+  #driving-ui .dr-pill { gap: 6px; padding: 5px 10px; }
+  #driving-ui .dr-turn { display: none; }
+  #driving-ui .dr-think { max-width: 190px; }
+  #driving-ui .lab { bottom: max(112px, calc(env(safe-area-inset-bottom) + 100px)); max-height: calc(100dvh - 290px); padding: 8px; }
+  #driving-ui .lab-toggle { min-height: 36px; }
+  #driving-ui .lab-traffic { flex-basis: 100%; }
+  #driving-ui .lab-row { gap: 6px; }
+  #driving-ui .seg-cam { flex: 1; }
+  #driving-ui .seg-cam button { min-height: 32px; padding: 3px 6px; }
+  #driving-ui .lab-chips button { min-height: 32px; }
+  #driving-ui .lab-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 4px; }
+  #driving-ui .lab-stats span { overflow-wrap: normal; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #driving-ui *, #driving-ui *::before, #driving-ui *::after { transition: none !important; }
+}
