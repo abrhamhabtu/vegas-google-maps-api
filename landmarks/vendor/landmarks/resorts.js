@@ -2048,25 +2048,39 @@ function buildStripResorts(data, engine) {
             every: 18
         });
     }
-    const silver = sheen('#b6bfc8', {
-        refl: 0.5,
-        spec: 1.1
+    const silver = sheen('#c4cdd6', {
+        refl: 0.62,
+        spec: 1.25,
+        glow: '#e4f0ff',
+        glowK: 0.16
     });
-    const ariaGlass = sheen('#1f3350', {
-        windows: 0.38,
-        refl: 0.72,
-        spec: 1.4,
-        glow: '#9ac8ff',
-        glowK: 0.1
+    const ariaGlass = sheen('#1c3858', {
+        windows: 0.42,
+        refl: 0.78,
+        spec: 1.48,
+        glow: '#a8d4ff',
+        glowK: 0.18
     });
     const aria = towersNear(data, -210, 950, 175, 90);
-    for (const t of aria)dress(g, t, {
-        skin: ariaGlass,
-        trim: silver,
-        every: 24
-    });
-    const topA = aria.slice().sort((a, b)=>b.h - a.h)[0];
-    if (topA) faceSign(data, g, topA, 'ARIA', 28, 8, topA.h - 8, `300 120px ${SANS}`, '#e8f1ff');
+    for (const t of aria){
+        dress(g, t, {
+            skin: ariaGlass,
+            trim: silver,
+            crown: silver,
+            crownH: 5.5,
+            every: 18
+        });
+        const tc = centroid(t.ring);
+        for(let y = 26; y < t.h - 4; y += 18){
+            const bandGrp = new THREE.Group();
+            bandGrp.position.set(tc[0], 0, tc[1]);
+            ringTower(bandGrp, t.ring, tc, y, y + 0.85, silver, 1.018);
+            g.add(bandGrp);
+        }
+        if (t.h >= 155) {
+            faceSign(data, g, t, 'ARIA', 32, 8.8, t.h - 8.5, `300 128px ${SANS}`, '#f0f7ff');
+        }
+    }
     {
         const veerYellow = sheen('#d6b228', {
             windows: 0.45,
@@ -2116,19 +2130,526 @@ function buildStripResorts(data, engine) {
             vt.add(fin);
             g.add(vt);
         }
-        const crystalRoof = sheen('#cfd8e3', {
-            refl: 0.72,
-            spec: 1.45,
-            glow: '#e0eeff',
-            glowK: 0.18
+        const crystalRoof = sheen('#d4dde8', {
+            refl: 0.78,
+            spec: 1.5,
+            glow: '#e2f0ff',
+            glowK: 0.22
         });
-        for(let k = 0; k < 5; k++){
-            const facet = new THREE.Mesh(new THREE.ConeGeometry(22, 14, 4), crystalRoof);
-            facet.position.set(-10 + k * 14, 31 + k % 2 * 3, 885 + k * 16);
-            facet.rotation.set(0.18 * (k % 2 ? 1 : -1), 0.4 + k * 0.35, 0.14);
-            facet.scale.set(1.4, 0.65, 1.1);
+        const crystalGlass = sheen('#2b415c', {
+            windows: 0.48,
+            refl: 0.82,
+            spec: 1.5,
+            glow: '#cce6ff',
+            glowK: 0.28
+        });
+        for(let k = 0; k < 7; k++){
+            const facet = new THREE.Mesh(new THREE.ConeGeometry(24, 15, 4), k % 2 ? crystalRoof : crystalGlass);
+            facet.position.set(-22 + k * 15, 30.5 + k % 3 * 2.4, 868 + k * 18);
+            facet.rotation.set(0.22 * (k % 2 ? 1 : -1), 0.38 + k * 0.32, 0.16 * (k % 2 ? -1 : 1));
+            facet.scale.set(1.45, 0.68, 1.15);
             g.add(facet);
         }
+        // Iconic Gucci Flagship Pavilion at ARIA / The Shops at Crystals (faceted champagne-bronze & fluted charcoal-gold architectural box)
+        const gucciBronze = sheen('#8c6d46', {
+            refl: 0.68,
+            spec: 1.38,
+            glow: '#ffd89a',
+            glowK: 0.42,
+            baseGlow: 0.12
+        });
+        const gucciGold = sheen('#d9b672', {
+            refl: 0.75,
+            spec: 1.45,
+            glow: '#ffe6ae',
+            glowK: 0.65,
+            baseGlow: 0.16
+        });
+        const gucciDark = sheen('#1c1e22', {
+            refl: 0.55,
+            spec: 1.2
+        });
+        const gucciGreen = sheen('#0f4d2e', {
+            glow: '#22a862',
+            glowK: 0.55,
+            baseGlow: 0.14
+        });
+        const gucciRed = sheen('#9e1b24', {
+            glow: '#ff3844',
+            glowK: 0.65,
+            baseGlow: 0.16
+        });
+        const gucciVitrine = sheen('#fff4dc', {
+            glow: '#ffe8be',
+            glowK: 1.25,
+            baseGlow: 0.28
+        });
+        const buildGucciPavilion = (gx, gz, rotY, gw, gd, gh)=>{
+            const gp = new THREE.Group();
+            gp.position.set(gx, 0, gz);
+            gp.rotation.y = rotY;
+            const body = new THREE.Mesh(new THREE.BoxGeometry(gw, gh, gd), gucciBronze);
+            body.position.y = gh * 0.5;
+            gp.add(body);
+            const roofShard = new THREE.Mesh(new THREE.ConeGeometry(Math.max(gw, gd) * 0.68, 7.5, 4), gucciGold);
+            roofShard.position.set(0, gh + 3.2, 0);
+            roofShard.rotation.set(0.14, Math.PI * 0.25, -0.11);
+            roofShard.scale.set(1.25, 0.65, 1.05);
+            gp.add(roofShard);
+            for(let u = -gw * 0.44; u <= gw * 0.44; u += 2.2){
+                const fin = new THREE.Mesh(new THREE.BoxGeometry(0.32, gh - 4.8, 0.55), gucciGold);
+                fin.position.set(u, 4.4 + (gh - 4.8) * 0.5, gd * 0.5 + 0.22);
+                gp.add(fin);
+            }
+            const vitrine = new THREE.Mesh(new THREE.BoxGeometry(gw * 0.84, 4.2, 0.45), gucciVitrine);
+            vitrine.position.set(0, 2.3, gd * 0.5 + 0.15);
+            gp.add(vitrine);
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(gw * 0.88, 0.45, 0.65), gucciDark);
+            frame.position.set(0, 4.5, gd * 0.5 + 0.2);
+            gp.add(frame);
+            const webG1 = new THREE.Mesh(new THREE.BoxGeometry(gw + 0.4, 0.42, gd + 0.4), gucciGreen);
+            webG1.position.y = gh - 2.1;
+            const webR = new THREE.Mesh(new THREE.BoxGeometry(gw + 0.45, 0.36, gd + 0.45), gucciRed);
+            webR.position.y = gh - 1.68;
+            const webG2 = new THREE.Mesh(new THREE.BoxGeometry(gw + 0.4, 0.42, gd + 0.4), gucciGreen);
+            webG2.position.y = gh - 1.26;
+            gp.add(webG1, webR, webG2);
+            const gSign = textPanel('G U C C I', gw * 0.68, 3.1, {
+                font: serif(108, 600),
+                color: '#fff2cf',
+                background: '#171512'
+            });
+            gSign.userData.keep = true;
+            gSign.position.set(0, gh - 4.2, gd * 0.5 + 0.48);
+            gp.add(gSign);
+            g.add(gp);
+        };
+        // Gucci at Crystals North / ARIA Promenade (-12.7, 860.8) & Crystals NE Strip Corner (74, 864)
+        buildGucciPavilion(-12.7, 860.8, Math.PI, 26, 20, 22);
+        buildGucciPavilion(76.0, 864.0, Math.PI * 0.5, 24, 18, 23);
+
+        // Crystals Strip-front Luxury Flagship Row (Louis Vuitton, Prada, Dolce & Gabbana, Fendi, Tiffany & Co.)
+        const crystalsStrip = [
+            {
+                name: 'LOUIS VUITTON',
+                x: 87.5,
+                z: 936.6,
+                w: 24,
+                d: 16,
+                h: 23,
+                skin: sheen('#cbb389', {
+                    refl: 0.62,
+                    spec: 1.35,
+                    glow: '#ffe7ba',
+                    glowK: 0.45,
+                    baseGlow: 0.14
+                }),
+                fg: '#fff5dc',
+                bg: '#2c1f14'
+            },
+            {
+                name: 'PRADA',
+                x: 82.8,
+                z: 902.2,
+                w: 22,
+                d: 15,
+                h: 22,
+                skin: sheen('#d8e2dc', {
+                    refl: 0.65,
+                    spec: 1.3,
+                    glow: '#e4fff2',
+                    glowK: 0.35,
+                    baseGlow: 0.1
+                }),
+                fg: '#111514',
+                bg: '#dceee4'
+            },
+            {
+                name: 'FENDI',
+                x: 84.5,
+                z: 962.0,
+                w: 18,
+                d: 14,
+                h: 21,
+                skin: sheen('#d4a84e', {
+                    refl: 0.55,
+                    spec: 1.25,
+                    glow: '#ffdf88',
+                    glowK: 0.4,
+                    baseGlow: 0.12
+                }),
+                fg: '#ffe48e',
+                bg: '#1c160e'
+            },
+            {
+                name: 'DOLCE & GABBANA',
+                x: 76.0,
+                z: 1000.8,
+                w: 22,
+                d: 14,
+                h: 20,
+                skin: sheen('#22262e', {
+                    refl: 0.72,
+                    spec: 1.4,
+                    glow: '#ffdca8',
+                    glowK: 0.32
+                }),
+                fg: '#ffffff',
+                bg: '#101216'
+            }
+        ];
+        for (const st of crystalsStrip){
+            const sg = new THREE.Group();
+            sg.position.set(st.x, 0, st.z);
+            sg.rotation.y = Math.PI * 0.5;
+            const bMesh = new THREE.Mesh(new THREE.BoxGeometry(st.w, st.h, st.d), st.skin);
+            bMesh.position.y = st.h * 0.5;
+            sg.add(bMesh);
+            const vit = new THREE.Mesh(new THREE.BoxGeometry(st.w * 0.82, 4.0, 0.4), gucciVitrine);
+            vit.position.set(0, 2.2, st.d * 0.5 + 0.15);
+            sg.add(vit);
+            const lbl = textPanel(st.name, st.w * 0.78, 2.8, {
+                font: serif(88, 700),
+                color: st.fg,
+                background: st.bg
+            });
+            lbl.userData.keep = true;
+            lbl.position.set(0, st.h - 3.6, st.d * 0.5 + 0.42);
+            sg.add(lbl);
+            g.add(sg);
+        }
+        // Tiffany & Co. jewel box at Crystals West-North Plaza (-68.4, 905.5)
+        {
+            const tif = new THREE.Group();
+            tif.position.set(-68.4, 0, 905.5);
+            const tiffBlue = sheen('#81d8d0', {
+                refl: 0.65,
+                spec: 1.35,
+                glow: '#81d8d0',
+                glowK: 0.75,
+                baseGlow: 0.22
+            });
+            const tBox = new THREE.Mesh(new THREE.BoxGeometry(16, 17, 16), tiffBlue);
+            tBox.position.y = 8.5;
+            tif.add(tBox);
+            const tSign = textPanel('TIFFANY & CO.', 13.5, 2.4, {
+                font: serif(84, 600),
+                color: '#ffffff',
+                background: '#0a5c56'
+            });
+            tSign.userData.keep = true;
+            tSign.position.set(0, 14.2, -8.3);
+            tSign.rotation.y = Math.PI;
+            tif.add(tSign);
+            g.add(tif);
+        }
+        // THE SHOPS AT CRYSTALS main Strip marquee
+        {
+            const crSign = textPanel('THE SHOPS AT CRYSTALS', 28, 3.8, {
+                font: sans(86, 600),
+                color: '#f2f7ff',
+                background: '#182436'
+            });
+            crSign.userData.keep = true;
+            crSign.position.set(99.5, 27.5, 919.0);
+            crSign.rotation.y = Math.PI * 0.5;
+            g.add(crSign);
+        }
+    }
+    // Across S Las Vegas Blvd from ARIA & Crystals: 63 Las Vegas & BLVD Retail Center (Netflix, Lululemon, JD Sports, In-N-Out Burger, Adidas, Puma)
+    {
+        const eastRetail = new THREE.Group();
+        eastRetail.name = 'East Strip Retail across from ARIA';
+        const travertine = sheen('#e6dccb', {
+            refl: 0.18,
+            spec: 0.7,
+            glow: '#ffe8c2',
+            glowK: 0.25,
+            baseGlow: 0.08
+        });
+        const darkMetal = sheen('#181b22', {
+            refl: 0.55,
+            spec: 1.25
+        });
+        const warmStorefront = sheen('#fff3d8', {
+            glow: '#ffe4b4',
+            glowK: 1.3,
+            baseGlow: 0.3
+        });
+
+        // 1. 63 Las Vegas (SE corner of Harmon & Strip, x=186..234, z=882..946)
+        {
+            const s63 = new THREE.Group();
+            s63.position.set(208, 0, 914);
+            const base63 = new THREE.Mesh(new THREE.BoxGeometry(42, 21, 58), travertine);
+            base63.position.y = 10.5;
+            s63.add(base63);
+            const glass63 = new THREE.Mesh(new THREE.BoxGeometry(42.8, 8.5, 58.8), sheen('#2c445e', {
+                windows: 0.45,
+                refl: 0.72,
+                spec: 1.4,
+                glow: '#bfe2ff',
+                glowK: 0.32
+            }));
+            glass63.position.y = 12.2;
+            s63.add(glass63);
+            for (const y of [
+                6.8,
+                16.8,
+                21.1
+            ]){
+                const ledge = new THREE.Mesh(new THREE.BoxGeometry(44.2, 0.75, 60.2), sheen('#d4b075', {
+                    refl: 0.45,
+                    spec: 1.1,
+                    glow: '#ffd896',
+                    glowK: 0.55,
+                    baseGlow: 0.14
+                }));
+                ledge.position.y = y;
+                s63.add(ledge);
+            }
+            const sign63 = textPanel('63 LAS VEGAS · OCEAN PRIME', 32, 3.8, {
+                font: sans(88, 800),
+                color: '#fff4d4',
+                background: '#16202e'
+            });
+            sign63.userData.keep = true;
+            sign63.position.set(-21.8, 18.8, 0);
+            sign63.rotation.y = -Math.PI * 0.5;
+            s63.add(sign63);
+            eastRetail.add(s63);
+        }
+
+        // 2. Netflix House / Netflix Experience at BLVD (x=185..232, z=962..1032)
+        {
+            const nf = new THREE.Group();
+            nf.position.set(206, 0, 997);
+            const nfBlack = sheen('#101116', {
+                refl: 0.42,
+                spec: 1.15
+            });
+            const nfRed = sheen('#e50914', {
+                refl: 0.35,
+                spec: 1.1,
+                glow: '#ff1e27',
+                glowK: 1.45,
+                baseGlow: 0.35
+            });
+            const nfBox = new THREE.Mesh(new THREE.BoxGeometry(40, 20, 62), nfBlack);
+            nfBox.position.y = 10;
+            nf.add(nfBox);
+            // Iconic vertical red Netflix N-ribbon bars along the Strip facade
+            for(let z = -26; z <= 26; z += 5.2){
+                const bar = new THREE.Mesh(new THREE.BoxGeometry(0.65, 13.5, 0.85), nfRed);
+                bar.position.set(-20.3, 11.8, z);
+                nf.add(bar);
+            }
+            const nfPortal = new THREE.Mesh(new THREE.BoxGeometry(1.2, 5.2, 46), warmStorefront);
+            nfPortal.position.set(-20.1, 2.7, 0);
+            nf.add(nfPortal);
+            const nfCanopy = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.7, 52), nfRed);
+            nfCanopy.position.set(-21.4, 5.6, 0);
+            nf.add(nfCanopy);
+            const nfSign = textPanel('NETFLIX', 28, 6.2, {
+                font: sans(138, 900),
+                color: '#e50914',
+                background: '#08080b'
+            });
+            nfSign.userData.keep = true;
+            nfSign.position.set(-20.8, 15.2, 0);
+            nfSign.rotation.y = -Math.PI * 0.5;
+            nf.add(nfSign);
+            eastRetail.add(nf);
+        }
+
+        // 3. Lululemon Flagship at BLVD (x=185..224, z=1036..1061)
+        {
+            const lulu = new THREE.Group();
+            lulu.position.set(202, 0, 1048.5);
+            const luluWhite = sheen('#f5f2ec', {
+                refl: 0.25,
+                spec: 0.9,
+                glow: '#fff8ee',
+                glowK: 0.45,
+                baseGlow: 0.14
+            });
+            const luluRed = sheen('#d31334', {
+                glow: '#ff2b4a',
+                glowK: 1.25,
+                baseGlow: 0.3
+            });
+            const luluBody = new THREE.Mesh(new THREE.BoxGeometry(34, 15.5, 23), luluWhite);
+            luluBody.position.y = 7.75;
+            lulu.add(luluBody);
+            const luluGlass = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.4, 19.5), warmStorefront);
+            luluGlass.position.set(-17.1, 2.8, 0);
+            lulu.add(luluGlass);
+            const omegaBadge = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.1, 0.45, 24).rotateZ(Math.PI * 0.5), luluRed);
+            omegaBadge.position.set(-17.3, 11.6, -6.5);
+            lulu.add(omegaBadge);
+            const luluSign = textPanel('lululemon', 15.5, 3.2, {
+                font: sans(104, 700),
+                color: '#ffffff',
+                background: '#d31334'
+            });
+            luluSign.userData.keep = true;
+            luluSign.position.set(-17.35, 11.6, 2.6);
+            luluSign.rotation.y = -Math.PI * 0.5;
+            lulu.add(luluSign);
+            eastRetail.add(lulu);
+        }
+
+        // 4. JD Sports Flagship (x=185..224, z=1063..1083)
+        {
+            const jd = new THREE.Group();
+            jd.position.set(202, 0, 1073);
+            const jdBody = new THREE.Mesh(new THREE.BoxGeometry(34, 15.0, 18), darkMetal);
+            jdBody.position.y = 7.5;
+            jd.add(jdBody);
+            const jdSign = textPanel('JD SPORTS', 15, 3.0, {
+                font: sans(104, 900),
+                color: '#ffe100',
+                background: '#101216'
+            });
+            jdSign.userData.keep = true;
+            jdSign.position.set(-17.3, 11.4, 0);
+            jdSign.rotation.y = -Math.PI * 0.5;
+            jd.add(jdSign);
+            eastRetail.add(jd);
+        }
+
+        // 5. New In-N-Out Burger Flagship across from ARIA (x=184.5, z=1094.7, span z=1085..1125)
+        {
+            const ino = new THREE.Group();
+            ino.position.set(201, 0, 1104);
+            const inoWhite = sheen('#fbf8f1', {
+                refl: 0.2,
+                spec: 0.85,
+                glow: '#fff3dc',
+                glowK: 0.5,
+                baseGlow: 0.16
+            });
+            const inoRed = sheen('#d91e26', {
+                refl: 0.35,
+                spec: 1.1,
+                glow: '#ff333b',
+                glowK: 1.35,
+                baseGlow: 0.32
+            });
+            const inoYellow = sheen('#ffd400', {
+                refl: 0.45,
+                spec: 1.2,
+                glow: '#ffe033',
+                glowK: 1.5,
+                baseGlow: 0.38
+            });
+            const inoBody = new THREE.Mesh(new THREE.BoxGeometry(33, 13.5, 34), inoWhite);
+            inoBody.position.y = 6.75;
+            ino.add(inoBody);
+            // Signature red parapet fascia + awning
+            const inoRoofTrim = new THREE.Mesh(new THREE.BoxGeometry(34.2, 1.35, 35.2), inoRed);
+            inoRoofTrim.position.y = 13.5;
+            const inoAwning = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.65, 28), inoRed);
+            inoAwning.position.set(-17.6, 5.2, 0);
+            const inoWindows = new THREE.Mesh(new THREE.BoxGeometry(0.8, 4.4, 26), warmStorefront);
+            inoWindows.position.set(-16.6, 2.4, 0);
+            ino.add(inoRoofTrim, inoAwning, inoWindows);
+            // Iconic In-N-Out yellow bent-arrow boomerang tower + red marquee sign on the Strip corner
+            const pylon = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 21, 12), inoWhite);
+            pylon.position.set(-16.2, 10.5, -13.5);
+            ino.add(pylon);
+            const arrowBoomerang = new THREE.Group();
+            arrowBoomerang.position.set(-16.8, 17.5, -13.5);
+            const seg1 = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.1, 9.5), inoYellow);
+            seg1.position.set(0, 1.8, 2.2);
+            seg1.rotation.x = 0.42;
+            const seg2 = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.1, 7.5), inoYellow);
+            seg2.position.set(0, -0.4, -2.0);
+            seg2.rotation.x = -0.55;
+            const arrowTip = new THREE.Mesh(new THREE.ConeGeometry(1.35, 2.6, 4), inoYellow);
+            arrowTip.position.set(0, -2.4, -5.2);
+            arrowTip.rotation.x = -Math.PI * 0.5 - 0.55;
+            arrowBoomerang.add(seg1, seg2, arrowTip);
+            ino.add(arrowBoomerang);
+            const inoSign = textPanel('IN-N-OUT BURGER', 22, 4.2, {
+                font: sans(104, 900),
+                color: '#ffffff',
+                background: '#c8161d'
+            });
+            inoSign.userData.keep = true;
+            inoSign.position.set(-16.9, 10.2, 1.5);
+            inoSign.rotation.y = -Math.PI * 0.5;
+            ino.add(inoSign);
+            eastRetail.add(ino);
+        }
+
+        // 6. Adidas Flagship Store across from ARIA (x=185.7, z=1149.6, span z=1129..1182)
+        {
+            const adi = new THREE.Group();
+            adi.position.set(203, 0, 1154);
+            const adiBlack = sheen('#12151b', {
+                refl: 0.62,
+                spec: 1.35
+            });
+            const adiStripe = sheen('#ffffff', {
+                refl: 0.5,
+                spec: 1.2,
+                glow: '#ffffff',
+                glowK: 1.45,
+                baseGlow: 0.35
+            });
+            const adiBody = new THREE.Mesh(new THREE.BoxGeometry(35, 18.5, 46), adiBlack);
+            adiBody.position.y = 9.25;
+            adi.add(adiBody);
+            const adiGlass = new THREE.Mesh(new THREE.BoxGeometry(0.9, 5.6, 38), warmStorefront);
+            adiGlass.position.set(-17.6, 2.9, 0);
+            adi.add(adiGlass);
+            // Iconic Three Diagonal Stripes (///) across the Adidas Strip facade
+            for(let sIdx = -1; sIdx <= 1; sIdx++){
+                const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.75, 12.2, 2.3), adiStripe);
+                stripe.position.set(-17.85, 11.4, -10.5 + sIdx * 4.2);
+                stripe.rotation.x = 0.46;
+                adi.add(stripe);
+            }
+            const adiSign = textPanel('adidas', 18.5, 4.0, {
+                font: sans(120, 900),
+                color: '#ffffff',
+                background: '#0d0f14'
+            });
+            adiSign.userData.keep = true;
+            adiSign.position.set(-17.9, 12.6, 8.5);
+            adiSign.rotation.y = -Math.PI * 0.5;
+            adi.add(adiSign);
+            eastRetail.add(adi);
+        }
+
+        // 7. Puma Flagship Store (x=185.1, z=1203.7, span z=1185..1224)
+        {
+            const puma = new THREE.Group();
+            puma.position.set(203, 0, 1204);
+            const pumaBody = new THREE.Mesh(new THREE.BoxGeometry(34, 16.5, 34), darkMetal);
+            pumaBody.position.y = 8.25;
+            puma.add(pumaBody);
+            const pumaAccent = new THREE.Mesh(new THREE.BoxGeometry(34.8, 0.85, 34.8), sheen('#e41e2b', {
+                glow: '#ff2e3b',
+                glowK: 1.2,
+                baseGlow: 0.25
+            }));
+            pumaAccent.position.y = 15.8;
+            puma.add(pumaAccent);
+            const pumaSign = textPanel('PUMA', 16, 3.6, {
+                font: sans(112, 900),
+                color: '#ffffff',
+                background: '#c41622'
+            });
+            pumaSign.userData.keep = true;
+            pumaSign.position.set(-17.4, 11.8, 0);
+            pumaSign.rotation.y = -Math.PI * 0.5;
+            puma.add(pumaSign);
+            eastRetail.add(puma);
+        }
+
+        g.add(eastRetail);
     }
     {
         const cokePoi = data.pois.find((p)=>/coca.?cola/i.test(p.n));

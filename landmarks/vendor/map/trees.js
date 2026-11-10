@@ -2,7 +2,7 @@
 const THREE = window.THREE;
 import { theme } from '../core/theme.js';
 import { hash } from './geom.js';
-import { roadMask, sample } from './lanegraph.js';
+import { boundaryAt, boundaryLine, roadMask, sample } from './lanegraph.js';
 import { litColor } from './materials.js';
 import { latLonToXZ } from '../core/data.js';
 import { ORIGIN, SIGN_LATLON } from '../places.js';
@@ -93,28 +93,140 @@ export function plantTrees(data, g) {
         ]);
     }
     const occupied = new Set();
-    const key = (x, z)=>`${Math.round(x / 8)},${Math.round(z / 8)}`;
+    const key = (x, z)=>`${Math.round(x / 9)},${Math.round(z / 9)}`;
     for (const p of palms)occupied.add(key(p[0], p[1]));
-    for (const e of g.edges){
-        if (!e.oneway || !/Las Vegas Boulevard/.test(e.way.name ?? '') || e.elevated) continue;
-        for(let s = 10; s < e.ref.length - 10; s += 16){
-            const p = sample(e.ref, s);
-            const nx = -p.hz, nz = p.hx;
-            let gap = 0;
-            for(let u = 1; u <= 24; u++)if (onRoad(p.x - nx * u, p.z - nz * u, 0)) {
-                gap = u;
-                break;
+    const medGrid = new Map();
+    for (const m of g.edges){
+        if (m.internal || m.cls === 'service' || m.elevated) continue;
+        for(let i = 0; i < m.ref.pts.length - 1; i++){
+            const a = m.ref.pts[i], b = m.ref.pts[i + 1];
+            const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 20));
+            for(let k = 0; k <= n; k++){
+                const x = a[0] + (b[0] - a[0]) * k / n, z = a[1] + (b[1] - a[1]) * k / n;
+                const cKey = `${Math.floor(x / 40)},${Math.floor(z / 40)}`;
+                let list = medGrid.get(cKey);
+                if (!list) medGrid.set(cKey, list = []);
+                if (!list.length || list[list.length - 1][0] !== m || list[list.length - 1][1] !== i) list.push([
+                    m,
+                    i
+                ]);
             }
-            if (gap < 4.5) continue;
-            const x = p.x - nx * (gap / 2), z = p.z - nz * (gap / 2);
-            if (occupied.has(key(x, z)) || inLot(x, z) || onRoad(x, z, 0.8)) continue;
+        }
+    }
+    const connGrid = new Map();
+    for (const k of g.lanes){
+        if (!k.connector || k.line.pts.length < 2) continue;
+        const hw = (k.width ?? 3.5) * 0.5;
+        for(let i = 0; i < k.line.pts.length - 1; i++){
+            const a = k.line.pts[i], b = k.line.pts[i + 1];
+            const mx = (a[0] + b[0]) * 0.5, mz = (a[1] + b[1]) * 0.5;
+            const cKey = `${Math.floor(mx / 30)},${Math.floor(mz / 30)}`;
+            let list = connGrid.get(cKey);
+            if (!list) connGrid.set(cKey, list = []);
+            list.push([
+                a[0],
+                a[1],
+                b[0],
+                b[1],
+                hw
+            ]);
+        }
+    }
+    const onConn = (x, z, margin = 0.8)=>{
+        const cx = Math.floor(x / 30), cz = Math.floor(z / 30);
+        for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [ax, az, bx, bz, hw] of connGrid.get(`${cx + a},${cz + b}`) ?? []){
+            const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
+            const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2));
+            if (Math.hypot(x - (ax + dx * t), z - (az + dz * t)) <= hw + margin) return true;
+        }
+        return false;
+    };
+    const onCarriageway = (x, z, margin = 0.85, excludeWayId = -1, excludeEdgeId = -1)=>{
+        const cx = Math.floor(x / 40), cz = Math.floor(z / 40);
+        for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [m, seg] of medGrid.get(`${cx + a},${cz + b}`) ?? []){
+            if (m.id === excludeEdgeId || m.way.id === excludeWayId) continue;
+            const u = m.ref.pts[seg], v = m.ref.pts[seg + 1];
+            const dx = v[0] - u[0], dz = v[1] - u[1], L = Math.hypot(dx, dz);
+            if (L < 1e-4) continue;
+            const hx = dx / L, hz = dz / L, nx = -hz, nz = hx;
+            const along = (x - u[0]) * hx + (z - u[1]) * hz;
+            if (along < -1.5 || along > L + 1.5) continue;
+            const s = m.ref.cum[seg] + Math.max(0, Math.min(L, along));
+            const lat = (x - u[0]) * nx + (z - u[1]) * nz;
+            if (lat >= boundaryAt(m, 0, s) - margin && lat <= boundaryAt(m, m.lanes.length, s) + margin) return true;
+        }
+        return false;
+    };
+    const islandWidthAt = (e, x, z, hx, hz)=>{
+        const lx = hz, lz = -hx;
+        if (onCarriageway(x + lx * 0.4, z + lz * 0.4, 0.2, e.way.id, e.id) || onConn(x + lx * 0.6, z + lz * 0.6, 0.25)) return 0;
+        let bestT = 32, bestM = null, bestHd = 0;
+        const cx = Math.floor(x / 40), cz = Math.floor(z / 40);
+        for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [m, seg] of medGrid.get(`${cx + a},${cz + b}`) ?? []){
+            if (m.id === e.id || m.way.id === e.way.id || m.twin === e.id) continue;
+            const u = m.ref.pts[seg], v = m.ref.pts[seg + 1];
+            const dx = v[0] - u[0], dz = v[1] - u[1], L = Math.hypot(dx, dz);
+            if (L < 1e-4) continue;
+            const mhx = dx / L, mhz = dz / L, mnx = -mhz, mnz = mhx;
+            const den = lx * mnx + lz * mnz;
+            if (Math.abs(den) < 0.35) continue;
+            const tRef = ((u[0] - x) * mnx + (u[1] - z) * mnz) / den;
+            const along = (x + lx * tRef - u[0]) * mhx + (z + lz * tRef - u[1]) * mhz;
+            if (along < -2.0 || along > L + 2.0) continue;
+            const s = m.ref.cum[seg] + Math.max(0, Math.min(L, along));
+            const t0 = tRef + (boundaryAt(m, 0, s) - 0.15) / den;
+            const t1 = tRef + (boundaryAt(m, m.lanes.length, s) + 0.15) / den;
+            const tNear = Math.min(t0, t1), tFar = Math.max(t0, t1);
+            if (tNear <= 0.15 && tFar >= -0.15) return 0;
+            if (tNear > 0.15 && tNear < bestT) {
+                bestT = tNear;
+                bestM = m;
+                bestHd = hx * mhx + hz * mhz;
+            }
+        }
+        if (!bestM || bestT < 1.9 || bestT >= 28) return 0;
+        const mIsLink = /_link$/.test(bestM.way.hw);
+        if (!mIsLink && !(bestHd < -0.35 && bestM.oneway && (bestM.cls === 'arterial' || bestM.cls === 'collector'))) return 0;
+        return bestT;
+    };
+    for (const e of g.edges){
+        if (!e.oneway || e.elevated || e.internal || /_link$/.test(e.way.hw)) continue;
+        const name = e.way.name ?? '';
+        if (!/Las Vegas Boulevard|Flamingo Road|Tropicana Avenue|Harmon Avenue|Spring Mountain Road|Bruno Mars Drive|Park Avenue/i.test(name)) continue;
+        const isStrip = /Las Vegas Boulevard/i.test(name);
+        const step = isStrip ? 12.5 : 16;
+        const left = boundaryLine(e, 0);
+        for(let s = 12; s < left.length - 12; s += step){
+            const q = sample(left, s);
+            const gap = islandWidthAt(e, q.x, q.z, q.hx, q.hz);
+            if (gap < 2.0) continue;
+            const lx = q.hz, lz = -q.hx;
+            const x = q.x + lx * (gap * 0.5), z = q.z + lz * (gap * 0.5);
+            if (occupied.has(key(x, z)) || inLot(x, z) || onRoad(x, z, 0.9) || onCarriageway(x, z, 0.75) || onConn(x, z, 0.85)) continue;
             occupied.add(key(x, z));
             palms.push([
                 x,
                 z,
-                1 + hash(Math.round(x * 7 + z)) * 0.35,
+                1.02 + hash(Math.round(x * 7 + z)) * 0.35,
                 hash(Math.round(x + z * 3)) * 6.28
             ]);
+            if (isStrip && gap >= 6.8) {
+                for (const off of [
+                    -gap * 0.24,
+                    gap * 0.24
+                ]){
+                    const sx2 = x + lx * off + q.hx * 5.5, sz2 = z + lz * off + q.hz * 5.5;
+                    if (!occupied.has(key(sx2, sz2)) && !inLot(sx2, sz2) && !onRoad(sx2, sz2, 0.9) && !onCarriageway(sx2, sz2, 0.85) && !onConn(sx2, sz2, 0.9)) {
+                        occupied.add(key(sx2, sz2));
+                        palms.push([
+                            sx2,
+                            sz2,
+                            0.95 + hash(Math.round(sx2 * 5 + sz2)) * 0.35,
+                            hash(Math.round(sx2 + sz2 * 5)) * 6.28
+                        ]);
+                    }
+                }
+            }
         }
     }
     return {

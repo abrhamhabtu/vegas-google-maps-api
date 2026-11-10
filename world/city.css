@@ -2,17 +2,36 @@
 .world-enabled #av-panel, .road-world-active .ego-car-marker { display: none; }
 #labels { position: fixed; inset: 0; z-index: 8; pointer-events: none; overflow: hidden; contain: strict; }
 .hide-chrome #labels, .hide-chrome #driving-ui { display: none; }
-.lbl { position: absolute; left: 0; top: 0; will-change: transform; display: flex; flex-direction: column; align-items: center; white-space: nowrap; font-weight: 600; letter-spacing: .1px; transition: opacity .18s; }
+.lbl { position: absolute; left: 0; top: 0; will-change: transform; display: flex; flex-direction: column; align-items: center; white-space: nowrap; font-weight: 600; letter-spacing: .1px; transition: opacity .18s, filter .15s; pointer-events: auto; cursor: pointer; }
+.lbl:hover { z-index: 25; filter: brightness(1.12) drop-shadow(0 4px 12px rgba(0,0,0,.35)); }
 .lbl .t { font-size: 11px; line-height: 1.12; text-align: center; color: var(--c, #fff); text-shadow: 0 0 2px #0a0e16f2, 0 0 4px #0a0e16cc; }
 body:not([data-theme='night']) .lbl .t { text-shadow: 0 0 2px #fff, 0 0 4px #fff; }
-.lbl.poi { flex-direction: row; gap: 4px; }
+.lbl.poi { flex-direction: row; gap: 4px; padding: 2px 6px 2px 3px; border-radius: 999px; background: rgba(14, 18, 28, 0.42); backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.18); }
+body[data-theme='day'] .lbl.poi { background: rgba(255, 255, 255, 0.78); border-color: rgba(15, 23, 42, 0.14); }
+body[data-theme='day'] .lbl.poi .t { color: #1d2432; text-shadow: none; }
+body[data-theme='golden'] .lbl.poi { background: rgba(42, 28, 22, 0.68); border-color: rgba(255, 210, 150, 0.28); }
+.lbl.poi.featured-poi { padding: 3px 8px 3px 4px; font-weight: 700; box-shadow: 0 3px 10px rgba(0,0,0,0.24); }
 .lbl.poi .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--c); display: grid; place-items: center; font-size: 9px; color: #fff; border: 1px solid #ffffffa6; flex: none; }
 .lbl.poi .t { text-align: left; font-size: 10.5px; }
+.lbl-q, .help-q { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; font-size: 9.5px; font-weight: 800; line-height: 1; background: rgba(255,255,255,0.22); color: currentColor; border: 1px solid rgba(255,255,255,0.38); margin-left: 3px; flex: none; transition: transform .15s, background .15s; }
+body[data-theme='day'] .lbl-q, body[data-theme='day'] .help-q { background: rgba(15, 23, 42, 0.09); border-color: rgba(15, 23, 42, 0.22); color: #2b3445; }
+.lbl:hover .lbl-q, .help-q:hover { transform: scale(1.14); background: #2b6ef2; color: #fff; border-color: #fff; }
+.lbl.resort .lbl-q { position: absolute; top: -2px; right: -4px; background: #1e293b; color: #fff; border-color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,.35); }
 .lbl.resort .badge { width: 40px; height: 40px; border-radius: 50%; border: 2px solid #ffffffeb; box-shadow: 0 3px 10px #0007; background: var(--bg); display: grid; place-items: center; overflow: hidden; }
 .lbl.resort .badge svg { width: 100%; height: 100%; }
 .lbl.resort .t { margin-top: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; color: #fff; letter-spacing: .3px; }
 body:not([data-theme='night']) .lbl.resort .t { color: #2b2b30; }
+.lbl.area { pointer-events: none; }
 .lbl.area .t { font-size: 13px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-muted); }
 body.following-car .map-hint, body.following-car .view-caption { display: none; }
 body.road-world-active .map-hint { bottom: 62px; }
+.vegas-hover-tip { position: fixed; left: 0; top: 0; z-index: 9999; width: max-content; max-width: 310px; padding: 10px 12px; border-radius: 12px; pointer-events: none; background: rgba(15, 20, 32, 0.94); color: #f8fafc; border: 1px solid rgba(255, 255, 255, 0.16); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.38); backdrop-filter: blur(14px); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; transition: opacity .12s ease; }
+body[data-theme='day'] .vegas-hover-tip { background: rgba(255, 255, 255, 0.96); color: #0f172a; border-color: rgba(15, 23, 42, 0.12); box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16); }
+body[data-theme='golden'] .vegas-hover-tip { background: rgba(38, 25, 20, 0.95); color: #fff5ea; border-color: rgba(255, 196, 132, 0.28); }
+.vht-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.vht-q { width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; font-size: 12px; font-weight: 800; display: grid; place-items: center; flex: none; box-shadow: 0 2px 6px rgba(37, 99, 235, 0.4); }
+.vht-titles { display: flex; flex-direction: column; min-width: 0; }
+.vht-title { font-size: 12.5px; font-weight: 700; line-height: 1.2; }
+.vht-sub { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; opacity: .72; margin-top: 1px; }
+.vht-body { margin: 0; font-size: 11.5px; line-height: 1.42; opacity: .9; }
 @media (max-width: 520px) { .lbl.resort .badge { width: 31px; height: 31px; } .lbl.resort .t { font-size: 8px; } }

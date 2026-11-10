@@ -168,10 +168,49 @@ export const PLACES = [
         lat: 36.1072,
         lon: -115.1768,
         group: 'Strip',
+        info: 'Curvilinear Pelli Clarke Pelli glass towers at CityCenter with luxury porte-cochère valet & The Shops at Crystals.',
         badge: {
             bg: '#5f7593',
             fg: '#fff',
             glyph: 'A'
+        }
+    },
+    {
+        id: 'crystals',
+        name: 'Crystals & Gucci Flagship',
+        lat: 36.1080,
+        lon: -115.1740,
+        group: 'Strip',
+        noValetLook: true,
+        info: 'Studio Daniel Libeskind crystalline luxury district featuring the faceted Gucci Flagship, Louis Vuitton, Prada, Fendi, Dolce & Gabbana & Tiffany & Co.',
+        badge: {
+            bg: '#8c6d46',
+            fg: '#fff2cf',
+            glyph: 'G'
+        },
+        view: {
+            dist: 310,
+            pitch: 60 * D,
+            yaw: -65 * D
+        }
+    },
+    {
+        id: 'blvd',
+        name: 'BLVD · In-N-Out, Adidas & Netflix',
+        lat: 36.1066,
+        lon: -115.1722,
+        group: 'Strip',
+        noValetLook: true,
+        info: 'East Strip flagship retail row across from ARIA featuring the new In-N-Out Burger Flagship, Adidas 3-Stripe Store, Netflix House, Lululemon, JD Sports, Puma & 63 Las Vegas.',
+        badge: {
+            bg: '#d91e26',
+            fg: '#ffe033',
+            glyph: 'B'
+        },
+        view: {
+            dist: 320,
+            pitch: 60 * D,
+            yaw: 75 * D
         }
     },
     {

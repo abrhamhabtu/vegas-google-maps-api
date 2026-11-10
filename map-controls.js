@@ -193,4 +193,59 @@ window.setupMapChrome = function({ getMap, getLayer }) {
   }
   getMap().once('load', onMapReady);
   syncPressed();
+
+  // Interactive `?` Hover Tooltip Inspector for controls, landmarks, storefronts & vehicles
+  let tipEl = document.getElementById('vegas-hover-tip');
+  if (!tipEl) {
+    tipEl = document.createElement('div');
+    tipEl.id = 'vegas-hover-tip';
+    tipEl.className = 'vegas-hover-tip';
+    tipEl.setAttribute('role', 'tooltip');
+    tipEl.hidden = true;
+    tipEl.innerHTML = `
+      <div class="vht-head">
+        <span class="vht-q" aria-hidden="true">?</span>
+        <div class="vht-titles">
+          <strong class="vht-title"></strong>
+          <span class="vht-sub"></span>
+        </div>
+      </div>
+      <p class="vht-body"></p>
+    `;
+    document.body.append(tipEl);
+  }
+  const vhtTitle = tipEl.querySelector('.vht-title');
+  const vhtSub = tipEl.querySelector('.vht-sub');
+  const vhtBody = tipEl.querySelector('.vht-body');
+  let activeTipTarget = null;
+
+  const positionTip = (clientX, clientY) => {
+    const pad = 16;
+    const w = tipEl.offsetWidth || 280;
+    const h = tipEl.offsetHeight || 96;
+    let x = clientX + 16;
+    let y = clientY + 16;
+    if (x + w + pad > window.innerWidth) x = Math.max(pad, clientX - w - 14);
+    if (y + h + pad > window.innerHeight) y = Math.max(pad, clientY - h - 14);
+    tipEl.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)`;
+  };
+
+  document.addEventListener('pointermove', event => {
+    const target = event.target?.closest?.('[data-tip]');
+    if (!target) {
+      if (!tipEl.hidden) {
+        tipEl.hidden = true;
+        activeTipTarget = null;
+      }
+      return;
+    }
+    if (target !== activeTipTarget) {
+      activeTipTarget = target;
+      vhtTitle.textContent = target.dataset.tipTitle || target.getAttribute('aria-label') || 'Las Vegas Strip';
+      vhtSub.textContent = target.dataset.tipSub || 'Interactive Guide';
+      vhtBody.textContent = target.dataset.tip || '';
+      tipEl.hidden = false;
+    }
+    positionTip(event.clientX, event.clientY);
+  }, { passive: true });
 };

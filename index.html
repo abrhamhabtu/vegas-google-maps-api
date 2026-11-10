@@ -32,18 +32,22 @@
       <button id="search-go-btn" class="icon-btn" title="Search Las Vegas">
         <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>
       </button>
-      <button id="reset-strip-btn" class="icon-btn" title="Jump to MGM Rd & Bruno Mars Dr Lanes">
-        Street lanes
+      <button id="reset-strip-btn" class="icon-btn" title="Jump to MGM Rd & Bruno Mars Dr Lanes" data-tip-title="MGM Rd × S Las Vegas Blvd" data-tip-sub="Google Maps Lane & Divider View" data-tip="Jump directly to the MGM Grand / New York-New York intersection to inspect center dividers, dual left-turn pockets, puppy-track turn guides, and yellow road dividers.">
+        Street lanes <span class="help-q" aria-hidden="true">?</span>
       </button>
-      <button id="places-toggle" class="icon-btn" aria-expanded="false" aria-controls="places-panel">Places <span aria-hidden="true">⌄</span></button>
+      <button id="places-toggle" class="icon-btn" aria-expanded="false" aria-controls="places-panel" data-tip-title="Explore Las Vegas Landmarks" data-tip-sub="Shortcut: P" data-tip="Browse and fly directly to 3D resorts, ARIA & Gucci at Crystals, In-N-Out & Adidas at BLVD, pedestrian bridges, and resort porte-cochères.">Places <span aria-hidden="true">⌄</span></button>
     </div>
 
     <!-- Quick Jump Corridor Chips -->
     <section id="places-panel" class="places-panel hidden" aria-label="Landmark views">
       <div class="popover-heading"><div><span class="eyebrow">EXPLORE LAS VEGAS</span><h2>Find your next view.</h2></div><button class="close-button" id="places-close" aria-label="Close places">×</button></div>
-      <input id="places-filter" class="places-filter" type="search" placeholder="Filter landmarks…" aria-label="Filter landmarks" />
+      <input id="places-filter" class="places-filter" type="search" placeholder="Filter landmarks, stores, bridges…" aria-label="Filter landmarks" />
       <div class="corridor-chips" id="landmark-chips">
         <button class="chip active" data-view="bellagio" data-lat="36.1128" data-lng="-115.1744" data-zoom="16.3" data-tilt="55" data-heading="-12"><span>Bellagio & the fountains</span><small>CENTER STRIP</small></button>
+        <button class="chip" data-view="crystals" data-lat="36.1080" data-lng="-115.1740" data-zoom="18.1" data-tilt="62" data-heading="-65"><span>Crystals & Gucci Flagship</span><small>ARIA LUXURY</small></button>
+        <button class="chip" data-view="blvd" data-lat="36.1066" data-lng="-115.1722" data-zoom="18.0" data-tilt="62" data-heading="75"><span>In-N-Out, Adidas, Netflix & Lululemon</span><small>BLVD EAST STRIP</small></button>
+        <button class="chip" data-view="aria" data-lat="36.1075" data-lng="-115.1765" data-zoom="16.9" data-tilt="58" data-heading="20"><span>ARIA & CityCenter</span><small>RESORTS</small></button>
+        <button class="chip" data-view="valets" data-lat="36.1126" data-lng="-115.1762" data-zoom="18.4" data-tilt="66" data-heading="-45"><span>Resort Valet Porte-Cochères</span><small>DRIVE-THROUGH CANOPIES</small></button>
         <button class="chip" data-view="paris" data-lat="36.11245" data-lng="-115.1718" data-zoom="17.3" data-tilt="58" data-heading="-25"><span>Paris & Eiffel Tower</span><small>LANDMARK</small></button>
         <button class="chip" data-view="sphere" data-lat="36.1213" data-lng="-115.1621" data-zoom="17.1" data-tilt="60" data-heading="-25"><span>The Sphere</span><small>LIVE EXOSPHERE</small></button>
         <button class="chip" data-view="luxor" data-lat="36.0955" data-lng="-115.1761" data-zoom="16.9" data-tilt="60" data-heading="25"><span>Luxor & Mandalay Bay</span><small>SOUTH STRIP</small></button>
@@ -51,7 +55,6 @@
         <button class="chip" data-view="tmobile" data-lat="36.10283" data-lng="-115.17818" data-zoom="17.2" data-tilt="57" data-heading="-25"><span>T-Mobile Arena</span><small>THE PARK</small></button>
         <button class="chip" data-view="athletics" data-lat="36.09927" data-lng="-115.170025" data-zoom="17.2" data-tilt="57" data-heading="25"><span>Athletics ballpark</span><small>UNDER CONSTRUCTION</small></button>
         <button class="chip" data-view="mgm" data-lat="36.1024" data-lng="-115.1726" data-zoom="16.9" data-tilt="58" data-heading="15"><span>MGM Grand & New York-New York</span><small>SOUTH STRIP</small></button>
-        <button class="chip" data-view="aria" data-lat="36.1075" data-lng="-115.1765" data-zoom="16.9" data-tilt="58" data-heading="20"><span>ARIA & CityCenter</span><small>RESORTS</small></button>
         <button class="chip" data-view="highroller" data-lat="36.1176" data-lng="-115.1683" data-zoom="17.2" data-tilt="60" data-heading="-20"><span>High Roller</span><small>OBSERVATION WHEEL</small></button>
         <button class="chip" data-view="guitar" data-lat="36.121145" data-lng="-115.172991" data-zoom="17.0" data-tilt="60" data-heading="-25"><span>Hard Rock guitar</span><small>UNDER CONSTRUCTION</small></button>
         <button class="chip" data-view="venetian" data-lat="36.1214" data-lng="-115.1692" data-zoom="16.8" data-tilt="58" data-heading="-15"><span>The Venetian & Palazzo</span><small>RESORTS</small></button>
@@ -69,13 +72,13 @@
       <p id="places-empty" class="empty-state hidden">No matching landmarks.</p>
     </section>
     <div class="theme-control" role="group" aria-label="Time of day">
-      <button class="theme-btn active" data-theme="day" aria-pressed="true"><span aria-hidden="true">☀</span> Day</button>
-      <button class="theme-btn" data-theme="golden" aria-pressed="false"><span aria-hidden="true">◒</span> Sunset</button>
-      <button class="theme-btn" data-theme="night" aria-pressed="false"><span aria-hidden="true">☾</span> Night</button>
+      <button class="theme-btn active" data-theme="day" aria-pressed="true" data-tip-title="Daylight Mode (Shortcut: T)" data-tip-sub="Crisp Desert Sun & Google Maps Road Clarity" data-tip="Full desert daylight showing sculpted center medians, palm-lined Strip islands, yellow road dividers, and architectural resort facades."><span aria-hidden="true">☀</span> Day</button>
+      <button class="theme-btn" data-theme="golden" aria-pressed="false" data-tip-title="Golden Hour / Sunset (Shortcut: T)" data-tip-sub="Warm Mojave Dusk & Early Neon Glow" data-tip="Warm amber sunset lighting across the Strip with early architectural uplighting, glass reflections, and glowing resort marquees."><span aria-hidden="true">◒</span> Sunset</button>
+      <button class="theme-btn" data-theme="night" aria-pressed="false" data-tip-title="Las Vegas Night Mode (Shortcut: T)" data-tip-sub="Full Neon, SkyBeam, Exosphere & Porte-Cochère Glow" data-tip="Nighttime Las Vegas Strip with illuminated resort crowns, Luxor SkyBeam, Sphere LED exosphere, vehicle headlights, and warm valet canopies."><span aria-hidden="true">☾</span> Night</button>
     </div>
 
     <!-- Map Mode & Layer Controls -->
-    <button id="layers-toggle" class="floating-button" aria-expanded="false" aria-controls="layers-panel"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m3 8 9-5 9 5-9 5-9-5Zm0 5 9 5 9-5M3 18l9 5 9-5"/></svg>Layers</button>
+    <button id="layers-toggle" class="floating-button" aria-expanded="false" aria-controls="layers-panel" data-tip-title="Map & 3D World Layers (Shortcut: L)" data-tip-sub="Customize Visual Overlays" data-tip="Toggle 3D Resorts & Storefronts, Satellite Imagery, Live Traffic, 3D Bridges & Streets, and Interactive Landmark Badges."><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m3 8 9-5 9 5-9 5-9-5Zm0 5 9 5 9-5M3 18l9 5 9-5"/></svg>Layers <span class="help-q" aria-hidden="true">?</span></button>
     <div id="layers-panel" class="layer-controls hidden" role="group" aria-label="Map layers">
       <div class="popover-heading"><h2>Map layers</h2><button id="layers-close" class="close-button" aria-label="Close layers">×</button></div>
       <button id="toggle-bldg-btn" class="mode-btn active" aria-pressed="true">3D buildings <span>ON</span></button>

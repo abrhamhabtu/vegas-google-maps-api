@@ -10,7 +10,7 @@ import { flatMaterial, ORDER } from './materials.js';
 import { MAIN_VALET, nearestDrive } from './valetstops.js';
 import { litColor } from './materials.js';
 import { palmGeometry } from './trees.js';
-const CLEARANCE = 6;
+const CLEARANCE = 6.2;
 const PIECE_MIN = 14;
 const PIECE_MAX = 150;
 const OPEN_MAX_H = 32;
@@ -33,7 +33,7 @@ const centroid = (r)=>{
         z / r.length
     ];
 };
-const isDrive = (r)=>(!r.tn || isPassage(r)) && (r.hw === 'service' ? r.svc !== 'parking_aisle' && r.svc !== 'drive-through' && r.svc !== 'emergency_access' && r.access !== 'private' && r.access !== 'no' : /_link$|tertiary|unclassified|residential/.test(r.hw));
+const isDrive = (r)=>(!r.tn || isPassage(r)) && (r.hw === 'service' ? r.svc !== 'parking_aisle' && r.svc !== 'emergency_access' && r.access !== 'no' : /_link$|tertiary|unclassified|residential/.test(r.hw));
 const notAStructure = (b)=>/garage|parking|bridge|industrial|warehouse|house|detached|residential|apartments/.test(b.b ?? '') || /parking|garage/i.test(b.name ?? '');
 export function planValets(data) {
     const cell = 80, grid = new Map();
@@ -143,7 +143,8 @@ export function planValets(data) {
     for (const p of portals)stroke(p.pts, 9, '#ff0000');
     for (const p of open)stroke(p.pts, 16, '#00ff00');
     for (const r of data.roads){
-        if (!isDrivable(r) || r.y && r.y.some((v)=>v > 2.5)) continue;
+        if (r.y && r.y.some((v)=>v > 2.5)) continue;
+        if (!isDrivable(r) && !isDrive(r)) continue;
         const lanes = r.lanes ?? (r.ow ? r.hw === 'service' || r.hw.endsWith('_link') ? 1 : 2 : /primary|trunk/.test(r.hw) ? 4 : 2);
         const w = Math.max(8, lanes * 3.7 + 4.5);
         if (r.cov || r.tn) {
@@ -151,7 +152,7 @@ export function planValets(data) {
         } else if (r.hw !== 'service') {
             stroke(r.pts, w, '#0000ff');
         } else if (r.svc !== 'parking_aisle') {
-            stroke(r.pts, 8.5, '#ff0000');
+            stroke(r.pts, 9.5, '#ff0000');
         }
     }
     const mask = new THREE.CanvasTexture(cv);
@@ -194,7 +195,7 @@ export function planValets(data) {
 function nearestPlace(c, within = 420) {
     let best = null, bd = within;
     for (const p of PLACES){
-        if (!p.badge) continue;
+        if (!p.badge || p.noValetLook) continue;
         const [x, z] = placeXZ(p), d = Math.hypot(x - c[0], z - c[1]);
         if (d < bd) {
             bd = d;
@@ -266,6 +267,8 @@ export function buildValets(data, plan, graph) {
     const warm = new THREE.Color('#ffe7c2');
     const stops = [];
     const candidates = [];
+    const canopyCenters = [];
+    const onRoad = roadMask(graph);
     const stopAt = (name, c, main)=>{
         const hit = nearestDrive(graph, c);
         if (!hit) return false;
@@ -306,7 +309,7 @@ export function buildValets(data, plan, graph) {
                 const p = r[i], q = r[(i + 1) % r.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]);
                 for(let s = every - acc; s < L; s += every){
                     const t = s / L, x = p[0] + (q[0] - p[0]) * t, z = p[1] + (q[1] - p[1]) * t;
-                    if (onDrive(data, x, z)) continue;
+                    if (onDrive(data, x, z, 4.8) || onRoad(x, z, 2.2)) continue;
                     const col = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, y0, 10), d.column);
                     col.position.set(x - c[0], y0 / 2, z - c[1]);
                     g.add(col);
@@ -328,6 +331,7 @@ export function buildValets(data, plan, graph) {
             }
         }
         body.add(g);
+        canopyCenters.push(c);
         const over = plan.crossing.get(b);
         const stacked = list.some((o)=>o !== b && o.h > b.h && inside(centroid(o.pts), b.pts));
         if (under === 0 && area > 200 && over && over.all > 8) candidates.push({
@@ -421,14 +425,17 @@ export function buildValets(data, plan, graph) {
             -1,
             1
         ]){
+            const cx = run[i][0] + nr[i][0] * 8.6 * side, cz = run[i][1] + nr[i][1] * 8.6 * side;
+            if (onDrive(data, cx, cz, 4.2) || onRoad(cx, cz, 2.2)) continue;
             const col = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.44, CLEARANCE, 10), d.column);
-            col.position.set(run[i][0] + nr[i][0] * 8.6 * side, CLEARANCE / 2, run[i][1] + nr[i][1] * 8.6 * side);
+            col.position.set(cx, CLEARANCE / 2, cz);
             g.add(col);
         }
         const pool = new THREE.Mesh(new THREE.CircleGeometry(24, 24).rotateX(-Math.PI / 2), d.pool);
         pool.position.set(mid[0], 0.55, mid[1]);
         g.add(pool);
         body.add(g);
+        canopyCenters.push(mid);
         lamps.push({
             x: mid[0],
             y: CLEARANCE - 0.3,
@@ -452,9 +459,9 @@ export function buildValets(data, plan, graph) {
     for (const [name, c] of Object.entries(MAIN_VALET)){
         best.delete(name);
         stopAt(name, c, true);
-        entrance(c);
+        entrance(c, name);
     }
-    for (const [name, k] of best)if (stopAt(name, k.c, true)) entrance(k.c);
+    for (const [name, k] of best)if (stopAt(name, k.c, true)) entrance(k.c, name);
     const bays = new Soup();
     for (const st of stops){
         if (!st.main) continue;
@@ -489,9 +496,69 @@ export function buildValets(data, plan, graph) {
         m.renderOrder = ORDER.paint + 1;
         out.add(m);
     }
-    function entrance(c) {
+    function entrance(c, resortName = '') {
         const g = new THREE.Group();
         g.position.set(c[0], 0, c[1]);
+        const nearDrive = driveDir(data, c);
+        const hasNearbyCanopy = canopyCenters.some((q)=>Math.hypot(q[0] - c[0], q[1] - c[1]) < 32);
+        if (!hasNearbyCanopy) {
+            const d = dressFor(c);
+            const canopyGrp = new THREE.Group();
+            canopyGrp.rotation.y = nearDrive;
+            const spanW = 16.4, spanL = 22.0, h0 = CLEARANCE, h1 = CLEARANCE + 1.65, h2 = CLEARANCE + 2.85;
+            const soffitMesh = new THREE.Mesh(new THREE.BoxGeometry(spanW - 0.5, 0.1, spanL - 0.5), d.soffit);
+            soffitMesh.position.y = h0 - 0.05;
+            const mainFascia = new THREE.Mesh(new THREE.BoxGeometry(spanW, h1 - h0, spanL), d.fascia);
+            mainFascia.position.y = (h0 + h1) * 0.5;
+            const glowBand = new THREE.Mesh(new THREE.BoxGeometry(spanW + 0.25, 0.36, spanL + 0.25), d.strip);
+            glowBand.position.y = h0 + (h1 - h0) * 0.5;
+            const crownTier = new THREE.Mesh(new THREE.BoxGeometry(spanW * 0.72, h2 - h1, spanL * 0.76), d.fascia);
+            crownTier.position.y = (h1 + h2) * 0.5;
+            const crownRoof = new THREE.Mesh(new THREE.BoxGeometry(spanW * 0.75, 0.18, spanL * 0.79), d.roof);
+            crownRoof.position.y = h2 + 0.09;
+            canopyGrp.add(soffitMesh, mainFascia, glowBand, crownTier, crownRoof);
+            const cs = Math.cos(nearDrive), sn = Math.sin(nearDrive);
+            for (const sz of [
+                -7.6,
+                7.6
+            ])for (const side of [
+                -1,
+                1
+            ]){
+                let placedX = null;
+                for (const absX of [
+                    7.8,
+                    9.6,
+                    11.4
+                ]){
+                    const lx = side * absX;
+                    const wx = c[0] + lx * cs + sz * sn, wz = c[1] - lx * sn + sz * cs;
+                    if (!onDrive(data, wx, wz, 3.8) && !onRoad(wx, wz, 2.0)) {
+                        placedX = lx;
+                        break;
+                    }
+                }
+                if (placedX !== null) {
+                    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.46, h0, 12), d.column);
+                    col.position.set(placedX, h0 * 0.5, sz);
+                    const plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.64, 0.85, 12), d.fascia);
+                    plinth.position.set(placedX, 0.425, sz);
+                    canopyGrp.add(col, plinth);
+                }
+            }
+            const pool = new THREE.Mesh(new THREE.CircleGeometry(18, 24).rotateX(-Math.PI / 2), d.pool);
+            pool.position.y = 0.52;
+            canopyGrp.add(pool);
+            g.add(canopyGrp);
+            canopyCenters.push(c);
+            lamps.push({
+                x: c[0],
+                y: h0 - 0.25,
+                z: c[1],
+                color: warm,
+                size: 3.6
+            });
+        }
         const planter = sheen('#c9c3b6', {
             refl: 0.05
         }), green = litColor('#4f8a45');
@@ -514,25 +581,26 @@ export function buildValets(data, plan, graph) {
             ]
         ]){
             const x = c[0] + dx, z = c[1] + dz;
-            if (onDrive(data, x, z, 5)) continue;
+            if (onDrive(data, x, z, 5) || onRoad(x, z, 2.2)) continue;
             const box = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.6, 0.7, 14), planter);
             box.position.set(dx, 0.35, dz);
             const top = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 0.16, 14), green);
             top.position.set(dx, 0.75, dz);
             g.add(box, top);
-            if (!roadMask(graph)(x, z, 0.8)) palms.push([
+            if (!onRoad(x, z, 0.8)) palms.push([
                 x,
                 z
             ]);
         }
-        const sign = textPanel('VALET', 3.6, 1.1, {
-            font: '700 150px "Helvetica Neue", Arial, sans-serif',
+        const labelTxt = resortName ? `${resortName.toUpperCase()} · VALET` : 'VALET';
+        const sign = textPanel(labelTxt, resortName ? 6.4 : 3.6, 1.15, {
+            font: '700 120px "Helvetica Neue", Arial, sans-serif',
             color: '#ffffff',
             background: '#1a2a44'
         });
-        const nearDrive = driveDir(data, c);
-        sign.position.set(0, 4.6, 0);
+        sign.position.set(0, CLEARANCE - 0.52, 0);
         sign.rotation.y = nearDrive;
+        sign.userData.keep = true;
         g.add(sign);
         out.add(bakeStatic(g, (o)=>o.userData.keep === true));
     }

@@ -68,18 +68,62 @@ export function buildSkybridges(data, g) {
     const walkLen = (pts)=>pts.reduce((t, p, i)=>t + (i ? Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0), 0);
     const onRoad = roadMask(g);
     const roads = g.edges.filter((e)=>(e.cls === 'arterial' || e.cls === 'collector') && e.way.name && !e.elevated);
-    const groundRoads = g.edges.filter((e)=>!e.elevated && !e.internal && e.cls !== 'service');
+    const groundRoads = g.edges.filter((e)=>!e.elevated && !e.internal);
+    const roadSegGrid = new Map();
+    const SEG_CELL = 30;
+    for (const e of groundRoads){
+        const halfW = e.lanes.length * e.laneWidth * 0.5 + (e.oneway ? 1.5 : e.lanes.length * e.laneWidth * 0.5 + 1.5);
+        for(let i = 0; i + 1 < e.ref.pts.length; i++){
+            const a = e.ref.pts[i], b = e.ref.pts[i + 1];
+            const minX = Math.floor((Math.min(a[0], b[0]) - halfW - 6) / SEG_CELL);
+            const maxX = Math.floor((Math.max(a[0], b[0]) + halfW + 6) / SEG_CELL);
+            const minZ = Math.floor((Math.min(a[1], b[1]) - halfW - 6) / SEG_CELL);
+            const maxZ = Math.floor((Math.max(a[1], b[1]) + halfW + 6) / SEG_CELL);
+            for(let cx = minX; cx <= maxX; cx++)for(let cz = minZ; cz <= maxZ; cz++){
+                const k = `${cx},${cz}`;
+                let list = roadSegGrid.get(k);
+                if (!list) roadSegGrid.set(k, list = []);
+                list.push([
+                    a[0],
+                    a[1],
+                    b[0],
+                    b[1],
+                    halfW,
+                    e.cls === 'service'
+                ]);
+            }
+        }
+    }
+    const onAnyGroundRoad = (x, z, margin = 2.0, includeService = true)=>{
+        if (onRoad(x, z, margin)) return true;
+        const k = `${Math.floor(x / SEG_CELL)},${Math.floor(z / SEG_CELL)}`;
+        for (const [ax, az, bx, bz, halfW, isSvc] of roadSegGrid.get(k) ?? []){
+            if (isSvc && !includeService) continue;
+            const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
+            const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2));
+            if (Math.hypot(x - (ax + dx * t), z - (az + dz * t)) <= halfW + margin) return true;
+        }
+        return false;
+    };
     const crossesGroundRoad = (pts)=>{
         for(let i = 0; i + 1 < pts.length; i++){
             const a = pts[i], b = pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-            const steps = Math.max(1, Math.ceil(L / 4));
+            const steps = Math.max(1, Math.ceil(L / 3));
             for(let s = 0; s <= steps; s++){
                 const x = a[0] + (b[0] - a[0]) * s / steps, z = a[1] + (b[1] - a[1]) * s / steps;
-                for (const e of groundRoads){
-                    for (const rp of e.ref.pts){
-                        if (Math.hypot(rp[0] - x, rp[1] - z) < 12) return true;
-                    }
-                }
+                if (onAnyGroundRoad(x, z, 4.5, false)) return true;
+            }
+        }
+        return false;
+    };
+    const rampTouchesRoad = (pts, rawYs)=>{
+        for(let i = 0; i + 1 < pts.length; i++){
+            const a = pts[i], b = pts[i + 1], ya = rawYs[i], yb = rawYs[i + 1];
+            const L = Math.hypot(b[0] - a[0], b[1] - a[1]), steps = Math.max(1, Math.ceil(L / 2));
+            for(let s = 0; s <= steps; s++){
+                const t = s / steps;
+                const x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t, y = ya + (yb - ya) * t;
+                if (y < 6.0 && onAnyGroundRoad(x, z, 2.2, true)) return true;
             }
         }
         return false;
@@ -114,7 +158,7 @@ export function buildSkybridges(data, g) {
         const rawYs = w.y, pts = w.pts;
         if (!isSpan(w)) {
             if (w.hw !== 'steps' && !w.conv) continue;
-            if (pts.some((p, i)=>rawYs[i] < 4.5 && onRoad(p[0], p[1], 1.8))) continue;
+            if (rampTouchesRoad(pts, rawYs)) continue;
             const ys = rawYs.map((v)=>Math.max(0, v));
             const W = w.conv ? 0.72 : 0.9;
             plate(deck, pts, ys, -W, W, 0, 1);
@@ -123,12 +167,13 @@ export function buildSkybridges(data, g) {
                 1
             ])band(truss, pts, ys, sd * W, -0.45, 0.95, sd);
             plate(truss, pts, ys, -W, W, -0.45, -1);
-            for(let i = 1; i + 1 < pts.length; i++)if (ys[i] > 2.5 && !onRoad(pts[i][0], pts[i][1], 1.2)) box(steel, pts[i][0], pts[i][1], 0.4, 0.4, 0, ys[i] - 0.35, 0);
+            for(let i = 1; i + 1 < pts.length; i++)if (ys[i] > 3.2 && !onAnyGroundRoad(pts[i][0], pts[i][1], 2.8, true)) box(steel, pts[i][0], pts[i][1], 0.4, 0.4, 0, ys[i] - 0.35, 0);
             continue;
         }
         const L = walkLen(pts);
         const roadCrossing = crossesGroundRoad(pts);
-        const ys = rawYs.map((v)=>Math.max(5.5, v));
+        const minDeckY = roadCrossing ? 6.8 : 5.8;
+        const ys = rawYs.map((v)=>Math.max(minDeckY, v));
         if (!roadCrossing || L < 14) {
             const W = roadCrossing ? 2.4 : 2.1;
             plate(deck, pts, ys, -W, W, 0, 1);
@@ -214,7 +259,7 @@ export function buildSkybridges(data, g) {
                 ]
             ]){
                 const tx = p[0] + ux * along + nx * side, tz = p[1] + uz * along + nz * side;
-                if (!onRoad(tx, tz, 3.2)) {
+                if (!onAnyGroundRoad(tx, tz, 4.2, true)) {
                     placed = [
                         tx,
                         tz
