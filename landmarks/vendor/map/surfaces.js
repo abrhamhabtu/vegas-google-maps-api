@@ -142,7 +142,7 @@ const WHICH = {
     park: 'grass',
     golf: 'grass',
     pitch: 'grass',
-    median: 'grass'
+    median: 'pavement'
 };
 const made = new Map();
 export function surfaceFor(key) {

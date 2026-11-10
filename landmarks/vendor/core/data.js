@@ -351,10 +351,10 @@ function solveRoadElevations(roads) {
             r.y = undefined;
             continue;
         }
-        for(let pass = 0; pass < 2; pass++){
+        for(let pass = 0; pass < 3; pass++){
             for(let i = 1; i < hs.length - 1; i++){
-                if (hs[i] <= 0.45) continue;
-                hs[i] = Math.round((0.2 * hs[i - 1] + 0.6 * hs[i] + 0.2 * hs[i + 1]) * 100) / 100;
+                if (hs[i] <= 0.02 && hs[i - 1] <= 0.1 && hs[i + 1] <= 0.1) continue;
+                hs[i] = Math.round((0.25 * hs[i - 1] + 0.5 * hs[i] + 0.25 * hs[i + 1]) * 100) / 100;
             }
         }
         r.y = hs;

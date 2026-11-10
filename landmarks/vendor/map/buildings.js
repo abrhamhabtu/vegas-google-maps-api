@@ -518,9 +518,9 @@ const FRAG = `
   }
 
   void main() {
-    // openings for valet drives: green takes out a whole low podium, red a portal at street level
+    // openings for valet drives and public roads: blue clears open-air roads, green low podiums, red portals at street level
     vec4 cut = texture2D(uCut, (vW.xz - uCutO) / uCutS);
-    if ((cut.g > 0.5 && vExt.y < ${OPEN_LIMIT.toFixed(1)}) || (cut.r > 0.5 && vW.y < 6.0)) discard;
+    if (cut.b > 0.45 || (cut.g > 0.5 && vExt.y < ${OPEN_LIMIT.toFixed(1)}) || (cut.r > 0.5 && vW.y < 6.5)) discard;
     vec3 n = normalize(vN);
     float style = floor(vExt.w / 10.0 + 0.001);
     float tintK = clamp(fract(vExt.w / 10.0) * 10.0 / 9.0, 0.0, 1.0);
@@ -529,15 +529,15 @@ const FRAG = `
     bool roof = n.y > 0.5;
     float night = uNight;
     vec3 tintN = vTint * mix(0.58, 1.0, 1.0 - night);
-    vec3 base = roof ? mix(uRoof, tintN * 1.05, tintK * 0.8) : mix(uWall, tintN, tintK);
+    vec3 base = roof ? mix(uRoof, tintN * 0.94, tintK * 0.72) : mix(uWall, tintN, tintK);
 
     float hemi = 0.74 + 0.26 * n.y;
     float key = max(dot(n, uSunDir), 0.0);
-    vec3 light = (uAmbient * hemi * uAmbientTint + uSun * key * uSunTint + (roof ? 0.06 : 0.0)) * shadowAt(vW);
+    vec3 light = (uAmbient * hemi * uAmbientTint + uSun * key * uSunTint + (roof ? 0.02 : 0.0)) * shadowAt(vW);
     vec3 c = base * light;
     float topH = vExt.y;
     c *= mix(0.68, 1.0, smoothstep(0.0, 9.0, vW.y));
-    c *= mix(1.0, 1.1, smoothstep(0.0, 1.0, vW.y / max(topH, 1.0)) * (1.0 - night * 0.5));
+    c *= mix(1.0, 1.06, smoothstep(0.0, 1.0, vW.y / max(topH, 1.0)) * (1.0 - night * 0.5));
 
     if (roof) {
       // membrane panels, weathering, and rooftop plant, fading to their average when tiny on screen
@@ -804,6 +804,7 @@ export function buildBuildings(data, valets) {
         if (valets.canopies.has(b)) continue;
         const ring = b.pts;
         const area = Math.abs(ringArea(ring));
+        if (b.name && /^bellagio$/i.test(b.name.trim()) && area > 50000) continue;
         const c = centroid(ring);
         if (HERO_TOWERS.some(([x, z, r, minH])=>b.h >= minH && Math.hypot(c[0] - x, c[1] - z) < r)) continue;
         if (skipAt.some(([x, z, r])=>Math.hypot(c[0] - x, c[1] - z) < r)) continue;

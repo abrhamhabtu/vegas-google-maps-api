@@ -169,7 +169,7 @@ function excalibur(data) {
     const front = ring.filter((p)=>p[0] > maxX - (maxX - minX) * 0.28);
     const fc = centroid(front);
     const gateGrp = new THREE.Group();
-    gateGrp.position.set(fc[0] + 22, 0, fc[1]);
+    gateGrp.position.set(fc[0] + 4, 0, fc[1]);
     gateGrp.rotation.y = Math.PI / 2;
     const moatWater = new THREE.Mesh(new THREE.BoxGeometry(112, 0.22, 18), sheen('#155e8a', {
         refl: 0.85,

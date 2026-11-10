@@ -373,7 +373,7 @@ export function buildLaneGraph(data) {
             const a = cuts[c], b = cuts[c + 1];
             const pts = w.pts.slice(a, b + 1), y = ys.slice(a, b + 1);
             if (pts.length < 2) continue;
-            const rawTurn = w.ow === 1 ? w.turn ?? w.tf : undefined;
+            const rawTurn = w.ow === 1 ? w.turn ?? w.tf : w.ow === -1 ? w.turn ?? w.tb : undefined;
             const turnCount = rawTurn ? rawTurn.split('|').length : undefined;
             const known = w.lanes ?? inheritedLanes.get(w.id);
             const turnInflatedByEmptyPipe = !!(rawTurn && w.lanes !== undefined && rawTurn.endsWith('||'));
@@ -397,7 +397,7 @@ export function buildLaneGraph(data) {
                     pts: rev(),
                     y: y.slice().reverse(),
                     n: total,
-                    turn: w.turn,
+                    turn: w.turn ?? w.tb,
                     from: w.n[b],
                     to: w.n[a]
                 }
@@ -441,6 +441,7 @@ export function buildLaneGraph(data) {
                     laneWidth: laneW,
                     mph,
                     turns: parseTurns(d.turn, d.n),
+                    explicitTurns: !!d.turn,
                     oneway,
                     elevated: d.y.some((v)=>v > 0.4)
                 };
@@ -482,9 +483,12 @@ export function buildLaneGraph(data) {
             const a = p.ref.pts, b = e.ref.pts, ax = a[a.length - 1][0] - a[a.length - 2][0], az = a[a.length - 1][1] - a[a.length - 2][1], bx = b[1][0] - b[0][0], bz = b[1][1] - b[0][1];
             return (ax * bx + az * bz) / ((Math.hypot(ax, az) || 1) * (Math.hypot(bx, bz) || 1)) > 0.7;
         });
-        if (same.length === 1) e.turns = same[0].turns.map((t)=>[
-                ...t
-            ]);
+        if (same.length === 1) {
+            e.turns = same[0].turns.map((t)=>[
+                    ...t
+                ]);
+            e.explicitTurns = true;
+        }
     }
     const heading = (l, start)=>{
         const i = start ? 0 : l.pts.length - 2;

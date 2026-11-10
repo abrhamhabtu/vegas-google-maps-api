@@ -295,12 +295,50 @@ export function rebuildMovements(g, groups, mouthStart, mouthEnd, endSetback) {
         a.next.push(conn.id);
         b.prev.push(conn.id);
     };
+    const linkRoot = (e)=>{
+        let cur = e, guard = 0, len = e.ref.length;
+        while(cur.prev !== undefined && /_link$/.test(E[cur.prev].way.hw) && len + E[cur.prev].ref.length < 180 && guard++ < 8){
+            cur = E[cur.prev];
+            len += cur.ref.length;
+        }
+        return cur;
+    };
     for (const P of plans){
         const byOrigin = new Map();
+        const linkServed = [];
+        const classified = [];
         for (const p of P.pairs.values()){
-            const [ax, az] = dirAt(p.o.ref, true), [bx, bz] = dirAt(p.d.ref, false);
+            const isLink = /_link$/.test(p.o.way.hw);
+            const root = isLink ? linkRoot(p.o) : p.o;
+            const useRoot = isLink && (root !== p.o || p.o.ref.length < 90);
+            const [ax, az] = useRoot ? dirAt(root.ref, false) : dirAt(p.o.ref, true);
+            const [bx, bz] = dirAt(p.d.ref, false);
             const ang = Math.atan2(ax * bz - az * bx, ax * bx + az * bz) * 180 / Math.PI;
             const mv = Math.abs(ang) < 35 ? 'through' : Math.abs(ang) > 150 ? 'uturn' : ang > 0 ? 'right' : 'left';
+            classified.push({
+                p,
+                mv,
+                isLink,
+                ax,
+                az
+            });
+            if (isLink && (mv === 'left' || mv === 'right')) {
+                linkServed.push({
+                    dId: p.d.id,
+                    mv,
+                    ax,
+                    az
+                });
+            }
+        }
+        const hasOtherMove = new Set();
+        for (const c of classified){
+            if (c.mv === 'through') hasOtherMove.add(c.p.o.id);
+        }
+        for (const { p, mv, isLink, ax, az } of classified){
+            if (!isLink && !p.o.explicitTurns && (mv === 'left' || mv === 'right') && hasOtherMove.has(p.o.id)) {
+                if (linkServed.some((s)=>s.dId === p.d.id && s.mv === mv && s.ax * ax + s.az * az > 0.7)) continue;
+            }
             if (!byOrigin.has(p.o.id)) byOrigin.set(p.o.id, []);
             const tagged = p.o.lanes.filter((_, i)=>p.o.turns[i]?.includes(mv));
             const lanes = tagged.length ? tagged : mv === 'right' ? [

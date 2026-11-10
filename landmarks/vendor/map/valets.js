@@ -5,7 +5,7 @@ import { glowPoints, nightAura, sheen, textPanel } from '../landmarks/sheen.js';
 import { PLACES, placeXZ } from '../places.js';
 import { RESORT_LOOKS } from './buildings.js';
 import { Soup, normals, ringArea } from './geom.js';
-import { isPassage, roadMask, sample } from './lanegraph.js';
+import { isDrivable, isPassage, roadMask, sample } from './lanegraph.js';
 import { flatMaterial, ORDER } from './materials.js';
 import { MAIN_VALET, nearestDrive } from './valetstops.js';
 import { litColor } from './materials.js';
@@ -142,6 +142,18 @@ export function planValets(data) {
     };
     for (const p of portals)stroke(p.pts, 9, '#ff0000');
     for (const p of open)stroke(p.pts, 16, '#00ff00');
+    for (const r of data.roads){
+        if (!isDrivable(r) || r.y && r.y.some((v)=>v > 2.5)) continue;
+        const lanes = r.lanes ?? (r.ow ? r.hw === 'service' || r.hw.endsWith('_link') ? 1 : 2 : /primary|trunk/.test(r.hw) ? 4 : 2);
+        const w = Math.max(8, lanes * 3.7 + 4.5);
+        if (r.cov || r.tn) {
+            stroke(r.pts, w, '#ff0000');
+        } else if (r.hw !== 'service') {
+            stroke(r.pts, w, '#0000ff');
+        } else if (r.svc !== 'parking_aisle') {
+            stroke(r.pts, 8.5, '#ff0000');
+        }
+    }
     const mask = new THREE.CanvasTexture(cv);
     mask.flipY = false;
     mask.generateMipmaps = false;

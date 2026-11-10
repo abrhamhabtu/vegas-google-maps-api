@@ -36,6 +36,7 @@ test('projection handles source shader paths including animated fountain instanc
     'vec4 mvPosition = viewMatrix * wp; gl_Position = projectionMatrix * mvPosition;',
     'gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0);',
     '#include <project_vertex>',
+    'vec4 mvPosition = viewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mvPosition;',
   ];
   for (const path of paths) {
     const adapted = adaptVertexShader(path);

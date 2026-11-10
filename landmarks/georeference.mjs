@@ -46,6 +46,7 @@ export function adaptVertexShader(shader, projectChunk = '') {
     .replace(/modelViewMatrix\s*\*\s*(vec4\([^;]+?\))/g,
       'viewMatrix * vegasProject(modelMatrix * $1)')
     .replace(/viewMatrix\s*\*\s*wp\b/g, 'viewMatrix * vegasProject(wp)')
+    .replace(/viewMatrix\s*\*\s*(vec4\([^;]+?\))/g, 'viewMatrix * vegasProject($1)')
     .replace(/mvPosition\s*=\s*modelViewMatrix\s*\*\s*mvPosition;/g,
       'mvPosition = viewMatrix * vegasProject(modelMatrix * mvPosition);');
   return projectionGLSL + result;

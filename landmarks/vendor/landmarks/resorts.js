@@ -898,7 +898,7 @@ function treasureIsland(data) {
     const fr = frontage(data, c);
     const front = new THREE.Group();
     front.name = 'Treasure Island front';
-    const px = fr.at[0] + fr.out[0] * 46, pz = fr.at[1] + fr.out[1] * 46;
+    const px = fr.at[0] + fr.out[0] * 54, pz = fr.at[1] + fr.out[1] * 54;
     front.position.set(px - c[0], 0, pz - c[1]);
     front.rotation.y = Math.atan2(-fr.out[0], -fr.out[1]);
     const water = new THREE.Mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), sheen('#000000', {
@@ -1260,7 +1260,7 @@ function circusFront(data) {
     const c = centroid(main.ring), fr = frontage(data, c);
     const g = new THREE.Group();
     g.name = 'Circus Circus front';
-    const x = fr.at[0] + fr.out[0] * 62, z = fr.at[1] + fr.out[1] * 62;
+    const x = fr.at[0] + fr.out[0] * 42, z = fr.at[1] + fr.out[1] * 42;
     g.position.set(x, 0, z);
     g.rotation.y = Math.atan2(-fr.out[0], -fr.out[1]);
     const tent = new THREE.ConeGeometry(30, 24, 24, 1, false).toNonIndexed();
@@ -1296,11 +1296,11 @@ function circusFront(data) {
         1
     ]){
         const m = new THREE.Mesh(stripes[n], n ? white : redM);
-        m.position.set(26, 22, -34);
+        m.position.set(18, 22, -16);
         g.add(m);
     }
     const drum = new THREE.Mesh(new THREE.CylinderGeometry(30, 30, 10, 24), ivory);
-    drum.position.set(26, 5, -34);
+    drum.position.set(18, 5, -16);
     g.add(drum);
     const pole = new THREE.Mesh(new THREE.BoxGeometry(2.4, 36, 2.4), gold);
     pole.position.set(-20, 18, 0);
@@ -1563,7 +1563,7 @@ function buildStripResorts(data, engine) {
     if (aug) faceSign(data, g, aug, 'CAESARS PALACE', 62, 7.5, aug.h - 7, serif(92), '#fff3d6');
     const caes = tower(/^caesars palace hotel and casino$/i) ?? aug;
     if (caes) {
-        const f = frontFrame(data, centroid(caes.ring), 38);
+        const f = frontFrame(data, centroid(caes.ring), 54);
         block(f, 0, 0, 0, 92, 0.4, 16, stone);
         for(let x = -42; x <= 42; x += 6){
             column(f, x, 6, 13, 0.75, white);
@@ -1662,7 +1662,7 @@ function buildStripResorts(data, engine) {
         angel.position.set(0, y2 + H * 0.2 + 2.2, 0);
         part.add(angel);
         g.add(part);
-        const f = frontFrame(data, c, 42);
+        const f = frontFrame(data, c, 54);
         const pink = sheen('#e4b7a8', {
             refl: 0.02
         });
