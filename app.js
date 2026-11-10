@@ -70,12 +70,12 @@ const LANDMARKS = [
   { name: "Paris & Eiffel Tower", lat: 36.1125, lng: -115.1722, category: "Resort", color: "#ff9e44" },
   { name: "Caesars Palace", lat: 36.1162, lng: -115.1745, category: "Resort", color: "#fff1d6" },
   { name: "High Roller Wheel", lat: 36.1177, lng: -115.1681, category: "Landmark", color: "#ff2ae2" },
-  { name: "Hard Rock Guitar", lat: 36.1212, lng: -115.1741, category: "Resort", color: "#00c8ff" },
+  { name: "Hard Rock Guitar", lat: 36.121145, lng: -115.172991, category: "Resort", color: "#00c8ff" },
   { name: "The Venetian", lat: 36.1212, lng: -115.1697, category: "Resort", color: "#ffdca6" },
   { name: "The Sphere", lat: 36.1213, lng: -115.1620, category: "Venue", color: "#ff3d6e" },
   { name: "Wynn Las Vegas", lat: 36.1265, lng: -115.1657, category: "Resort", color: "#ffc76b" },
   { name: "Trump Tower", lat: 36.1295, lng: -115.1727, category: "Resort", color: "#ffe066" },
-  { name: "Resorts World", lat: 36.1345, lng: -115.1691, category: "Resort", color: "#ff335c" },
+  { name: "Resorts World", lat: 36.13477, lng: -115.16621, category: "Resort", color: "#ff335c" },
   { name: "Fontainebleau", lat: 36.1362, lng: -115.1628, category: "Resort", color: "#5ea0ff" },
   { name: "The STRAT Tower", lat: 36.1475, lng: -115.1566, category: "Landmark", color: "#ff5c5c" },
   { name: "Fremont St Canopy", lat: 36.1707, lng: -115.1439, category: "Downtown", color: "#ff8800" },
@@ -117,40 +117,39 @@ function getApiKey() {
 function initApp() {
   setupUIHandlers();
   initWebGLVegasMap();
+  window.setupMapChrome({ getMap: () => glMap, getLayer: () => threeStripLayer });
 }
 
 function initWebGLVegasMap() {
-  // Start right at the MGM Rd / Bruno Mars Dr / S Las Vegas Blvd intersection at high zoom so the user immediately sees the Google Maps lanes!
+  // Open on the central Strip; Street lanes still jumps to the original MGM intersection.
   glMap = new maplibregl.Map({
     container: "map-gl",
-    style: "https://tiles.openfreemap.org/styles/liberty",
-    center: [MGM_BRUNO_MARS_INTERSECTION.lng, MGM_BRUNO_MARS_INTERSECTION.lat],
-    zoom: 18.8,
-    pitch: 45,
-    bearing: 0,
+    style: { version: 8, sources: {}, layers: [{ id: 'map-background', type: 'background', paint: { 'background-color': '#dce4e6' } }] },
+    attributionControl: { compact: true, customAttribution: '3D data © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' },
+    center: [-115.1744, 36.1128],
+    zoom: 16.3,
+    pitch: 55,
+    bearing: -12,
     maxZoom: 21.5,
     antialias: true,
     maxPitch: 82,
   });
 
-  glMap.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
+  // Navigation lives in the compact camera dock; keep map attribution unobstructed.
+  // Gesture tilt must update the same mode state used by the AV follow camera.
+  glMap.on('pitchend', () => {
+    const tilted = glMap.getPitch() > 10;
+    if (is3DView === tilted) return;
+    is3DView = tilted;
+    set3DBuildingsVisibility(tilted);
+    document.getElementById('mode-3d-btn').classList.toggle('active', tilted);
+    document.getElementById('mode-lanes-btn').classList.toggle('active', !tilted);
+  });
 
   glMap.on("load", () => {
-    // 1. Hide OpenFreeMap's own 2D roads/landuse/labels so they NEVER cover or clash with Google Maps' official street & lane tiles!
-    // Keep ONLY the `building` layer at 0.004 opacity so Three.js can read all exact OSM 3D building footprints.
-    const layers = glMap.getStyle().layers || [];
-    let buildingLayerId = undefined;
-
-    for (const layer of layers) {
-      if (layer.type === "fill-extrusion") {
-        buildingLayerId = layer.id;
-        glMap.setPaintProperty(layer.id, "fill-extrusion-opacity", 0.004);
-      } else {
-        glMap.setLayoutProperty(layer.id, "visibility", "none");
-      }
-    }
-
-    // 2. Add Official Google Maps High-DPI Retina Street & Lane Tiles (`lyrs=m&scale=2` up to zoom 22)
+    // Google raster layers are the only ground map. Buildings come from the
+    // consolidated footprint snapshot, so no streamed vector masses can duplicate them.
+    // Add Google Maps High-DPI Retina Street & Lane Tiles (`lyrs=m&scale=2` up to zoom 22)
     // This renders the exact grey-blue streets, dashed lane lines, turn-lane arrows, crosswalks, and POI icons from Google Maps!
     glMap.addSource("google-roadmap-lanes", {
       type: "raster",
@@ -168,6 +167,7 @@ function initWebGLVegasMap() {
     // 3. Add Google Maps Satellite Hybrid (`lyrs=y&scale=2`) & Live Traffic (`lyrs=h,traffic`)
     glMap.addSource("google-satellite", {
       type: "raster",
+      attribution: "Map imagery ©2026 Google",
       tiles: [
         "https://mt0.google.com/vt/lyrs=y&hl=en&x={x}&y={y}&z={z}&scale=2",
         "https://mt1.google.com/vt/lyrs=y&hl=en&x={x}&y={y}&z={z}&scale=2",
@@ -178,6 +178,7 @@ function initWebGLVegasMap() {
 
     glMap.addSource("google-traffic", {
       type: "raster",
+      attribution: "Traffic data ©2026 Google",
       tiles: ["https://mt1.google.com/vt/lyrs=h,traffic&hl=en&x={x}&y={y}&z={z}&scale=2"],
       tileSize: 256,
       maxzoom: 22,
@@ -194,8 +195,7 @@ function initWebGLVegasMap() {
         paint: {
           "raster-fade-duration": 0,
         },
-      },
-      buildingLayerId
+      }
     );
 
     glMap.addLayer(
@@ -209,8 +209,7 @@ function initWebGLVegasMap() {
         paint: {
           "raster-fade-duration": 0,
         },
-      },
-      buildingLayerId
+      }
     );
 
     glMap.addLayer(
@@ -224,8 +223,7 @@ function initWebGLVegasMap() {
         paint: {
           "raster-opacity": 0.85,
         },
-      },
-      buildingLayerId
+      }
     );
 
     // 4. Add Subtle AV Lane Path Guide Line (thin & translucent so Google Maps lane markings stay visible underneath!)
@@ -294,8 +292,7 @@ function flyToLocation(lat, lng, zoom = 17.0, tilt = 60, heading = 0) {
       zoom: zoom,
       pitch: tilt,
       bearing: heading,
-      duration: 1300,
-      essential: true,
+      duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1300,
     });
   }
 }
@@ -582,6 +579,10 @@ async function handlePlaceSearch() {
   const query = document.getElementById("place-search-input").value.trim();
   if (!query) return;
 
+  const place = [...document.querySelectorAll('#landmark-chips .chip')].find(chip =>
+    chip.querySelector('span').textContent.toLowerCase().includes(query.toLowerCase()));
+  if (place) { place.click(); return; }
+
   const localMatch = LANDMARKS.find((l) => l.name.toLowerCase().includes(query.toLowerCase()));
   if (localMatch) {
     flyToLocation(localMatch.lat, localMatch.lng, 17.5, is3DView ? 60 : 0, 15);
@@ -645,11 +646,7 @@ function setupUIHandlers() {
 
   // "Lanes View" button jumps straight to the MGM Rd / Bruno Mars Dr / S Las Vegas Blvd lane view from the screenshot
   document.getElementById("reset-strip-btn").addEventListener("click", () => {
-    is3DView = false;
-    set3DBuildingsVisibility(false);
-    document.getElementById("mode-lanes-btn").classList.add("active");
-    document.getElementById("mode-3d-btn").classList.remove("active");
-    flyToLocation(MGM_BRUNO_MARS_INTERSECTION.lat, MGM_BRUNO_MARS_INTERSECTION.lng, 19.1, 0, 0);
+    document.querySelector('#landmark-chips .chip[data-view="lanes"]').click();
   });
 
   const modeLanesBtn = document.getElementById("mode-lanes-btn");
@@ -724,6 +721,7 @@ function setupUIHandlers() {
     if (!glMap) return;
     const nextPitch = glMap.getPitch() > 15 ? 0 : 60;
     is3DView = nextPitch > 0;
+    set3DBuildingsVisibility(is3DView);
     mode3dBtn.classList.toggle("active", is3DView);
     modeLanesBtn.classList.toggle("active", !is3DView);
     glMap.easeTo({ pitch: nextPitch, duration: 500 });

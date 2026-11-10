@@ -3,60 +3,79 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Las Vegas Strip — Google Maps Lane-Level Streets, Three.js 3D & AV Simulation</title>
+  <title>Vegas Strip — Explore in 3D</title>
   <!-- MapLibre GL + Three.js for Google Maps Retina Street Lanes & 3D Las Vegas Strip Resorts -->
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=codex-landmarks-1" />
   <!-- Load local config if present (gitignored) -->
   <script src="config.local.js" onerror="console.info('No config.local.js found; using stored or fallback config.')"></script>
 </head>
-<body>
+<body data-theme="day">
   <!-- Top Floating Google Maps-style Search & Mode Bar -->
   <header class="top-bar">
     <div class="search-panel">
-      <div class="brand-badge" title="Las Vegas Strip Google Maps Carbon Copy">
+      <div class="brand-badge" title="Explore the Las Vegas Strip">
         <span class="pin-dot"></span>
-        <span class="brand-title">Google Maps Vegas</span>
+        <span class="brand-title">VEGAS<span class="brand-subtitle">THE STRIP</span></span>
       </div>
       <input
         id="place-search-input"
         type="text"
-        placeholder="Search Google Maps Las Vegas Strip..."
+        placeholder="Find a place in Las Vegas"
+        aria-label="Search places in Las Vegas"
         autocomplete="off"
       />
       <button id="search-go-btn" class="icon-btn" title="Search Las Vegas">
-        Search
+        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>
       </button>
       <button id="reset-strip-btn" class="icon-btn" title="Jump to MGM Rd & Bruno Mars Dr Lanes">
-        Lanes View
+        Street lanes
       </button>
+      <button id="places-toggle" class="icon-btn" aria-expanded="false" aria-controls="places-panel">Places <span aria-hidden="true">⌄</span></button>
     </div>
 
     <!-- Quick Jump Corridor Chips -->
-    <div class="corridor-chips" id="landmark-chips">
-      <button class="chip active" data-lat="36.10305" data-lng="-115.17275" data-zoom="19.1" data-tilt="0" data-heading="0">MGM Rd & Bruno Mars Dr (Lanes)</button>
-      <button class="chip" data-lat="36.1127" data-lng="-115.1735" data-zoom="16.6" data-tilt="62" data-heading="15">Bellagio & Paris 3D</button>
-      <button class="chip" data-lat="36.1024" data-lng="-115.1726" data-zoom="17.2" data-tilt="60" data-heading="15">MGM Grand & NY-NY 3D</button>
-      <button class="chip" data-lat="36.0955" data-lng="-115.1761" data-zoom="16.5" data-tilt="62" data-heading="25">Luxor & Mandalay Bay 3D</button>
-      <button class="chip" data-lat="36.1147" data-lng="-115.1728" data-zoom="19.0" data-tilt="0" data-heading="0">Flamingo × Strip Intersection</button>
-      <button class="chip" data-lat="36.1213" data-lng="-115.1650" data-zoom="16.4" data-tilt="64" data-heading="310">The Sphere & Venetian 3D</button>
-      <button class="chip" data-lat="36.1265" data-lng="-115.1665" data-zoom="16.5" data-tilt="62" data-heading="20">Wynn & Encore 3D</button>
-      <button class="chip" data-lat="36.1707" data-lng="-115.1439" data-zoom="17.0" data-tilt="58" data-heading="295">Fremont St Downtown</button>
+    <section id="places-panel" class="places-panel hidden" aria-label="Landmark views">
+      <div class="popover-heading"><div><span class="eyebrow">EXPLORE LAS VEGAS</span><h2>Find your next view.</h2></div><button class="close-button" id="places-close" aria-label="Close places">×</button></div>
+      <input id="places-filter" class="places-filter" type="search" placeholder="Filter landmarks…" aria-label="Filter landmarks" />
+      <div class="corridor-chips" id="landmark-chips">
+        <button class="chip active" data-view="bellagio" data-lat="36.1128" data-lng="-115.1744" data-zoom="16.3" data-tilt="55" data-heading="-12"><span>Bellagio & the fountains</span><small>CENTER STRIP</small></button>
+        <button class="chip" data-view="paris" data-lat="36.11245" data-lng="-115.1718" data-zoom="17.3" data-tilt="58" data-heading="-25"><span>Paris & Eiffel Tower</span><small>LANDMARK</small></button>
+        <button class="chip" data-view="sphere" data-lat="36.1213" data-lng="-115.1621" data-zoom="17.1" data-tilt="60" data-heading="-25"><span>The Sphere</span><small>LIVE EXOSPHERE</small></button>
+        <button class="chip" data-view="luxor" data-lat="36.0955" data-lng="-115.1761" data-zoom="16.9" data-tilt="60" data-heading="25"><span>Luxor & Mandalay Bay</span><small>SOUTH STRIP</small></button>
+        <button class="chip" data-view="allegiant" data-lat="36.0908" data-lng="-115.1833" data-zoom="16.9" data-tilt="58" data-heading="-20"><span>Allegiant Stadium</span><small>STADIUM</small></button>
+        <button class="chip" data-view="tmobile" data-lat="36.10283" data-lng="-115.17818" data-zoom="17.2" data-tilt="57" data-heading="-25"><span>T-Mobile Arena</span><small>THE PARK</small></button>
+        <button class="chip" data-view="athletics" data-lat="36.09927" data-lng="-115.170025" data-zoom="17.2" data-tilt="57" data-heading="25"><span>Athletics ballpark</span><small>UNDER CONSTRUCTION</small></button>
+        <button class="chip" data-view="mgm" data-lat="36.1024" data-lng="-115.1726" data-zoom="16.9" data-tilt="58" data-heading="15"><span>MGM Grand & New York-New York</span><small>SOUTH STRIP</small></button>
+        <button class="chip" data-view="aria" data-lat="36.1075" data-lng="-115.1765" data-zoom="16.9" data-tilt="58" data-heading="20"><span>ARIA & CityCenter</span><small>RESORTS</small></button>
+        <button class="chip" data-view="highroller" data-lat="36.1176" data-lng="-115.1683" data-zoom="17.2" data-tilt="60" data-heading="-20"><span>High Roller</span><small>OBSERVATION WHEEL</small></button>
+        <button class="chip" data-view="guitar" data-lat="36.121145" data-lng="-115.172991" data-zoom="17.0" data-tilt="60" data-heading="-25"><span>Hard Rock guitar</span><small>UNDER CONSTRUCTION</small></button>
+        <button class="chip" data-view="venetian" data-lat="36.1214" data-lng="-115.1692" data-zoom="16.8" data-tilt="58" data-heading="-15"><span>The Venetian & Palazzo</span><small>RESORTS</small></button>
+        <button class="chip" data-view="wynn" data-lat="36.1271" data-lng="-115.1655" data-zoom="16.6" data-tilt="58" data-heading="20"><span>Wynn & Encore</span><small>NORTH STRIP</small></button>
+        <button class="chip" data-view="resortsworld" data-lat="36.13477" data-lng="-115.16621" data-zoom="16.9" data-tilt="60" data-heading="25"><span>Resorts World</span><small>NORTH STRIP</small></button>
+        <button class="chip" data-view="strat" data-lat="36.1475" data-lng="-115.1566" data-zoom="16.3" data-tilt="60" data-heading="-15"><span>The STRAT</span><small>OBSERVATION TOWER</small></button>
+        <button class="chip" data-view="fremont" data-lat="36.1707" data-lng="-115.1439" data-zoom="17.0" data-tilt="58" data-heading="295"><span>Fremont Street</span><small>DOWNTOWN</small></button>
+        <button class="chip" data-view="welcome" data-lat="36.0820593" data-lng="-115.1727735" data-zoom="19.1" data-tilt="57" data-heading="0"><span>Welcome to Las Vegas sign</span><small>LANDMARK</small></button>
+        <button class="chip" data-view="lanes" data-lat="36.10305" data-lng="-115.17275" data-zoom="19.1" data-tilt="0" data-heading="0"><span>MGM Road × Bruno Mars Drive</span><small>STREET LANES</small></button>
+      </div>
+      <p id="places-empty" class="empty-state hidden">No matching landmarks.</p>
+    </section>
+    <div class="theme-control" role="group" aria-label="Time of day">
+      <button class="theme-btn active" data-theme="day" aria-pressed="true"><span aria-hidden="true">☀</span> Day</button>
+      <button class="theme-btn" data-theme="golden" aria-pressed="false"><span aria-hidden="true">◒</span> Sunset</button>
+      <button class="theme-btn" data-theme="night" aria-pressed="false"><span aria-hidden="true">☾</span> Night</button>
     </div>
 
     <!-- Map Mode & Layer Controls -->
-    <div class="layer-controls">
-      <button id="mode-lanes-btn" class="mode-btn">2D Street Lanes</button>
-      <button id="mode-3d-btn" class="mode-btn active">3D + Street Lanes</button>
-      <button id="toggle-bldg-btn" class="mode-btn active" title="Show/Hide Three.js 3D Buildings">3D Buildings</button>
-      <button id="toggle-satellite-btn" class="mode-btn">Satellite</button>
-      <button id="toggle-traffic-btn" class="mode-btn">Traffic</button>
-      <button id="api-key-btn" class="mode-btn subtle" title="API Key & Engine Status">
-        <span id="engine-badge-dot" class="status-dot ok"></span>
-        <span id="engine-badge-text">Google Streets @2x</span>
-      </button>
+    <button id="layers-toggle" class="floating-button" aria-expanded="false" aria-controls="layers-panel"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m3 8 9-5 9 5-9 5-9-5Zm0 5 9 5 9-5M3 18l9 5 9-5"/></svg>Layers</button>
+    <div id="layers-panel" class="layer-controls hidden" role="group" aria-label="Map layers">
+      <div class="popover-heading"><h2>Map layers</h2><button id="layers-close" class="close-button" aria-label="Close layers">×</button></div>
+      <button id="toggle-bldg-btn" class="mode-btn active" aria-pressed="true">3D buildings <span>ON</span></button>
+      <button id="toggle-satellite-btn" class="mode-btn" aria-pressed="false">Satellite <span>OFF</span></button>
+      <button id="toggle-traffic-btn" class="mode-btn" aria-pressed="false">Live traffic <span>OFF</span></button>
+      <button id="api-key-btn" class="mode-btn subtle" title="Map settings"><span id="engine-badge-dot" class="status-dot ok"></span><span id="engine-badge-text">Google map settings</span></button>
     </div>
   </header>
 
@@ -68,21 +87,27 @@
 
   <!-- Camera Tilt / Heading HUD Controls (bottom right) -->
   <div class="camera-hud">
-    <button id="cam-rotate-left" class="hud-btn" title="Rotate Camera Left">⟲</button>
-    <button id="cam-tilt-toggle" class="hud-btn" title="Toggle 2D Top-Down vs 3D Tilt">2D / 3D</button>
-    <button id="cam-rotate-right" class="hud-btn" title="Rotate Camera Right">⟳</button>
+    <div class="view-control" role="group" aria-label="Map perspective"><button id="mode-lanes-btn" class="mode-btn" aria-pressed="false" title="2D street lanes">2D</button><button id="mode-3d-btn" class="mode-btn active" aria-pressed="true" title="3D street view">3D</button></div>
+    <button id="cam-north" class="hud-btn compass" title="North up (N)" aria-label="Reset north"><span id="compass-needle" aria-hidden="true">▲</span><small>N</small></button>
+    <div class="orbit-control"><button id="cam-rotate-left" class="hud-btn" title="Rotate camera left" aria-label="Rotate camera left">↶</button><button id="cam-tilt-toggle" class="hud-btn" title="Toggle tilt (D)" aria-label="Toggle map tilt">◱</button><button id="cam-rotate-right" class="hud-btn" title="Rotate camera right" aria-label="Rotate camera right">↷</button></div>
+    <div class="zoom-control"><button id="map-zoom-in" class="hud-btn" title="Zoom in" aria-label="Zoom in">+</button><button id="map-zoom-out" class="hud-btn" title="Zoom out" aria-label="Zoom out">−</button></div>
   </div>
+  <div class="view-caption"><span class="eyebrow">LAS VEGAS, NEVADA</span><span id="view-title">Bellagio & the fountains</span><span id="scene-status" role="status">Loading landmarks…</span></div>
+  <div class="map-hint">Drag to explore <span>·</span> Shift + drag to orbit <span>·</span> Scroll to zoom</div>
+  <button id="show-controls" class="floating-button hidden">Show controls</button>
+  <div id="map-announcement" class="sr-only" role="status" aria-live="polite"></div>
 
   <!-- Autonomous Vehicle (AV) Simulation Dock -->
-  <aside class="av-panel" id="av-panel">
+  <aside class="av-panel collapsed" id="av-panel" aria-label="Robotaxi simulation">
     <div class="av-header">
       <div>
-        <h2>Robotaxi Lane Simulation</h2>
-        <p class="subtitle">Multi-Lane S Las Vegas Blvd Fleet</p>
+        <h2><span class="vehicle-dot" aria-hidden="true"></span>Robotaxi</h2>
+        <p class="subtitle" id="av-summary">Las Vegas Boulevard · ready to drive</p>
       </div>
       <span class="status-pill" id="sim-status">READY</span>
+      <button id="av-panel-toggle" class="collapse-button" aria-expanded="false" aria-controls="av-panel-body" aria-label="Expand simulation controls">⌃</button>
     </div>
-
+    <div id="av-panel-body" inert>
     <div class="av-route-selector">
       <label for="preset-route">Corridor & Lane Assignment</label>
       <select id="preset-route">
@@ -144,19 +169,20 @@
         <span class="t-sub" id="tel-distance">0.00 / 3.65 mi</span>
       </div>
     </div>
+    </div>
   </aside>
 
   <!-- Engine & API Key Diagnostic Modal -->
   <div id="api-modal" class="modal-backdrop hidden">
-    <div class="modal-card">
-      <h3>Google Maps @2x Lane Tiles + Three.js 3D Configuration</h3>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="map-settings-title">
+      <h3 id="map-settings-title">Map settings</h3>
       <p id="api-diagnostic-msg">
-        Rendering official Google Maps high-DPI street & lane tiles (`lyrs=m&scale=2` up to zoom 22) with individual dashed lanes, turn arrows, crosswalks, and Three.js 3D resorts.
+        Google street and satellite maps, with geographically anchored 3D landmarks. Use Street lanes for an unobstructed view of road markings.
       </p>
-      <label class="modal-label" for="api-key-input">Google Maps / AI Studio API Key</label>
-      <input id="api-key-input" type="text" placeholder="AIzaSy..." />
+      <label class="modal-label" for="api-key-input">Optional Google Maps API key</label>
+      <input id="api-key-input" type="password" placeholder="AIzaSy..." autocomplete="off" />
       <div class="modal-note">
-        <strong>Tip:</strong> Zoom in (`zoom 18–21`) or click <strong>2D Street Lanes</strong> in the top bar to see every Google Maps lane divider, painted turn arrow, crosswalk, and traffic signal cleanly without 3D building occlusion.
+        <strong>Tip:</strong> Use <strong>Street lanes</strong> or <strong>2D</strong> to inspect road markings. Choose a landmark in <strong>Places</strong> to return to a 3D view.
       </div>
       <div class="modal-actions">
         <button id="save-api-key-btn" class="primary-btn">Save Key</button>
@@ -165,7 +191,8 @@
     </div>
   </div>
 
-  <script src="three-strip.js"></script>
+  <script type="module" src="three-strip.js"></script>
+  <script src="map-controls.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
