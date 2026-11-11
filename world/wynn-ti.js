@@ -7,7 +7,7 @@ import { hash, ringArea } from '../landmarks/vendor/map/geom.js';
 import { heroOwned } from '../landmarks/vendor/map/buildings.js';
 import { theme } from '../landmarks/vendor/core/theme.js';
 import { halo, sheen } from '../landmarks/vendor/landmarks/sheen.js';
-import { MODE, Soup, WHITE, centroid, clean, facade, inset, obb, offset, sign, spill } from './hero-kit.js';
+import { MODE, Soup, WHITE, centroid, clean, facade, inset, makeWaterMaterial, obb, offset, sign, spill } from './hero-kit.js';
 
 const THREE = window.THREE;
 const SCRIPT = '"Snell Roundhand", "Apple Chancery", "Brush Script MT", "Segoe Script", cursive';
@@ -513,50 +513,6 @@ function makeGolfTurfMaterial() {
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -2,
-  });
-}
-
-function makeWaterMaterial(dayHex, nightHex, rimHex) {
-  const u = theme.uniforms;
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
-      uDay: { value: new THREE.Color(dayHex) },
-      uNightCol: { value: new THREE.Color(nightHex) },
-      uRim: { value: new THREE.Color(rimHex) },
-      uNight: u.uNight,
-    },
-    vertexShader: `
-      #include <common>
-      #include <fog_pars_vertex>
-      varying vec3 vW;
-      void main() {
-        vec4 wp = modelMatrix * vec4(position, 1.0);
-        vW = wp.xyz;
-        vec4 mvPosition = viewMatrix * wp;
-        gl_Position = projectionMatrix * mvPosition;
-        #include <fog_vertex>
-      }
-    `,
-    fragmentShader: `
-      #include <common>
-      #include <fog_pars_fragment>
-      uniform vec3 uDay, uNightCol, uRim;
-      uniform float uNight;
-      varying vec3 vW;
-      void main() {
-        float shimmer = 0.5 + 0.5 * sin(vW.x * 0.22 + vW.z * 0.19) * cos(vW.x * 0.14 - vW.z * 0.25);
-        vec3 base = mix(uDay, uNightCol, uNight);
-        vec3 c = mix(base, uRim, shimmer * 0.22);
-        gl_FragColor = vec4(c, 1.0);
-        #include <fog_fragment>
-        #include <colorspace_fragment>
-      }
-    `,
-    fog: true,
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -4,
   });
 }
 

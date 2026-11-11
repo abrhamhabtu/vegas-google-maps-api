@@ -1,4 +1,4 @@
-// Small original illustrations for the four center Strip resort labels.
+// Small original illustrations for landmark labels.
 const pillars = (xs, y, h, color, width) => xs.map(x =>
   `<path d="M${x} ${y}v${h}" stroke="${color}" stroke-width="${width}"/>`,
 ).join('');
@@ -29,6 +29,30 @@ const art = {
     <path d="M22 41V27q-1-5 4-5l3 3" fill="none" stroke="#ffdca1" stroke-width="1.6"/>
     <text x="23" y="12" text-anchor="middle" font-size="8" font-family="Georgia,serif" font-style="italic" fill="#ffdce9">Flamingo</text>
     <path d="M9 42h28" stroke="#f7aa7b" stroke-width="1.5"/>`,
+  resortsworld: `
+    <path d="M0 0h46v46H0z" fill="#87a5c7"/>
+    <path d="M6 15q10-5 18-1l17 7v17H6z" fill="#a85b46" stroke="#f2d3bd" stroke-width="1"/>
+    <path d="M6 16q9-5 18-2v22q-10-3-18 0z" fill="#703534"/>
+    <path d="M8 20q8-4 14-3v13q-7-1-14 2z" fill="#333140"/>
+    <path d="M11 27c4-6 6-4 9-7-1 4-2 8-5 8l-2-2z" fill="#cc6554"/>
+    <path d="M25 14v21m14-14v18M30 17v21m4-19v20M24 20l16 7m-16-2 16 7m-16-2 16 7" stroke="#e49e72" stroke-width=".75"/>
+    <path d="M4 37l9-2 12 1 8 2h11v8H2z" fill="#f4dcc6"/>
+    <path d="M13 39q6-2 13 1l-5 3-10-1z" fill="#83cccf"/>`,
+  'circus-circus': `
+    <path d="M0 0h46v46H0z" fill="#93abc6"/>
+    <path d="M8 12l12-3v22H8zm16-3 13 4v18H24z" fill="#ecdcc7"/>
+    ${pillars([10,13,16,19,25,28,31,34], 13, 17, '#6d646c', 1.25)}
+    <path d="M4 33q4-2 10-6l3-5h12l4 5 9 6v8H4z" fill="#f5e8d9"/>
+    <path d="M17 22h3l-8 11H7zm5 0h3l-1 11h-5zm6 0h2l8 11h-6z" fill="#c75776"/>
+    <path d="M5 34h36v4H5z" fill="#ae526d"/>
+    <path d="M10 39h26" stroke="#efbd71" stroke-width="2" stroke-dasharray="1 2"/>`,
+  fontainebleau: `
+    <path d="M0 0h46v46H0z" fill="#92aed0"/>
+    <path d="M7 7l10 6 3 4 7 1 11-7 2 24q-17 9-31-1z" fill="#35618b" stroke="#c8e0f0" stroke-width="1"/>
+    <path d="m12 11 2 25m4-21 2 23m6-20 1 20m5-23 1 21m4-23 1 21" stroke="#b2d6eb" stroke-width=".9"/>
+    <path d="M3 35l10-2 10 5 20-4v12H3z" fill="#e1dfd8"/>
+    <path d="M12 38l7 2-1 3-8-2zm14 2 7-2 2 3-7 2z" fill="#66aacc"/>
+    <path d="M22 39l6 2-6 2-5-2z" fill="#f7f2e6"/>`,
 };
 
 export function landmarkBadgeArt(id) {

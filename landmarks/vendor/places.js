@@ -377,19 +377,34 @@ export const PLACES = [
             bg: '#b02344',
             fg: '#fff',
             glyph: 'RW'
-        }
+        },
+        view: { dist: 815, pitch: 52 * D, yaw: -10 * D }
+    },
+    {
+        id: 'circus-circus',
+        name: 'Circus Circus',
+        lat: 36.13775,
+        lon: -115.16538,
+        group: 'Strip',
+        badge: {
+            bg: '#a34e69',
+            fg: '#f5e9d8',
+            glyph: 'CC'
+        },
+        view: { dist: 710, pitch: 57 * D, yaw: 23 * D }
     },
     {
         id: 'fontainebleau',
         name: 'Fontainebleau',
-        lat: 36.1365,
-        lon: -115.1607,
+        lat: 36.13793,
+        lon: -115.15950,
         group: 'Strip',
         badge: {
             bg: '#1c3c7a',
             fg: '#fff',
             glyph: 'F'
-        }
+        },
+        view: { dist: 860, pitch: 54 * D, yaw: -35 * D }
     },
     {
         id: 'strat',

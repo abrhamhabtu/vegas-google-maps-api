@@ -431,7 +431,7 @@ export const FRAG = `
       e += mix(base, uPil, uPilK) * uFlood * night * uFloodK * wash * (1.0 - panel * 0.93);
       float occupied = step(h21(vec2(floor(bay), floor(level)) + seed), uRate);
       e += uWinLit * panel * occupied * band(level, 0.21, 0.77, fwidth(level)) * night * 0.2;
-    } else {
+    } else if (uMode < 8.5) {
       // Flamingo: pale vertical fins over cool glass, with pink light at the base.
       float bay = u / uBay;
       float rib = band(bay, 0.0, 0.07, fwidth(bay));
@@ -443,13 +443,35 @@ export const FRAG = `
       float height = max(0.0, y - vAux.w);
       float pool = 0.33 + 0.67 * pow(0.5 + 0.5 * cos(6.283185 * (bay - 0.14)), 1.6);
       e += uGlow * exp(-height / 13.4) * pool * uFloodK * night;
+    } else {
+      // Copper spandrels at Resorts World, fine silver mullions at Fontainebleau.
+      float blue = step(0.5, variant);
+      float bay = u / mix(4.2, 2.85, blue);
+      float floorY = (y - vAux.w) / uBay;
+      vec2 fw = vec2(fwidth(bay), fwidth(floorY));
+      float mullion = band(bay, 0.02, mix(0.18, 0.065, blue), fw.x);
+      float spandrel = band(floorY, 0.02, mix(0.29, 0.14, blue), fw.y);
+      vec2 room = floor(vec2(bay, floorY));
+      float pane = (1.0 - mullion) * (1.0 - spandrel);
+      float sky = smoothstep(0.0, 1.0, y / max(1.0, topH));
+      vec3 glass = mix(base, uWinDark, sky * mix(0.25, 0.56, blue));
+      glass *= 0.88 + 0.22 * h21(vec2(room.x, seed));
+      vec3 facadeLight = light + vec3(0.23 * (1.0 - blue) * (1.0 - night));
+      c = mix(glass, uPil, mullion * mix(0.78, 0.52, blue)) * facadeLight;
+      c = mix(c, base * facadeLight * mix(0.46, 0.74, blue), spandrel * 0.9);
+      c = mix(c, uHorizon * mix(0.69, 0.91, blue), fres * mix(0.26, 0.46, blue) * (1.0 - night));
+      c *= 1.0 - night * 0.57;
+      float detail = 1.0 - clamp(max(fw.x, fw.y) * 1.8, 0.0, 1.0);
+      float occupied = mix(uRate, step(h21(room + seed * 7.0), uRate), detail);
+      e += uWinLit * pane * occupied * night * mix(0.32, 0.28, blue);
+      e += uGlow * night * (mullion * uLine + pane * uSelf);
     }
     gl_FragColor = vec4(c + e, 1.0);
     #include <fog_fragment>
     #include <colorspace_fragment>
   }
 `;
-export const MODE = { glass: 0, stucco: 1, masonry: 2, stone: 3, palazzo: 4, ribbon: 5, rio: 6, arcade: 7, flamingo: 8 };
+export const MODE = { glass: 0, stucco: 1, masonry: 2, stone: 3, palazzo: 4, ribbon: 5, rio: 6, arcade: 7, flamingo: 8, curtainWall: 9 };
 export function facade(mode, o = {}) {
   const u = theme.uniforms;
   return new THREE.ShaderMaterial({
@@ -485,6 +507,50 @@ export function facade(mode, o = {}) {
     vertexColors: !!o.vertexColors,
     fog: true,
     side: THREE.DoubleSide,
+  });
+}
+
+export function makeWaterMaterial(dayHex, nightHex, rimHex) {
+  const u = theme.uniforms;
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
+      uDay: { value: new THREE.Color(dayHex) },
+      uNightCol: { value: new THREE.Color(nightHex) },
+      uRim: { value: new THREE.Color(rimHex) },
+      uNight: u.uNight,
+    },
+    vertexShader: `
+      #include <common>
+      #include <fog_pars_vertex>
+      varying vec3 vW;
+      void main() {
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vW = wp.xyz;
+        vec4 mvPosition = viewMatrix * wp;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }
+    `,
+    fragmentShader: `
+      #include <common>
+      #include <fog_pars_fragment>
+      uniform vec3 uDay, uNightCol, uRim;
+      uniform float uNight;
+      varying vec3 vW;
+      void main() {
+        float shimmer = 0.5 + 0.5 * sin(vW.x * 0.22 + vW.z * 0.19) * cos(vW.x * 0.14 - vW.z * 0.25);
+        vec3 base = mix(uDay, uNightCol, uNight);
+        vec3 c = mix(base, uRim, shimmer * 0.22);
+        gl_FragColor = vec4(c, 1.0);
+        #include <fog_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+    fog: true,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -4,
   });
 }
 

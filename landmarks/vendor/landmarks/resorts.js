@@ -443,15 +443,13 @@ export function buildResorts(data, engine) {
         ]);
     };
     // Wynn and Encore towers: drawn by world/wynn-ti.js.
-    add(resortsWorld(data, engine));
-    add(fontainebleau(data));
+    // Resorts World, Circus Circus and Fontainebleau are drawn by world/north-strip.js.
     add(treasureIsland(data));
     // Bellagio is drawn by world/four-corners.js now; keep its height for the camera index.
     heights.push([-170, 348, 155]);
     add(cosmopolitan(data));
     add(mandalay(data));
     add(parkMgm(data));
-    add(circusFront(data));
     add(nynyBridge(data));
     add(buildStripResorts(data, engine));
     return {

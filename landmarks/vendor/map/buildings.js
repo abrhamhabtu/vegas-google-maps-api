@@ -238,19 +238,21 @@ export const RESORT_LOOKS = [
     },
     {
         re: /resorts world/i,
-        tint: '#c22a4c',
+        tint: '#a36c58',
         k: 0.78,
         style: 9,
-        glow: '#ff3d6e',
-        glowK: 1.1
+        glow: '#ffb491',
+        glowK: 0.68,
+        low: { tint: '#ded1bd', roof: '#ddd3c0', k: 0.98, glow: '#ffe0af', glowK: 0.45, paint: Layer.Masonry }
     },
     {
         re: /fontainebleau/i,
-        tint: '#2f6fd0',
+        tint: '#6186aa',
         k: 0.75,
         style: 4,
         glow: '#7fb4ff',
-        glowK: 0.9
+        glowK: 0.68,
+        low: { tint: '#d4dde3', roof: '#d5d9da', k: 0.95, glow: '#b4d4ff', glowK: 0.44, paint: Layer.Office }
     },
     {
         re: /sahara/i,
@@ -261,13 +263,14 @@ export const RESORT_LOOKS = [
         glowK: 0.6
     },
     {
-        re: /circus circus/i,
-        tint: '#f0a8bc',
+        re: /circus circus|adventuredome/i,
+        tint: '#dfcabc',
         k: 0.8,
         style: 2,
-        glow: '#ff5fb0',
-        glowK: 0.9,
-        paint: Layer.Masonry
+        glow: '#ff99bc',
+        glowK: 0.58,
+        paint: Layer.Masonry,
+        low: { tint: '#e4d5c0', roof: '#d9c7b2', k: 0.94, glow: '#ffd4aa', glowK: 0.42 }
     },
     {
         re: /\brio\b|masquerade|ipanema|voodoo/i,
@@ -384,12 +387,6 @@ export const RESORT_LOOKS = [
 export const LANDMARK_SKIP = /^(the campanile|bellagio las vegas|bellagio spa tower|sphere|msg sphere|luxor( las vegas)?|the strat tower|stratosphere tower|high roller|eiffel tower|paris balloon|new las vegas stadium|allegiant stadium|hard rock las vegas guitar tower|veer towers( east| west)?)$/i;
 const HERO_TOWERS = [
     [
-        750,
-        -2062,
-        25,
-        150
-    ],
-    [
         809,
         -1153,
         25,
@@ -399,12 +396,6 @@ const HERO_TOWERS = [
         887,
         -1467,
         25,
-        150
-    ],
-    [
-        1353,
-        -2413,
-        30,
         150
     ],
     [
@@ -472,7 +463,7 @@ const SKIP_AT = [
 ];
 const POS_LOOKS = [];
 export const landmarkFootprints = [];
-// Footprints modelled by hand in world/tropicana-trio.js; the generic extruder skips them.
+// Hand-built resorts register the footprints they replace before the generic pass.
 export const heroOwned = new Set();
 const GENERIC = [
     '#2f5578',

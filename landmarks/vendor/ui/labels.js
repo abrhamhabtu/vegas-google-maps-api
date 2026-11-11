@@ -283,8 +283,9 @@ const PLACE_INFO = {
     'Treasure Island': 'Sirens Cove lagoon, full-rigged pirate frigate & coral-and-cream pilaster tower.',
     'Sphere': '366-foot-tall spherical exosphere covered in 1.2 million programmable LED pucks east of the Venetian.',
     'Wynn Las Vegas': 'Sweeping bronze glass crescent tower by Steve Wynn with lush mountain waterfall atrium & Encore sister tower.',
-    'Resorts World': 'Crimson-and-bronze twin-wing tower featuring a 100,000 sq ft West Tower LED screen and Zouk Nightclub.',
-    'Fontainebleau': '67-story sapphire-blue glass resort tower crowning the North Strip.',
+    'Resorts World': 'Curved copper-glass wings frame the pool terrace. The west wing carries the Resorts World LED screen.',
+    'Circus Circus': 'Pink-and-cream casino tent, striped hotel towers, and the rose-colored Adventuredome.',
+    'Fontainebleau': 'Blue glass tower, ribbed arrival canopy, and the Oasis rooftop pool deck.',
     'The STRAT': '1,149-foot observation tower — the tallest freestanding observation tower in the United States.',
     'Fremont Street Experience': 'Five-block Viva Vision LED barrel canopy over historic Downtown Las Vegas casinos.'
 };

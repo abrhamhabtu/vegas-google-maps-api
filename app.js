@@ -624,6 +624,11 @@ function setupUIHandlers() {
       const zoom = parseFloat(chip.dataset.zoom || "17.0");
       const tilt = parseFloat(chip.dataset.tilt || "0");
       const heading = parseFloat(chip.dataset.heading || "0");
+      const frameWidth = Number(chip.dataset.frameWidth);
+      const mapWidth = glMap?.getContainer().clientWidth;
+      const zoomAdjustment = mapWidth > 0 && mapWidth < frameWidth
+        ? Math.log2(mapWidth / frameWidth)
+        : 0;
 
       // If jumping to a high-zoom intersection (zoom >= 18.5), switch cleanly to top-down lane view
       if (zoom >= 18.5 && tilt === 0) {
@@ -637,7 +642,7 @@ function setupUIHandlers() {
         document.getElementById("mode-3d-btn").classList.add("active");
         document.getElementById("mode-lanes-btn").classList.remove("active");
       }
-      flyToLocation(lat, lng, zoom, tilt, heading);
+      flyToLocation(lat, lng, zoom + zoomAdjustment, tilt, heading);
     });
   });
 

@@ -20,6 +20,7 @@ import { buildTropicanaTrio } from './tropicana-trio.js';
 import { buildFourCorners } from './four-corners.js';
 import { buildWynnTI } from './wynn-ti.js';
 import { buildRio } from './rio.js';
+import { buildNorthStrip } from './north-strip.js';
 
 const THREE = window.THREE;
 export async function buildCity(data, engine) {
@@ -44,7 +45,7 @@ export async function buildCity(data, engine) {
   buildings.add(resorts.group, buildDetails(specialData, engine), welcomeSign(graph, engine), valets.group);
   // Must run before buildBuildings: it claims the tower footprints it models by hand.
   buildings.add(buildTropicanaTrio(specialData), buildFourCorners(specialData), buildWynnTI(specialData));
-  buildings.add(buildRio(specialData, graph));
+  buildings.add(buildRio(specialData, graph), buildNorthStrip(specialData, graph));
   buildings.add(buildBuildings(data, valetPlan).group);
   detail.add(buildTrees(data, graph));
   const lights = buildCityLights(data);
