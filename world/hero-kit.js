@@ -240,7 +240,31 @@ export const FRAG = `
     vec3 c;
     vec3 e = vec3(0.0);
 
-    if (n.y > 0.5) {
+    if (uMode > 10.5) {
+      // Luxor's rooms are behind inclined glass. Read floor and mullion spacing
+      // in metres so the glazing stays aligned across the narrowing faces.
+      float floorY = (y - vAux.w) / uBay;
+      float column = u / 1.74;
+      vec2 fw = vec2(fwidth(column), fwidth(floorY));
+      vec2 cell = floor(vec2(column, floorY));
+      float mullion = band(column, 0.0, 0.095, fw.x);
+      float spandrel = band(floorY, 0.0, 0.14, fw.y);
+      float pane = (1.0 - mullion) * (1.0 - spandrel);
+      vec3 reflected = reflect(-v, n);
+      float sky = smoothstep(-0.35, 0.76, reflected.y);
+      float glint = pow(max(0.0, dot(reflected, uSunDir)), 15.0) * uSun;
+      float detail = 1.0 - clamp(max(fw.x, fw.y) * 1.55, 0.0, 1.0);
+      float tint = mix(0.96, 0.83 + 0.22 * h21(cell + seed), detail);
+      c = mix(base, uWinDark, sky * 0.45) * (0.57 + light * 0.53) * tint;
+      c += mix(uHorizon, uTop, sky) * (0.02 + 0.075 * fres) * (1.0 - night);
+      c += uSunTint * glint * 0.088 * (1.0 - night);
+      c *= mix(0.62, 1.0, pane) * (1.0 - 0.68 * night);
+      float lit = mix(uRate, step(h21(cell + seed * 5.0), uRate), detail);
+      float room = band(floorY, 0.29, 0.79, fw.y) * band(column, 0.21, 0.87, fw.x);
+      room *= step(vAux.w + 4.0, y) * step(y, topH - 8.0);
+      e += uWinLit * lit * room * night * 0.25;
+      e += base * uSelf * night;
+    } else if (n.y > 0.5) {
       // roofs: membrane panels by day, a dim slab catching the building's own glow at night
       vec3 rc = mix(uRoof, base, 0.16);
       vec2 q = vW.xz;
@@ -455,7 +479,7 @@ export const FRAG = `
       float height = max(0.0, y - vAux.w);
       float pool = 0.33 + 0.67 * pow(0.5 + 0.5 * cos(6.283185 * (bay - 0.14)), 1.6);
       e += uGlow * exp(-height / 13.4) * pool * uFloodK * night;
-    } else {
+    } else if (uMode < 9.5) {
       // Copper spandrels at Resorts World, fine silver mullions at Fontainebleau.
       float blue = step(0.5, variant);
       float bay = u / mix(4.2, 2.85, blue);
@@ -477,13 +501,40 @@ export const FRAG = `
       float occupied = mix(uRate, step(h21(room + seed * 7.0), uRate), detail);
       e += uWinLit * pane * occupied * night * mix(0.32, 0.28, blue);
       e += uGlow * night * (mullion * uLine + pane * uSelf);
+    } else {
+      // The Mandalay Bay and W towers mirror the sky in warm gold. Separate
+      // meshes carry their architectural lighting and roof signs.
+      float floorY = (y - vAux.w) / uBay;
+      float column = u / mix(1.77, 1.45, variant);
+      vec2 fw = vec2(fwidth(column), fwidth(floorY));
+      vec2 cell = floor(vec2(column, floorY));
+      float mullion = band(column, 0.0, 0.08, fw.x);
+      float spandrel = band(floorY, 0.0, 0.145, fw.y);
+      float pane = (1.0 - mullion) * (1.0 - spandrel);
+      vec3 reflected = reflect(-v, n);
+      float sky = smoothstep(-0.68, 0.4, reflected.y);
+      float stripe = 0.86 + 0.14 * sin(reflected.x * 5.6 + reflected.z * 2.9);
+      float height = smoothstep(vAux.w, topH, y);
+      float hue = clamp(sky * 0.42 + stripe * 0.39 + 0.16 * key + 0.08 * height, 0.0, 1.0);
+      vec3 gold = mix(uWinDark, base, hue);
+      float detail = 1.0 - clamp(max(fw.x, fw.y) * 1.5, 0.0, 1.0);
+      float variation = mix(0.96, 0.84 + 0.23 * h21(cell + seed), detail);
+      c = gold * variation * (mix(0.71, 0.55, variant) + light * 0.53);
+      c += gold * mix(uHorizon, uTop, sky) * (0.13 + 0.38 * fres) * (1.0 - night);
+      float glint = pow(max(0.0, dot(reflected, uSunDir)), 17.0) * uSun;
+      c += uSunTint * vec3(0.34, 0.25, 0.14) * glint * (1.0 - night);
+      c *= mix(0.58, 1.0, pane) * (1.0 - night * 0.9);
+      float occupied = mix(uRate, step(h21(cell + seed * 9.0), uRate), detail);
+      float window = band(floorY, 0.28, 0.81, fw.y) * band(column, 0.21, 0.83, fw.x);
+      e += uWinLit * occupied * window * night * 0.31;
+      e += gold * night * uSelf * (0.75 + 0.25 * stripe);
     }
     gl_FragColor = vec4(c + e, 1.0);
     #include <fog_fragment>
     #include <colorspace_fragment>
   }
 `;
-export const MODE = { glass: 0, stucco: 1, masonry: 2, stone: 3, palazzo: 4, ribbon: 5, rio: 6, arcade: 7, flamingo: 8, curtainWall: 9 };
+export const MODE = { glass: 0, stucco: 1, masonry: 2, stone: 3, palazzo: 4, ribbon: 5, rio: 6, arcade: 7, flamingo: 8, curtainWall: 9, goldGlass: 10, slopedGlass: 11 };
 export function facade(mode, o = {}) {
   const u = theme.uniforms;
   return new THREE.ShaderMaterial({
@@ -522,7 +573,7 @@ export function facade(mode, o = {}) {
   });
 }
 
-export function makeWaterMaterial(dayHex, nightHex, rimHex) {
+export function makeWaterMaterial(dayHex, nightHex, rimHex, { shallow } = {}) {
   const u = theme.uniforms;
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -531,6 +582,7 @@ export function makeWaterMaterial(dayHex, nightHex, rimHex) {
       uNightCol: { value: new THREE.Color(nightHex) },
       uRim: { value: new THREE.Color(rimHex) },
       uNight: u.uNight,
+      uShallow: { value: new THREE.Vector4(...(shallow ?? [0, 0, 0, 0])) },
     },
     vertexShader: `
       #include <common>
@@ -549,11 +601,15 @@ export function makeWaterMaterial(dayHex, nightHex, rimHex) {
       #include <fog_pars_fragment>
       uniform vec3 uDay, uNightCol, uRim;
       uniform float uNight;
+      uniform vec4 uShallow;
       varying vec3 vW;
       void main() {
         float shimmer = 0.5 + 0.5 * sin(vW.x * 0.22 + vW.z * 0.19) * cos(vW.x * 0.14 - vW.z * 0.25);
         vec3 base = mix(uDay, uNightCol, uNight);
         vec3 c = mix(base, uRim, shimmer * 0.22);
+        float shore = dot(vW.xz - uShallow.xy, uShallow.zw);
+        float shallow = smoothstep(4.0, 28.0, shore);
+        c = mix(c, uRim, shallow * mix(0.72, 0.38, uNight));
         gl_FragColor = vec4(c, 1.0);
         #include <fog_fragment>
         #include <colorspace_fragment>

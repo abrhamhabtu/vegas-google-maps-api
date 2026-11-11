@@ -95,7 +95,7 @@ export function buildLandmarks(data, engine) {
     add(highRoller(data, engine));
     // Eiffel Tower: drawn by world/four-corners.js.
     add(balloon(data));
-    add(luxor(data));
+    // Luxor's pyramid and Sky Beam are drawn by world/luxor.js.
     add(strat(data));
     add(fountains(data, engine));
     add(monorail(data));

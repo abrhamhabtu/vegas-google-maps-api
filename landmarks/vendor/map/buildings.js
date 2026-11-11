@@ -122,13 +122,20 @@ export const RESORT_LOOKS = [
         }
     },
     {
-        re: /mandalay|delano|four seasons/i,
+        re: /mandalay|delano|w las vegas|four seasons/i,
         tint: '#c9963a',
         k: 0.85,
         style: 6,
         glow: '#ffcf6a',
         glowK: 0.9,
-        roof: '#8a6a2a'
+        roof: '#8a6a2a',
+        low: {
+            tint: '#d3c4a7',
+            k: 0.69,
+            glow: '#ffd8a8',
+            glowK: 0.92,
+            roof: '#b0aa9f'
+        }
     },
     {
         re: /excalibur/i,
@@ -373,7 +380,14 @@ export const RESORT_LOOKS = [
         style: 4,
         glow: '#ffd480',
         glowK: 0.65,
-        roof: '#12151e'
+        roof: '#12151e',
+        low: {
+            tint: '#c7b18f',
+            k: 0.75,
+            glow: '#ffe2b4',
+            glowK: 0.78,
+            roof: '#a6a093'
+        }
     },
     {
         re: /new las vegas stadium|ballpark/i,

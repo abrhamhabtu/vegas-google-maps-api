@@ -32,7 +32,7 @@ export function buildDetails(data, engine) {
     add(bake(nynySkyline(data)));
     add(bake(liberty(data)));
     add(coaster(data, engine));
-    add(bake(luxorExtras(data)));
+    // Luxor's Sphinx and obelisk are drawn by world/luxor.js.
     add(trams(data));
     return g;
 }

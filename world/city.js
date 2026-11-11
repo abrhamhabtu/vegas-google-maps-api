@@ -21,6 +21,8 @@ import { buildFourCorners } from './four-corners.js';
 import { buildWynnTI } from './wynn-ti.js';
 import { buildRio } from './rio.js';
 import { buildNorthStrip } from './north-strip.js';
+import { buildLuxor } from './luxor.js';
+import { buildMandalayBay } from './mandalay-bay.js';
 
 const THREE = window.THREE;
 export async function buildCity(data, engine) {
@@ -46,6 +48,7 @@ export async function buildCity(data, engine) {
   // Must run before buildBuildings: it claims the tower footprints it models by hand.
   buildings.add(buildTropicanaTrio(specialData), buildFourCorners(specialData), buildWynnTI(specialData));
   buildings.add(buildRio(specialData, graph), buildNorthStrip(specialData, graph));
+  buildings.add(buildLuxor(specialData, graph), buildMandalayBay(specialData, graph));
   buildings.add(buildBuildings(data, valetPlan).group);
   detail.add(buildTrees(data, graph));
   const lights = buildCityLights(data);

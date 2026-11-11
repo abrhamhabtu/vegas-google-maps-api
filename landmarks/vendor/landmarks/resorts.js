@@ -448,7 +448,7 @@ export function buildResorts(data, engine) {
     // Bellagio is drawn by world/four-corners.js now; keep its height for the camera index.
     heights.push([-170, 348, 155]);
     add(cosmopolitan(data));
-    add(mandalay(data));
+    // Mandalay Bay and W Las Vegas are drawn by world/mandalay-bay.js.
     add(parkMgm(data));
     add(nynyBridge(data));
     add(buildStripResorts(data, engine));
