@@ -103,7 +103,8 @@ export function planValets(data) {
     }
     const canopies = new Set();
     for (const b of data.buildings){
-        if (b.b === 'roof' && !b.name?.match(/conservatory/i)) {
+        // Elevated architectural crowns are not drive-through canopies.
+        if (b.b === 'roof' && b.h <= 60 && !b.name?.match(/conservatory/i)) {
             canopies.add(b);
             continue;
         }

@@ -19,6 +19,7 @@ body[data-theme='day'] .lbl-q, body[data-theme='day'] .help-q { background: rgba
 .lbl.resort .lbl-q { position: absolute; top: -2px; right: -4px; background: #1e293b; color: #fff; border-color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,.35); }
 .lbl.resort .badge { width: 40px; height: 40px; border-radius: 50%; border: 2px solid #ffffffeb; box-shadow: 0 3px 10px #0007; background: var(--bg); display: grid; place-items: center; overflow: hidden; }
 .lbl.resort .badge svg { width: 100%; height: 100%; }
+.lbl.resort .badge.illustrated { width: 48px; height: 48px; border-color: #d8e8fb; }
 .lbl.resort .t { margin-top: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; color: #fff; letter-spacing: .3px; }
 body:not([data-theme='night']) .lbl.resort .t { color: #2b2b30; }
 .lbl.area { pointer-events: none; }
@@ -34,4 +35,4 @@ body[data-theme='golden'] .vegas-hover-tip { background: rgba(38, 25, 20, 0.95);
 .vht-title { font-size: 12.5px; font-weight: 700; line-height: 1.2; }
 .vht-sub { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; opacity: .72; margin-top: 1px; }
 .vht-body { margin: 0; font-size: 11.5px; line-height: 1.42; opacity: .9; }
-@media (max-width: 520px) { .lbl.resort .badge { width: 31px; height: 31px; } .lbl.resort .t { font-size: 8px; } }
+@media (max-width: 520px) { .lbl.resort .badge { width: 31px; height: 31px; } .lbl.resort .badge.illustrated { width: 37px; height: 37px; } .lbl.resort .t { font-size: 8px; } }

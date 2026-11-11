@@ -1158,67 +1158,75 @@ function balloon(data) {
     const c = document.createElement('canvas');
     c.width = 1024;
     c.height = 512;
-    const x = c.getContext('2d');
-    for(let i = 0; i < 16; i++){
-        x.fillStyle = i % 2 ? '#1f3c8c' : '#d9b24c';
-        x.fillRect(i * 64, 0, 64, 512);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#142b60';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.strokeStyle = '#9fbfee';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for(let x = 0; x < c.width; x += 64){
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, c.height);
     }
-    x.fillStyle = '#b3122e';
-    x.fillRect(0, 224, 1024, 88);
-    x.fillStyle = '#ffffff';
-    x.font = '700 72px Georgia, serif';
-    x.textAlign = 'center';
-    x.textBaseline = 'middle';
-    for(let i = 0; i < 4; i++)x.fillText('PARIS', 128 + i * 256, 270);
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.anisotropy = 8;
-    const skin = sheen('#ffffff', {
-        map: tex,
-        refl: 0.08,
-        spec: 0.5,
-        glowK: 0.75
-    });
-    const grp = new THREE.Group();
-    grp.name = 'Paris balloon';
-    grp.position.set(f.c[0], 0, f.c[1]);
-    const S = 1.5, add = (geo, m, y)=>{
-        const o = new THREE.Mesh(geo, m);
-        o.position.y = y * S;
-        o.scale.setScalar(S);
-        grp.add(o);
-        return o;
+    for (const y of [42, 104, 173, 252, 322, 400, 462]) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(c.width, y);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = '#ffd272';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    for (const y of [253, 327]) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(c.width, y);
+    }
+    for(let x = 0; x < c.width; x += 64){
+        ctx.moveTo(x, 290);
+        ctx.quadraticCurveTo(x + 32, 234, x + 64, 290);
+        ctx.quadraticCurveTo(x + 32, 345, x, 290);
+    }
+    ctx.stroke();
+    ctx.font = 'italic 700 86px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for(let i = 0; i < 4; i++){
+        const x = 128 + i * 256;
+        ctx.strokeStyle = '#2b223d';
+        ctx.lineWidth = 10;
+        ctx.strokeText('Paris', x, 188);
+        ctx.fillStyle = '#f5b094';
+        ctx.fillText('Paris', x, 188);
+    }
+    const texture = new THREE.CanvasTexture(c);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 8;
+    const skin = sheen('#ffffff', { map: texture, refl: 0.05, spec: 0.48, glow: '#95afef', glowK: 0.46 });
+    const limestone = sheen('#bba48c', { glow: '#f8cca2', glowK: 0.28 });
+    const gilding = sheen('#9a7345', { glow: '#ffca6a', glowK: 0.73 });
+    const group = new THREE.Group();
+    group.name = 'Paris balloon';
+    group.position.set(f.c[0], 0, f.c[1]);
+    const add = (geometry, material, y)=>{
+        const object = new THREE.Mesh(geometry, material);
+        object.position.y = y;
+        group.add(object);
     };
-    const env = add(new THREE.SphereGeometry(9, 40, 24), skin, 30);
-    env.scale.set(S, S * 1.15, S);
-    add(new THREE.CylinderGeometry(3.2, 1.6, 5, 24), skin, 18.5);
-    add(new THREE.BoxGeometry(3.4, 2.6, 3.4), sheen('#7a5a34'), 13.5);
-    const iron = sheen('#6f543b', {
-        refl: 0.2,
-        spec: 0.8,
-        glow: '#ffc46b',
-        glowK: 0.5
-    });
-    add(new THREE.CylinderGeometry(0.8, 1.1, 13, 12), iron, 6.5);
-    const glowB = halo(60, '#ffd98a', 0.1);
-    glowB.position.y = 30 * S;
-    grp.add(glowB);
-    for (const r of [
-        0,
-        Math.PI
-    ]){
-        const board = textPanel('PARIS', 21, 6, {
-            color: '#f7df9b',
-            font: 'italic 700 110px Georgia, serif',
-            background: '#1f2f64',
-            sub: 'LAS VEGAS'
+    const r = Math.min(f.w, f.d) * 0.5;
+    add(new THREE.SphereGeometry(r, 40, 24).scale(1, 1.07, 1), skin, 35);
+    add(new THREE.CylinderGeometry(3.1, 2.25, 3.6, 18), gilding, 22.7);
+    add(new THREE.BoxGeometry(8.6, 9.6, 8.6), limestone, 16.6);
+    add(new THREE.BoxGeometry(9.8, 1.0, 9.8), gilding, 21.4);
+    add(new THREE.BoxGeometry(9.4, 1.0, 9.4), limestone, 11.7);
+    add(new THREE.CylinderGeometry(1.75, 2.25, 11.4, 12), limestone, 5.7);
+    for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+        const board = textPanel('PARIS', 7.35, 3.4, {
+            color: '#ffde9f', font: 'italic 700 104px Georgia, serif', background: '#56416b'
         });
-        board.position.set(Math.sin(r) * 1.9, 5.5 * S, Math.cos(r) * 1.9);
-        board.rotation.y = r;
-        grp.add(board);
+        board.position.set(Math.sin(angle) * 4.34, 17.1, Math.cos(angle) * 4.34);
+        board.rotation.y = angle;
+        group.add(board);
     }
-    return grp;
+    return group;
 }
 function luxor(data) {
     const f = footprint(data, /^luxor( las vegas)?$/i);
@@ -1429,7 +1437,7 @@ function fountains(data, engine) {
     const uShow = {
         value: 0
     };
-    const jets = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 1.3, 1, 8, 1, true).translate(0, 0.5, 0), new THREE.ShaderMaterial({
+    const spray = new THREE.ShaderMaterial({
         uniforms: {
             uNight: theme.uniforms.uNight,
             uTime: theme.uniforms.uTime
@@ -1444,45 +1452,54 @@ function fountains(data, engine) {
       uniform float uNight; varying float vY;
       void main() {
         vec3 day = vec3(0.93, 0.98, 1.0);
-        vec3 lit = mix(vec3(1.0, 0.82, 0.5), vec3(0.92, 0.96, 1.0), smoothstep(0.0, 0.7, vY));
-        vec3 c = mix(day, lit * 0.62, uNight);
-        float a = mix(0.72, 0.85, uNight) * (1.0 - vY * 0.72);
+        vec3 lit = mix(vec3(1.0, 0.78, 0.44), vec3(1.0, 0.95, 0.8), smoothstep(0.0, 0.7, vY));
+        vec3 c = mix(day, lit, uNight);
+        float a = mix(0.76, 0.9, uNight) * (1.0 - clamp(vY, 0.0, 1.0) * 0.36);
         gl_FragColor = vec4(c, a);
         #include <colorspace_fragment>
       }`
-    }), N);
+    });
+    const jets = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 0.42, 1, 7, 1, true).translate(0, 0.5, 0), spray, N);
+    const arcsAt = jetsAt.filter((j, i)=>j.row === 0 && i % 3 === 0);
+    const arcPath = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-3.2, 0, 0), new THREE.Vector3(-1.6, 0.72, 0), new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(1.6, 0.72, 0), new THREE.Vector3(3.2, 0, 0)
+    ]);
+    const arcs = new THREE.InstancedMesh(new THREE.TubeGeometry(arcPath, 12, 0.105, 5), spray, arcsAt.length);
     jets.frustumCulled = false;
+    arcs.frustumCulled = false;
+    const arcYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), po = new THREE.Vector3();
     const update = (time)=>{
         const cycle = time % 30, pat = Math.floor(time / 30) % 4;
-        const env = Math.min(1, cycle / 1.5) * Math.min(1, Math.max(0, 24 - cycle) / 1.5);
+        const env = Math.min(1, 0.35 + cycle / 1.5) * Math.min(1, Math.max(0.35, (25 - cycle) / 2.2));
         uShow.value = env;
         for(let i = 0; i < N; i++){
             const j = jetsAt[i];
-            const idx = j.t * (perRow - 1);
-            let h;
-            if (pat === 0) {
-                const wave = 0.5 + 0.5 * Math.sin(time * 2.2 - idx * 0.35 + j.row * 1.3);
-                h = 8 + 58 * wave;
-            } else if (pat === 1) {
-                const k = Math.pow(Math.max(0, Math.sin(cycle * 0.9 + Math.floor(idx) % 10 * 0.63)), 6);
-                h = 12 + 128 * k;
-            } else if (pat === 2) {
-                h = 14 + 80 * (0.5 + 0.5 * Math.sin(cycle * 1.3)) * (1 - Math.abs(j.t - 0.5) * 1.5);
-            } else {
-                const dist = Math.abs(j.t - 0.5) * 2;
-                const pulse = Math.pow(0.5 + 0.5 * Math.sin(cycle * 3.2 - dist * 9 + j.row), 3);
-                h = 10 + (cycle > 19 ? 130 * (0.55 + 0.45 * pulse) : 70 * pulse);
-            }
-            h = 1 + h * env;
-            sc.set(1 + h * 0.018, h, 1 + h * 0.018);
+            const phase = Math.sin(time * 1.45 + j.t * 18 + j.row);
+            const peak = pat % 2 ? 53 : 40;
+            const bank = Math.max(
+                Math.exp(-Math.pow((j.t - 0.23) / 0.043, 2)),
+                Math.exp(-Math.pow((j.t - 0.5) / 0.064, 2)),
+                Math.exp(-Math.pow((j.t - 0.75) / 0.044, 2))
+            );
+            const step = Math.round(j.t * (perRow - 1));
+            const h = 0.16 + (j.row || step % 2 === 0 ? peak * bank * (0.66 + 0.34 * phase) * env : 0);
+            sc.set(1 + h * 0.007, h, 1 + h * 0.007);
             po.set(j.x, 0.25, j.z);
             jets.setMatrixAt(i, m.compose(po, q, sc));
         }
         jets.instanceMatrix.needsUpdate = true;
+        for(let i = 0; i < arcsAt.length; i++){
+            const j = arcsAt[i];
+            po.set(j.x, 0.34, j.z);
+            sc.set(1, 2.1 + 1.1 * Math.sin(time * 1.6 - j.t * 18) * env, 1);
+            arcs.setMatrixAt(i, m.compose(po, arcYaw, sc));
+        }
+        arcs.instanceMatrix.needsUpdate = true;
     };
     update(0);
-    grp.add(jets);
+    grp.add(jets, arcs);
     const surf = new Soup();
     surf.polygon(lake, 0.2);
     const water = new THREE.Mesh(surf.geometry(), new THREE.ShaderMaterial({
@@ -1500,8 +1517,7 @@ function fountains(data, engine) {
                 value: new THREE.Vector2(w, d)
             }
         },
-        transparent: true,
-        depthWrite: false,
+        side: THREE.DoubleSide,
         vertexShader: `
       varying vec2 vP;
       void main() { vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
@@ -1514,10 +1530,11 @@ function fountains(data, engine) {
         float fw = fwidth(u) * 0.32;
         rip *= clamp(1.0 - fw, 0.0, 1.0);
         float weave = abs(abs(v) - (uSize.y * 0.13 + cos(u / uSize.x * 6.2832) * uSize.y * 0.12));
-        float line = exp(-weave * weave * 0.012) * uShow;
-        float a = 0.1 * max(rip, 0.0) + line * mix(0.28, 0.5, uNight);
-        vec3 c = mix(vec3(0.95, 0.98, 1.0), vec3(1.0, 0.82, 0.5), uNight);
-        gl_FragColor = vec4(c, a);
+        float line = exp(-weave * weave * 0.055) * uShow;
+        vec3 c = mix(vec3(0.08, 0.39, 0.51), vec3(0.012, 0.035, 0.15), uNight);
+        c += vec3(0.025, 0.032, 0.052) * (0.5 + 0.5 * rip) * (1.0 - uNight * 0.7);
+        c += line * mix(vec3(0.13, 0.19, 0.2), vec3(0.046, 0.03, 0.014), uNight);
+        gl_FragColor = vec4(c, 1.0);
         #include <colorspace_fragment>
       }`
     }));

@@ -1,15 +1,21 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
 const THREE = window.THREE;
-import { Chunked, Soup, convexHull, dashes, hash, lineLength, normals, slice } from './geom.js';
+import { Chunked, Soup, convexHull, hash, normals, offsetLine, slice } from './geom.js';
 import { boundaryAt, boundaryLine, cornerFillets, edgeLine, offset, roadMask, sample } from './lanegraph.js';
 import { planIntersections } from './intersections.js';
 import { flatMaterial, litMaterial, ORDER, surfaceMaterial } from './materials.js';
+import { arrowMarking, dashRuns, offsetStation, zebraBars } from '../../../world/road-visuals.mjs';
 const ELEV = 0.4;
+const WALK_HEIGHT = 0.11;
+const CURB_HEIGHT = 0.17;
+const sidewalkWidth = (e)=>e.cls === 'arterial' ? 3.2 : e.cls === 'collector' ? 2.6 : 2.1;
+const roadHeight = (y)=>y > 0.03 ? y : 0;
 export function buildRoads(data, g, valetZones = []) {
     const group = new THREE.Group();
     group.name = 'roads';
     const C = 1400;
-    const sidewalk = new Chunked(C), curb = new Chunked(C), medians = new Chunked(C);
+    const sidewalk = new Chunked(C), curb = new Chunked(C), curbFaces = new Chunked(C), medians = new Chunked(C), medianPaving = new Chunked(C);
+    const deckWalk = new Chunked(C), deckCurb = new Chunked(C), deckCurbFaces = new Chunked(C), deckMedian = new Chunked(C), deckMedianPaving = new Chunked(C);
     const oppGrid = new Map();
     for (const e of g.edges){
         if (!e.oneway || e.cls !== 'arterial' && e.cls !== 'collector') continue;
@@ -58,9 +64,24 @@ export function buildRoads(data, g, valetZones = []) {
             W + 0.15
         ];
     };
+    const sidewalkPiece = (piece, from, to, walkWidth, air = false)=>{
+        if (piece.pts.length < 2) return;
+        const [x, z] = piece.pts[0];
+        const heights = piece.y.map((y)=>air ? roadHeight(y) : 0);
+        if (walkWidth > 0) {
+            const [lo, hi] = to > from ? [from, from + walkWidth] : [from - walkWidth, from];
+            (air ? deckWalk : sidewalk).at(x, z).ribbon(piece.pts, lo, hi, heights.map((y)=>y + WALK_HEIGHT));
+        }
+        addCurb((air ? deckCurb : curb).at(x, z), (air ? deckCurbFaces : curbFaces).at(x, z), piece.pts, heights, from, to);
+    };
     const isAir = (l)=>l.y.some((v)=>v > ELEV);
     const plan = planIntersections(data, g);
     const { legs, mouthStart, mouthEnd, usedCrossings, setback, endSetback, intersectionAt } = plan;
+    const edgeCut = (e, atStart)=>{
+        const node = atStart ? e.fromNode : e.toNode;
+        const mouth = (atStart ? mouthStart : mouthEnd).get(e.id);
+        return Math.min(mouth?.inner ?? endSetback(e, node), e.ref.length / 2);
+    };
     const onGroundRoad = roadMask(g);
     const buildCarriagewayTest = (pred)=>{
         const cell = 25, grid = new Map();
@@ -146,7 +167,7 @@ export function buildRoads(data, g, valetZones = []) {
     })();
     const medGrid = new Map();
     for (const m of g.edges){
-        if (m.internal || m.cls === 'service' || isAir(m.ref)) continue;
+        if (m.internal || m.cls === 'service') continue;
         for(let i = 0; i < m.ref.pts.length - 1; i++){
             const a = m.ref.pts[i], b = m.ref.pts[i + 1];
             const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 20));
@@ -162,14 +183,12 @@ export function buildRoads(data, g, valetZones = []) {
             }
         }
     }
-    const medianWidthAt = (e, x, z, hx, hz, y)=>{
+    const medianProfileAt = (e, x, z, hx, hz, y)=>{
         const lx = hz, lz = -hx;
-        if (onAnyNonServiceRoad(x + lx * 0.35, z + lz * 0.35, y, 0.15, e.way.id, e.id)) return 0;
-        if (onConnector(x + lx * 0.6, z + lz * 0.6, 0.15)) return 0;
-        let bestT = 34, bestM = null, bestHd = 0;
+        let bestT = 34, bestM = null, bestHd = 0, bestDir;
         const cx = Math.floor(x / 40), cz = Math.floor(z / 40);
         for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [m, seg] of medGrid.get(`${cx + a},${cz + b}`) ?? []){
-            if (m.id === e.id || m.way.id === e.way.id || m.twin === e.id) continue;
+            if (m.id === e.id || m.way.id === e.way.id || m.twin === e.id || m.id === e.prev || m.id === e.next) continue;
             const u = m.ref.pts[seg], v = m.ref.pts[seg + 1];
             const dx = v[0] - u[0], dz = v[1] - u[1], L = Math.hypot(dx, dz);
             if (L < 1e-4) continue;
@@ -180,44 +199,54 @@ export function buildRoads(data, g, valetZones = []) {
             const along = (x + lx * tRef - u[0]) * mhx + (z + lz * tRef - u[1]) * mhz;
             if (along < -2.0 || along > L + 2.0) continue;
             const s = m.ref.cum[seg] + Math.max(0, Math.min(L, along));
+            const grade = m.ref.y[seg] + (m.ref.y[seg + 1] - m.ref.y[seg]) * (s - m.ref.cum[seg]) / L;
+            if (Math.abs(y - grade) > 0.7) continue;
             const b0 = boundaryAt(m, 0, s) - 0.15, b1 = boundaryAt(m, m.lanes.length, s) + 0.15;
             const t0 = tRef + b0 / den, t1 = tRef + b1 / den;
             const tNear = Math.min(t0, t1), tFar = Math.max(t0, t1);
-            if (tNear <= 0.15 && tFar >= -0.15) return 0;
+            if (tNear <= 0.15 && tFar >= -0.15) return;
             if (tNear > 0.15 && tNear < bestT) {
                 bestT = tNear;
                 bestM = m;
                 bestHd = hx * mhx + hz * mhz;
+                bestDir = [mhx, mhz];
             }
         }
-        if (!bestM || bestT < 0.55 || bestT >= 33.5) return 0;
-        const mIsLink = /_link$/.test(bestM.way.hw);
-        let w = 0;
-        if (mIsLink) {
-            w = bestT - 0.08;
-        } else if (bestHd < -0.35 && bestM.oneway && (bestM.cls === 'arterial' || bestM.cls === 'collector')) {
-            w = bestT * 0.5 + 0.15;
-        } else {
-            return 0;
+        if (!bestM || bestT < 0.35 || bestT > 21 || /_link$/.test(bestM.way.hw) || bestHd >= -0.65 || !bestM.oneway) return;
+        if (e.way.name ? bestM.way.name !== e.way.name : bestM.way.name || bestM.cls !== e.cls) return;
+        // Use one carriageway as the reference for the entire divider. Opposing
+        // halves otherwise leave seams where their splits and tapers differ.
+        const [ux, uz] = bestDir;
+        const dx = hx - ux, dz = hz - uz;
+        if ((Math.abs(dx) >= Math.abs(dz) ? dx : dz) <= 0) return;
+        let from = 0, to = 0, start = 0;
+        const count = Math.ceil(bestT / 1.05), step = bestT / count;
+        for(let i = 0; i < count; i++){
+            const d = (i + 0.5) * step, px = x + lx * d, pz = z + lz * d;
+            if (onAnyNonServiceRoad(px, pz, y, step * 0.5, e.way.id, e.id) || y < 1.5 && onConnector(px, pz, step * 0.5)) {
+                start = (i + 1) * step;
+            } else if ((i + 1) * step - start > to - from) {
+                from = start;
+                to = (i + 1) * step;
+            }
         }
-        for(let step = 1.2; step < w - 0.2; step += 1.8){
-            const px = x + lx * step, pz = z + lz * step;
-            if (onAnyNonServiceRoad(px, pz, y, 0.15, e.way.id, e.id) || onConnector(px, pz, 0.15)) return 0;
-        }
-        return w;
+        return { width: bestT + 0.08, from, to };
     };
-    const laneSample = (ed, laneIdx, d)=>{
-        const s = Math.max(0, Math.min(ed.ref.length, d));
-        const p = sample(ed.ref, s);
-        const u = 0.5 * (boundaryAt(ed, laneIdx, s) + boundaryAt(ed, laneIdx + 1, s));
-        const nx = -p.hz, nz = p.hx;
-        return {
-            x: p.x + nx * u,
-            z: p.z + nz * u,
-            y: p.y,
-            hx: p.hx,
-            hz: p.hz
-        };
+    const boundaryCache = new Map();
+    const laneBoundary = (e, i)=>{
+        let lines = boundaryCache.get(e.id);
+        if (!lines) boundaryCache.set(e.id, lines = []);
+        return lines[i] ??= boundaryLine(e, i);
+    };
+    const atStation = (e, line, d)=>sample(line, offsetStation(e.ref, line, d));
+    const sliceStations = (e, line, from, to)=>slice(line.pts, offsetStation(e.ref, line, from), offsetStation(e.ref, line, to), line.y);
+    const laneSample = (e, i, d)=>{
+        const left = laneBoundary(e, i), right = laneBoundary(e, i + 1);
+        const a = atStation(e, left, d), b = atStation(e, right, d);
+        const c = atStation(e, left, d - 1.25), f = atStation(e, right, d - 1.25);
+        const j = atStation(e, left, d + 1.25), k = atStation(e, right, d + 1.25);
+        const dx = j.x + k.x - c.x - f.x, dz = j.z + k.z - c.z - f.z, length = Math.hypot(dx, dz) || 1;
+        return { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, y: a.y, hx: dx / length, hz: dz / length, width: Math.hypot(b.x - a.x, b.z - a.z) };
     };
     const clearSpans = (from, to, step, keep)=>{
         if (to - from <= 0.2) return [];
@@ -262,7 +291,7 @@ export function buildRoads(data, g, valetZones = []) {
         const isLinkOrRamp = isLink || e.cls === 'ramp';
         if (air) {
             const sp = e.ref.pts;
-            const bridgeSw = !e.internal && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local') && !isLink ? 2.2 : 0;
+            const bridgeSw = !e.internal && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local') && !isLink ? sidewalkWidth(e) : 0;
             const medGap = !e.internal && e.oneway && (e.cls === 'arterial' || e.cls === 'collector') && !isLink ? medianGap(e) : Infinity;
             const medHalf = medGap > 0.4 && medGap < 30 ? medGap * 0.5 + 0.35 : 0;
             const elevTaper = (at)=>{
@@ -281,37 +310,28 @@ export function buildRoads(data, g, valetZones = []) {
         } else {
             const s = surfaceFor(e).at(e.ref.pts[0][0], e.ref.pts[0][1]);
             ribbonY(s, edgeLine(e, (at)=>boundaryAt(e, 0, at) + l0), edgeLine(e, (at)=>boundaryAt(e, e.lanes.length, at) + l1 - W), null);
-            if (!e.internal && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local')) {
-                const sw = e.cls === 'arterial' ? 4.2 : e.cls === 'collector' ? 3.2 : 2.4;
-                const cut0 = isLink && !setback.has(e.fromNode) ? 0 : Math.min(mouthStart.get(e.id)?.inner ?? endSetback(e, e.fromNode) * 0.9, e.ref.length / 2);
-                const cut1 = isLink && !setback.has(e.toNode) ? 0 : Math.min(mouthEnd.get(e.id)?.inner ?? endSetback(e, e.toNode) * 0.9, e.ref.length / 2);
-                const outer = boundaryLine(e, e.lanes.length);
-                const oSpans = clearSpans(cut0, outer.length - cut1, 1.2, (d)=>{
-                    const q = sample(outer, d), nx = -q.hz, nz = q.hx;
-                    if (onAnyNonServiceRoad(q.x + nx * 0.35, q.z + nz * 0.35, q.y, 0.2, e.way.id, e.id)) return false;
-                    if (!isLink && (onAnyNonServiceRoad(q.x + nx * (sw * 0.6), q.z + nz * (sw * 0.6), q.y, 0.2, e.way.id, e.id) || onLinkOrSvcCarriageway(q.x + nx * 1.2, q.z + nz * 1.2, q.y, 0.2, e.way.id, e.id))) return false;
-                    return !onConnector(q.x + nx * 0.5, q.z + nz * 0.5, 0.15);
+        }
+        if (!e.internal && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local')) {
+            const sw = sidewalkWidth(e);
+            const cut0 = edgeCut(e, true), cut1 = e.ref.length - edgeCut(e, false);
+            const outer = edgeLine(e, (d)=>boundaryAt(e, e.lanes.length, d) + l1 - W);
+            const oSpans = clearSpans(cut0, cut1, 1.35, (d)=>{
+                const q = atStation(e, outer, d), nx = -q.hz, nz = q.hx;
+                if (onAnyNonServiceRoad(q.x + nx * 0.42, q.z + nz * 0.42, q.y, 0.10, e.way.id, e.id)) return false;
+                if (onLinkOrSvcCarriageway(q.x + nx * 1.1, q.z + nz * 1.1, q.y, 0.10, e.way.id, e.id)) return false;
+                return q.y > 1.5 || !onConnector(q.x + nx * 0.65, q.z + nz * 0.65, 0.08);
+            });
+            for (const [s0, s1] of oSpans){
+                const piece = sliceStations(e, outer, s0, s1);
+                sidewalkPiece(piece, 0, 0.25, isLink ? 0 : sw, air);
+            }
+            if (e.oneway && isLink) {
+                const left = edgeLine(e, (d)=>boundaryAt(e, 0, d) + l0);
+                const lSpans = clearSpans(cut0, cut1, 1.35, (d)=>{
+                    const q = atStation(e, left, d), nx = -q.hz, nz = q.hx;
+                    return !onAnyNonServiceRoad(q.x - nx * 0.42, q.z - nz * 0.42, q.y, 0.1, e.way.id, e.id) && (q.y > 1.5 || !onConnector(q.x - nx * 0.6, q.z - nz * 0.6, 0.08));
                 });
-                for (const [s0, s1] of oSpans){
-                    const piece = slice(outer.pts, s0, s1);
-                    if (piece.pts.length >= 2) {
-                        if (!isLink) sidewalk.at(piece.pts[0][0], piece.pts[0][1]).ribbon(piece.pts, 0, sw, 0);
-                        curb.at(piece.pts[0][0], piece.pts[0][1]).ribbon(piece.pts, 0.08, 0.38, 0);
-                    }
-                }
-                if (e.oneway && isLink) {
-                    const left = boundaryLine(e, 0);
-                    const lSpans = clearSpans(cut0, left.length - cut1, 1.2, (d)=>{
-                        const q = sample(left, d), nx = -q.hz, nz = q.hx;
-                        return !onAnyNonServiceRoad(q.x - nx * 0.35, q.z - nz * 0.35, q.y, 0.2, e.way.id, e.id) && !onConnector(q.x - nx * 0.4, q.z - nz * 0.4, 0.15);
-                    });
-                    for (const [s0, s1] of lSpans){
-                        const lPiece = slice(left.pts, s0, s1);
-                        if (lPiece.pts.length >= 2) {
-                            curb.at(lPiece.pts[0][0], lPiece.pts[0][1]).ribbon(lPiece.pts, -0.38, -0.08, 0);
-                        }
-                    }
-                }
+                for (const [s0, s1] of lSpans) sidewalkPiece(sliceStations(e, left, s0, s1), 0, -0.25, 0, air);
             }
         }
         if (!air && !e.internal) for (const id of e.lanes){
@@ -319,83 +339,69 @@ export function buildRoads(data, g, valetZones = []) {
             if (!lane.raw) continue;
             for (const run of departures(lane.line, lane.raw, lane.width / 2))surfaceFor(e).at(run[0][0], run[0][1]).ribbon(run, -lane.width / 2 - 0.3, lane.width / 2 + 0.3, 0);
         }
-        if (!air && !e.internal && e.oneway && (e.cls === 'arterial' || e.cls === 'collector') && !isLink && e.ref.length > 12) {
-            const cut0 = Math.min(mouthStart.get(e.id)?.clear ?? mouthStart.get(e.id)?.inner ?? endSetback(e, e.fromNode), e.ref.length / 2);
-            const cut1 = Math.min(mouthEnd.get(e.id)?.stop ?? mouthEnd.get(e.id)?.inner ?? endSetback(e, e.toNode), e.ref.length / 2);
-            const left = boundaryLine(e, 0);
-            const mSpans = clearSpans(cut0, left.length - cut1, 1.5, (d)=>{
-                const q = sample(left, d);
-                return medianWidthAt(e, q.x, q.z, q.hx, q.hz, q.y) >= 0.55;
-            });
-            for (const [s0, s1] of mSpans){
-                const len = s1 - s0, steps = Math.max(2, Math.ceil(len / 2.0));
-                const pts = [], widths = [];
-                for(let k = 0; k <= steps; k++){
-                    const d = s0 + len * k / steps;
-                    const q = sample(left, d);
-                    const w = medianWidthAt(e, q.x, q.z, q.hx, q.hz, q.y);
-                    pts.push([
-                        q.x,
-                        q.z
-                    ]);
-                    widths.push(Math.max(0.45, w));
+        if (!e.internal && e.oneway && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local' && e.way.name) && !isLink && e.ref.length > 5) {
+            const cut0 = Math.min(mouthStart.get(e.id)?.clear ?? edgeCut(e, true), e.ref.length / 2);
+            const cut1 = Math.min(mouthEnd.get(e.id)?.stop ?? edgeCut(e, false), e.ref.length / 2);
+            const left = edgeLine(e, (d)=>boundaryAt(e, 0, d) + l0);
+            const profiles = new Map();
+            const profileAt = (d)=>{
+                if (!profiles.has(d)) {
+                    const q = atStation(e, left, d);
+                    profiles.set(d, medianProfileAt(e, q.x, q.z, q.hx, q.hz, q.y));
                 }
-                if (pts.length >= 2) {
-                    const first = pts[0], nN = normals(pts);
-                    const m = medians.at(first[0], first[1]);
-                    const cTarget = curb.at(first[0], first[1]);
-                    let pa = -1, pb = -1;
-                    const leftWall = [];
-                    for(let i = 0; i < pts.length; i++){
-                        const p = pts[i], n = nN[i], w = widths[i];
-                        const lx = p[0] - n[0] * w, lz = p[1] - n[1] * w;
-                        leftWall.push([
-                            lx,
-                            lz
-                        ]);
-                        const va = m.vert(lx, 0, lz);
-                        const vb = m.vert(p[0] + n[0] * 0.08, 0, p[1] + n[1] * 0.08);
-                        if (pa >= 0) m.idx.push(pa, va, pb, pb, va, vb);
-                        pa = va;
-                        pb = vb;
-                    }
-                    cTarget.ribbon(pts, -0.38, -0.08, 0);
-                    if (leftWall.length >= 2) {
-                        const qMid = sample(left, (s0 + s1) * 0.5), mwMid = widths[widths.length >> 1];
-                        const ox = qMid.x + qMid.hz * mwMid, oz = qMid.z - qMid.hx * mwMid;
-                        if (onLinkOrSvcCarriageway(ox, oz, qMid.y, 1.8, e.way.id, e.id)) {
-                            cTarget.ribbon(leftWall, 0.02, 0.32, 0);
+                return profiles.get(d);
+            };
+            const mSpans = clearSpans(cut0, e.ref.length - cut1, 1.6, (d)=>!!profileAt(d));
+            for (const [s0, s1] of mSpans){
+                const length = s1 - s0, steps = Math.max(2, Math.ceil(length / 1.5));
+                const stations = Array.from({ length: steps + 1 }, (_, i)=>i === steps ? s1 : s0 + length * i / steps);
+                for (const d of e.ref.cum) if (d > s0 + 0.01 && d < s1 - 0.01) stations.push(d);
+                stations.sort((a,b)=>a-b);
+                const pts = [], widths = [], heights = [], dists = [], crowns = [];
+                for (const d of stations){
+                    const q = atStation(e, left, d), previous = pts.at(-1);
+                    if (previous && Math.hypot(previous[0] - q.x, previous[1] - q.z) < 0.005) continue;
+                    const profile = profileAt(d);
+                    pts.push([q.x, q.z]);
+                    widths.push(profile?.width ?? 0);
+                    crowns.push(profile && profile.to - profile.from >= 0.85 ? profile : null);
+                    heights.push(air ? roadHeight(q.y) : 0);
+                    dists.push(d);
+                }
+                if (pts.length < 2) continue;
+                const [x, z] = pts[0], ns = normals(pts);
+                const across = (i, w)=>[pts[i][0] - ns[i][0] * w, pts[i][1] - ns[i][1] * w];
+                const opposite = widths.map((w, i)=>across(i, w));
+                // Pavement spans the matched gap, including any opening used by a turn.
+                const pavement = air ? deckTop : surfaceFor(e);
+                ribbonY(pavement.at(x, z), {pts: opposite, y: heights}, {pts, y: heights}, air ? 0 : null);
+                for (let start = 0; start < pts.length - 1; start++){
+                    if (!crowns[start]) continue;
+                    let end = start + 1;
+                    while(end < pts.length && crowns[end] &&
+                        Math.min(crowns[end - 1].to, crowns[end].to) - Math.max(crowns[end - 1].from, crowns[end].from) > 0.25) end++;
+                    const last = end - 1, len = dists[last] - dists[start];
+                    if (len >= 2){
+                        const maxWidth = Math.max(...crowns.slice(start, end).map(({from, to})=>to - from));
+                        const radius = Math.min(len * 0.4, Math.max(2.2, maxWidth * 0.58));
+                        const taperStart = dists[start] > 0.1 || e.prev === undefined;
+                        const taperEnd = dists[last] < e.ref.length - 0.1 || e.next === undefined;
+                        const near = [], far = [];
+                        for (let i = start; i < end; i++){
+                            const d = dists[i], {from, to} = crowns[i];
+                            const t = Math.max(0, Math.min(1, taperStart ? (d - dists[start]) / radius : 1, taperEnd ? (dists[last] - d) / radius : 1));
+                            const inset = Math.max(0.04, (to - from - 0.14) * (1 - Math.sqrt(t * (2 - t))) / 2);
+                            near.push(across(i, from + inset));
+                            far.push(across(i, to - inset));
                         }
+                        const y = heights.slice(start, end);
+                        const planted = len >= 7 && maxWidth >= 1.7;
+                        const target = planted ? (air ? deckMedian : medians) : (air ? deckMedianPaving : medianPaving);
+                        ribbonY(target.at(x, z), {pts: far, y}, {pts: near, y}, WALK_HEIGHT);
+                        sidewalkPiece({pts: near, y}, 0, -0.19, 0, air);
+                        sidewalkPiece({pts: far, y}, 0, 0.19, 0, air);
                     }
-                    const addNoseCap = (endPt, nVec, wEnd, dirSign)=>{
-                        if (wEnd < 0.9 || wEnd > 14) return;
-                        const halfW = (wEnd + 0.08) * 0.5;
-                        const rAlong = Math.min(2.4, halfW * 0.95);
-                        const cx = endPt[0] - nVec[0] * (wEnd * 0.5 - 0.04);
-                        const cz = endPt[1] - nVec[1] * (wEnd * 0.5 - 0.04);
-                        const tx = -nVec[1] * dirSign, tz = nVec[0] * dirSign;
-                        const tipX = cx + tx * rAlong, tipZ = cz + tz * rAlong;
-                        if (onAnyNonServiceRoad(tipX, tipZ, 0, 0.25, e.way.id, e.id) || onConnector(tipX, tipZ, 0.25)) return;
-                        const stepsCap = 8, arcPts = [];
-                        const vc = m.vert(cx, 0, cz);
-                        let prevV = -1;
-                        for(let j = 0; j <= stepsCap; j++){
-                            const a = -Math.PI * 0.5 + Math.PI * (j / stepsCap);
-                            const ca = Math.cos(a), sa = Math.sin(a) * dirSign;
-                            const px = cx + tx * ca * rAlong + nVec[0] * sa * halfW;
-                            const pz = cz + tz * ca * rAlong + nVec[1] * sa * halfW;
-                            arcPts.push([
-                                px,
-                                pz
-                            ]);
-                            const v = m.vert(px, 0, pz);
-                            if (prevV >= 0) m.idx.push(vc, prevV, v);
-                            prevV = v;
-                        }
-                        cTarget.ribbon(arcPts, -0.28, 0.04, 0);
-                    };
-                    addNoseCap(pts[0], nN[0], widths[0], -1);
-                    addNoseCap(pts[pts.length - 1], nN[pts.length - 1], widths[widths.length - 1], 1);
+                    start = last;
                 }
             }
         }
@@ -430,9 +436,9 @@ export function buildRoads(data, g, valetZones = []) {
                 }
                 if (span >= 8 && e.lanes.length >= 2) {
                     for(let i = 1; i < e.lanes.length; i++){
-                        const line = boundaryLine(e, i);
-                        for (const [d0, d1] of dashes(span, 2.4, 6.6, c0)){
-                            const piece = slice(line.pts, c0 + d0, c0 + d1, line.y);
+                        const line = laneBoundary(e, i);
+                        for (const [d0, d1] of dashRuns(c0, c1, 2.4, 6.6, 0)){
+                            const piece = sliceStations(e, line, d0, d1);
                             if (piece.pts.length >= 2) paintDim.at(piece.pts[0][0], piece.pts[0][1]).ribbon(piece.pts, -0.06, 0.06, 0);
                         }
                     }
@@ -446,14 +452,13 @@ export function buildRoads(data, g, valetZones = []) {
         const prevLen = hasPrev ? g.edges[e.prev].ref.length : 0;
         if (a1 - a0 < (setback.has(e.fromNode) && setback.has(e.toNode) ? 9 : hasPrev ? 0.8 : 4)) continue;
         const P = air ? deckPaint : paint;
-        const PD = air ? deckPaint : paintDim;
         const PY = air ? deckPaintYellow : paintYellow;
-        const yOff = air ? 0.06 : null;
-        const at = (s, x, z)=>s instanceof Chunked ? s.at(x, z) : s;
+        const yOff = air ? 0.075 : null;
+        const at = (s, x, z)=>s.at(x, z);
         const strip = (line, from, to, half, target)=>{
-            const piece = slice(line.pts, from, to, line.y);
+            const piece = sliceStations(e, line, from, to);
             if (piece.pts.length < 2) return;
-            at(target, piece.pts[0][0], piece.pts[0][1]).ribbon(piece.pts, -half, half, yOff === null ? 0 : piece.y.map((v)=>v + yOff));
+            at(target, piece.pts[0][0], piece.pts[0][1]).ribbon(piece.pts, -half, half, yOff === null ? 0 : piece.y.map((v)=>roadHeight(v) + yOff));
         };
         const stripFiltered = (line, from, to, half, target, keep)=>{
             if (!keep) {
@@ -468,7 +473,7 @@ export function buildRoads(data, g, valetZones = []) {
             return !onMainCarriageway(q.x + nx * lOff, q.z + nz * lOff, q.y, margin, e.way.id) && !onMainCarriageway(q.x + nx * mOff, q.z + nz * mOff, q.y, margin, e.way.id) && !onMainCarriageway(q.x + nx * rOff, q.z + nz * rOff, q.y, margin, e.way.id);
         };
         for(let i = 1; i < e.lanes.length; i++){
-            const line = boundaryLine(e, i);
+            const line = laneBoundary(e, i);
             const closes = (j)=>!!j && (Math.abs(j[i] - j[i - 1]) < 0.5 || Math.abs(j[i + 1] - j[i]) < 0.5);
             const from = closes(e.jointStart) ? Math.max(a0, e.taperStart ?? 0) : a0;
             const to = closes(e.jointEnd) ? Math.min(a1, e.ref.length - (e.taperEnd ?? 0)) : a1;
@@ -481,10 +486,9 @@ export function buildRoads(data, g, valetZones = []) {
             const solidTail = intersectionAt(e.toNode)?.control === 'signal' && e.cls === 'arterial' ? Math.min(28, Math.max(0, (to - from) * 0.65)) : 0;
             const tail = to === a1 ? solidTail : 0;
             if (to - from - tail > 1) {
-                const phase = (dashStart.get(e.id) ?? 0) + from;
-                for (const [d0, d1] of dashes(to - from - tail, 3, 9, phase)){
-                    if (keepDiv && !keepDiv(from + (d0 + d1) * 0.5)) continue;
-                    strip(line, from + d0, from + d1, 0.075, P);
+                for (const [d0, d1] of dashRuns(from, to - tail, 2.6, 9.4, dashStart.get(e.id) ?? 0)){
+                    if (keepDiv && !keepDiv((d0 + d1) * 0.5)) continue;
+                    strip(line, d0, d1, 0.065, P);
                 }
             }
             if (tail > 1) stripFiltered(line, a1 - tail, a1, 0.075, P, keepDiv);
@@ -492,9 +496,9 @@ export function buildRoads(data, g, valetZones = []) {
         if (e.oneway) {
             if (e.cls !== 'local') {
                 const leftEdge = edgeLine(e, (at)=>boundaryAt(e, 0, at) + 0.3);
-                const leftTarget = e.cls === 'motorway' || e.cls === 'ramp' ? PY : PD;
+                const leftTarget = e.cls === 'motorway' || e.cls === 'ramp' ? PY : air ? deckPaint : paintDim;
                 stripFiltered(leftEdge, a0, a1, 0.075, leftTarget, isLinkOrRamp ? (d)=>{
-                    const q = sample(leftEdge, d);
+                    const q = atStation(e, leftEdge, d);
                     return !onMainCarriageway(q.x, q.z, q.y, 0.2, e.way.id);
                 } : undefined);
             }
@@ -504,8 +508,8 @@ export function buildRoads(data, g, valetZones = []) {
                 const outerY = edgeLine(e, (at)=>boundaryAt(e, 0, at) + 0.12);
                 const innerY = edgeLine(e, (at)=>boundaryAt(e, 0, at) - 0.12);
                 strip(outerY, a0, a1, 0.065, PY);
-                for (const [d0, d1] of dashes(a1 - a0, 2.6, 5.4, a0)){
-                    strip(innerY, a0 + d0, a0 + d1, 0.06, PY);
+                for (const [d0, d1] of dashRuns(a0, a1, 2.6, 5.4, 0)){
+                    strip(innerY, d0, d1, 0.06, PY);
                 }
             } else if (e.twin === undefined || e.id < e.twin) {
                 strip(edgeLine(e, (at)=>boundaryAt(e, 0, at) - 0.13), a0, a1, 0.068, PY);
@@ -515,53 +519,42 @@ export function buildRoads(data, g, valetZones = []) {
         if (e.cls === 'motorway' || e.cls === 'ramp' || e.cls === 'arterial' || isLink) {
             const rightEdge = edgeLine(e, (at)=>boundaryAt(e, e.lanes.length, at) - 0.3);
             stripFiltered(rightEdge, a0, a1, 0.08, P, isLinkOrRamp ? (d)=>{
-                const q = sample(rightEdge, d);
+                const q = atStation(e, rightEdge, d);
                 return !onMainCarriageway(q.x, q.z, q.y, 0.2, e.way.id);
             } : (d)=>{
-                const q = sample(rightEdge, d), nx = -q.hz, nz = q.hx;
+                const q = atStation(e, rightEdge, d), nx = -q.hz, nz = q.hx;
                 return !onLinkOrSvcCarriageway(q.x + nx * 0.75, q.z + nz * 0.75, q.y, 0.15, e.way.id);
             });
         }
-        if (e.oneway && isLink) {
+        const ix = intersectionAt(e.toNode);
+        const controlled = setback.has(e.toNode) && !!ix && (ix.control === 'signal' || (e.cls === 'local' || e.cls === 'collector') && ix.legs.length >= 3);
+        if (e.oneway && isLink && !controlled) {
             const cSpans = clearSpans(a0, a1, 1.0, (d)=>crossSectionClear(d, 0.35));
             for (const [c0, c1] of cSpans){
                 const span = c1 - c0;
                 if (span < 9) continue;
-                const pts = span < 34 ? [
-                    (c0 + c1) * 0.5
-                ] : [
-                    c0 + span * 0.3,
-                    c0 + span * 0.72
-                ];
-                for (const d of pts){
-                    e.lanes.forEach((_, i)=>{
-                        const q = laneSample(e, i, d);
-                        const mv = e.turns[i]?.length ? e.turns[i] : [
-                            'through'
-                        ];
-                        arrow(at(P, q.x, q.z), q, mv, yOff);
-                    });
-                }
+                const d = (c0 + c1) * 0.5;
+                e.lanes.forEach((_, i)=>{
+                    const q = laneSample(e, i, d);
+                    const mv = e.turns[i]?.length ? e.turns[i] : ['through'];
+                    arrow(at(P, q.x, q.z), q, mv, yOff);
+                });
             }
         }
-        const ix = intersectionAt(e.toNode);
-        const controlled = setback.has(e.toNode) && !!ix && (ix.control === 'signal' || (e.cls === 'local' || e.cls === 'collector') && ix.legs.length >= 3);
         const chainSpan = a1 - a0 + prevLen;
         if (controlled && e.cls !== 'motorway' && e.cls !== 'ramp' && chainSpan > 14 && a1 - a0 > 0.8) {
-            const sL = a1 + 0.25;
-            const p = sample(e.ref, Math.min(sL, e.ref.length));
-            const mouth = mouthEnd.get(e.id);
-            if (mouth) {
-                p.hx = -mouth.leg.a[0];
-                p.hz = -mouth.leg.a[1];
-            }
-            const nx = -p.hz, nz = p.hx;
+            const sL = a1 + 0.2;
+            const p = sample(e.ref, sL);
+            const left = atStation(e, laneBoundary(e, 0), sL);
+            const right = atStation(e, laneBoundary(e, e.lanes.length), sL);
             const s = at(P, p.x, p.z);
-            quadAt(s, p, nx, nz, 0, W, -0.3, 0.3, yOff);
+            const bar = [[left, -0.22], [right, -0.22], [right, 0.22], [left, 0.22]].map(([q, d])=>
+                s.vert(q.x + p.hx * d, paintHeight(q.y, yOff), q.z + p.hz * d));
+            s.quad(...bar);
             const chainLaneSample = (laneIdx, d)=>{
                 if (d >= a0) return laneSample(e, laneIdx, d);
                 if (hasPrev) {
-                    const pe = g.edges[e.prev], pd = pe.ref.length + (d - a0);
+                    const pe = g.edges[e.prev], pd = pe.ref.length + d;
                     if (pd >= 3.5) return laneSample(pe, laneIdx, pd);
                 }
                 return null;
@@ -598,29 +591,9 @@ export function buildRoads(data, g, valetZones = []) {
                     arrow(at(P, q.x, q.z), q, mv, yOff);
                     if (mv.length === 1 && (mv[0] === 'left' || mv[0] === 'right')) {
                         const q2 = chainLaneSample(i, a1 - 16.5);
-                        if (q2) onlyText(at(P, q2.x, q2.z), q2, yOff);
-                        if (!e.taperEnd || 25.0 <= e.taperEnd - 4) {
-                            const q3 = chainLaneSample(i, a1 - 25.0);
-                            if (q3) arrow(at(P, q3.x, q3.z), q3, mv, yOff);
-                        }
+                        if (q2 && q2.width >= 2.4) onlyText(at(P, q2.x, q2.z), q2, yOff);
                     }
                 });
-            }
-        }
-        if (e.oneway && (e.cls === 'arterial' || e.cls === 'collector') && !isLink) {
-            const endLim = controlled ? a1 - 28 : a1 - 8;
-            const thruIndices = e.lanes.map((_, i)=>i).filter((i)=>(e.turns[i] ?? [
-                    'through'
-                ]).includes('through'));
-            const pick = thruIndices.length ? thruIndices[Math.floor(thruIndices.length / 2)] : Math.floor(e.lanes.length / 2);
-            if (e.lanes[pick] !== undefined && endLim - a0 >= 22) {
-                for(let d = a0 + 22; d <= endLim; d += 62){
-                    const q = laneSample(e, pick, d);
-                    if (onLinkOrSvcCarriageway(q.x, q.z, q.y, 2.5, e.way.id)) continue;
-                    arrow(at(PD, q.x, q.z), q, [
-                        'through'
-                    ], yOff);
-                }
             }
         }
     }
@@ -652,12 +625,12 @@ export function buildRoads(data, g, valetZones = []) {
         }
         if (hull.length >= 3) surfaceFor(A.cls === 'motorway' ? A : B).at(pa.x, pa.z).polygon(hull, 0);
         if ((A.cls === 'arterial' || A.cls === 'collector' || A.cls === 'local') && !((/_link$/.test(A.way.hw) || /_link$/.test(B.way.hw)) && onMainCarriageway(pa.x, pa.z, pa.y, 2.0, A.way.id))) {
-            const sw = A.cls === 'arterial' ? 4.5 : A.cls === 'collector' ? 3.4 : 2.6;
+            const swA = sidewalkWidth(A), swB = sidewalkWidth(B);
             const walk = convexHull([
-                ...corners(pa, ra, ra + sw),
-                ...corners(pb, rb, rb + sw)
+                ...corners(pa, ra + 0.15, ra + 0.15 + swA),
+                ...corners(pb, rb + 0.15, rb + 0.15 + swB)
             ]);
-            if (walk.length >= 3) sidewalk.at(pa.x, pa.z).polygon(walk, 0);
+            if (walk.length >= 3) sidewalk.at(pa.x, pa.z).polygon(walk, WALK_HEIGHT);
         }
     }
     for (const [id, r] of setback){
@@ -714,14 +687,12 @@ export function buildRoads(data, g, valetZones = []) {
             for (const { e, atStart } of leg.entries){
                 const m = (atStart ? mouthStart : mouthEnd).get(e.id);
                 if (!m) continue;
-                const [l0, l1] = extents(e), q = sample(e.ref, atStart ? m.inner : e.ref.length - m.inner), nx = -q.hz, nz = q.hx;
-                for (const v of [
-                    l0,
-                    l1
-                ])pts.push([
-                    q.x + nx * v,
-                    q.z + nz * v
-                ]);
+                const [l0, l1] = extents(e), station = atStart ? m.inner : e.ref.length - m.inner;
+                const q = sample(e.ref, station), nx = -q.hz, nz = q.hx;
+                const left = atStation(e, laneBoundary(e, 0), station);
+                const right = atStation(e, laneBoundary(e, e.lanes.length), station);
+                const outer = l1 - e.lanes.length * e.laneWidth;
+                pts.push([left.x + nx * l0, left.z + nz * l0], [right.x + nx * outer, right.z + nz * outer]);
                 if (q.y > ELEV) {
                     air = true;
                     y = Math.max(y, q.y);
@@ -778,10 +749,13 @@ export function buildRoads(data, g, valetZones = []) {
                     ...B.leg.entries
                 ].some(({ e })=>e.cls === 'arterial');
                 const R = big ? 11 : 6;
-                const p0 = [
+                const aOut = (pa[0] - X[0]) * A.dir[0] + (pa[1] - X[1]) * A.dir[1];
+                const bOut = (pb[0] - X[0]) * B.dir[0] + (pb[1] - X[1]) * B.dir[1];
+                const joins = aOut >= 1 && bOut >= 1 && aOut <= 20 && bOut <= 20;
+                const p0 = joins ? pa : [
                     X[0] + A.dir[0] * R,
                     X[1] + A.dir[1] * R
-                ], p2 = [
+                ], p2 = joins ? pb : [
                     X[0] + B.dir[0] * R,
                     X[1] + B.dir[1] * R
                 ];
@@ -806,55 +780,42 @@ export function buildRoads(data, g, valetZones = []) {
                     X,
                     ...curve
                 ], 0);
-                const walk = big ? 4.5 : 3.2, span = (n0, n1)=>away > 0 ? [
-                        n0,
-                        n1
-                    ] : [
-                        -n1,
-                        -n0
-                    ];
-                sidewalk.at(mid[0], mid[1]).ribbon(curve, ...span(0, walk), 0);
-                curb.at(mid[0], mid[1]).ribbon(curve, ...span(0, 0.4), 0);
+                sidewalkPiece({pts: curve, y: curve.map(()=>0)}, 0, away * 0.25, big ? 3.2 : 2.6);
             }
         }
     }
     for (const leg of legs){
         const [ax, az] = leg.a, [px, pz] = leg.perp, [cx, cz] = leg.ctr;
+        const crossings = [];
         for (const { e, atStart } of leg.entries){
-            const m = (atStart ? mouthStart : mouthEnd).get(e.id);
-            if (!m?.band) continue;
-            const [l0, l1] = extents(e);
-            const q = sample(e.ref, atStart ? m.band[0] : e.ref.length - m.band[0]);
-            const nx = -q.hz, nz = q.hx, dn = nx * px + nz * pz;
-            if (Math.abs(dn) < 0.5) continue;
-            const t0 = (q.x - cx) * px + (q.z - cz) * pz;
-            const tA = t0 + dn * (l0 + 0.3), tB = t0 + dn * (l1 - 0.3);
-            const lo = Math.ceil(Math.min(tA, tB) / 1.25), hi = Math.floor(Math.max(tA, tB) / 1.25);
-            const legAir = q.y > ELEV;
-            const s = (legAir ? deckPaint : paint).at(q.x, q.z);
-            const yBar = legAir ? q.y + 0.06 : 0;
-            for(let k = lo; k <= hi; k++){
-                const v = (k * 1.25 - t0) / dn, bx = q.x + nx * v, bz = q.z + nz * v;
-                const shift = leg.d + 2.2 - ((bx - cx) * ax + (bz - cz) * az), mx = bx + ax * shift, mz = bz + az * shift;
-                const c = [
-                    [
-                        -0.3,
-                        -1.6
-                    ],
-                    [
-                        0.3,
-                        -1.6
-                    ],
-                    [
-                        0.3,
-                        1.6
-                    ],
-                    [
-                        -0.3,
-                        1.6
-                    ]
-                ].map(([u, w])=>s.vert(mx + px * u + ax * w, yBar, mz + pz * u + az * w));
-                s.quad(c[0], c[1], c[2], c[3]);
+            const mouth = (atStart ? mouthStart : mouthEnd).get(e.id);
+            if (!mouth?.band) continue;
+            const middle = (mouth.band[0] + mouth.band[1]) / 2;
+            const d = atStart ? middle : e.ref.length - middle;
+            const left = atStation(e, laneBoundary(e, 0), d);
+            const right = atStation(e, laneBoundary(e, e.lanes.length), d);
+            const across = (q)=>(q.x - cx) * px + (q.z - cz) * pz;
+            const a = across(left), b = across(right);
+            if (Math.abs(a - b) < 0.9) continue;
+            const air = isAir(e.ref);
+            crossings.push({ lo: Math.min(a, b), hi: Math.max(a, b), air, y: paintHeight(left.y, air ? 0.075 : null) });
+        }
+        crossings.sort((a, b)=>a.lo - b.lo);
+        const bands = [];
+        for (const crossing of crossings){
+            const previous = bands.at(-1);
+            if (previous && previous.air === crossing.air && Math.abs(previous.y - crossing.y) < 0.2 && crossing.lo <= previous.hi + 0.28) {
+                previous.hi = Math.max(previous.hi, crossing.hi);
+            } else {
+                bands.push(crossing);
+            }
+        }
+        const crossing = { x: cx + ax * (leg.d + 2.2), z: cz + az * (leg.d + 2.2), hx: ax, hz: az };
+        for (const { lo, hi, air, y } of bands){
+            const s = (air ? deckPaint : paint).at(crossing.x, crossing.z);
+            for (const [from, to] of zebraBars(lo + 0.22, hi - 0.22)) {
+                const v = (u, w)=>s.vert(crossing.x + px * u + ax * w, y, crossing.z + pz * u + az * w);
+                s.quad(v(from, -1.35), v(to, -1.35), v(to, 1.35), v(from, 1.35));
             }
         }
         const pts = [];
@@ -933,7 +894,7 @@ export function buildRoads(data, g, valetZones = []) {
         const twin = e.twin !== undefined ? g.edges[e.twin] : null;
         const from = e.oneway ? l0 : -(twin ? twin.lanes.length * twin.laneWidth : 0) + l0;
         const s = paint.at(p.x, p.z);
-        for(let v = from + 0.4; v < l1 - 0.4; v += 1.2)quadAt(s, p, nx, nz, v, v + 0.6, -1.6, 1.6, null);
+        for (const [lo, hi] of zebraBars(from + 0.28, l1 - 0.28)) quadAt(s, p, nx, nz, lo, hi, -1.35, 1.35, null);
     }
     for (const k of g.lanes){
         if (!k.connector || !k.next.length || !k.prev.length || k.movement === 'through' || k.line.y.some((v)=>v > 1)) continue;
@@ -966,8 +927,8 @@ export function buildRoads(data, g, valetZones = []) {
             const leftGuide = offset(k.line, -k.width * 0.5);
             const s0 = Math.min(3.2, leftGuide.length * 0.18), s1 = Math.max(s0, leftGuide.length - 3.2);
             if (s1 - s0 >= 5.5) {
-                for (const [d0, d1] of dashes(s1 - s0, 1.1, 2.2, 0)){
-                    const piece = slice(leftGuide.pts, s0 + d0, s0 + d1);
+                for (const [d0, d1] of dashRuns(s0, s1, 1.1, 2.2, 0)){
+                    const piece = slice(leftGuide.pts, d0, d1);
                     if (piece.pts.length >= 2) paintDim.at(piece.pts[0][0], piece.pts[0][1]).ribbon(piece.pts, -0.06, 0.06, 0);
                 }
             }
@@ -975,8 +936,8 @@ export function buildRoads(data, g, valetZones = []) {
                 const rightGuide = offset(k.line, k.width * 0.5);
                 const r0 = Math.min(3.2, rightGuide.length * 0.18), r1 = Math.max(r0, rightGuide.length - 3.2);
                 if (r1 - r0 >= 5.5) {
-                    for (const [d0, d1] of dashes(r1 - r0, 1.1, 2.2, 0)){
-                        const piece = slice(rightGuide.pts, r0 + d0, r0 + d1);
+                    for (const [d0, d1] of dashRuns(r0, r1, 1.1, 2.2, 0)){
+                        const piece = slice(rightGuide.pts, d0, d1);
                         if (piece.pts.length >= 2) paintDim.at(piece.pts[0][0], piece.pts[0][1]).ribbon(piece.pts, -0.06, 0.06, 0);
                     }
                 }
@@ -984,22 +945,38 @@ export function buildRoads(data, g, valetZones = []) {
         }
     }
     const add = (arr)=>arr.forEach((m)=>group.add(m));
-    add(medians.meshes(flatMaterial('median'), 'medians', ORDER.sidewalk - 1));
-    add(sidewalk.meshes(flatMaterial('sidewalk'), 'sidewalk', ORDER.sidewalk));
-    add(curb.meshes(flatMaterial('curb'), 'curb', ORDER.sidewalk + 1));
-    add(service.meshes(flatMaterial('service'), 'service', ORDER.road));
-    add(aisle.meshes(flatMaterial('parking'), 'aisles', ORDER.road - 1));
-    add(asphalt.meshes(flatMaterial('road'), 'asphalt', ORDER.road + 1));
-    add(major.meshes(flatMaterial('roadMajor'), 'major', ORDER.road + 2));
-    add(freeway.meshes(flatMaterial('freeway'), 'freeway', ORDER.road + 3));
+    const roadMat = surfaceMaterial('road', { grain: 0.16, weathering: 0.08 });
+    const serviceMat = surfaceMaterial('service', { grain: 0.13, weathering: 0.05 });
+    const freewayMat = surfaceMaterial('freeway', { grain: 0.13, weathering: 0.08 });
+    const walkMat = surfaceMaterial('sidewalk', { grain: 0.22, weathering: 0.04 });
+    const curbMat = surfaceMaterial('curb', { grain: 0, weathering: 0 });
+    const faceMat = surfaceMaterial('curb', { grain: 0, weathering: 0, tone: 0.59 });
+    const medianMat = surfaceMaterial('median', { grain: 0.18, weathering: 0.06, texture: 'park' });
+    add(sidewalk.meshes(walkMat, 'sidewalk', ORDER.sidewalk));
+    add(service.meshes(serviceMat, 'service', ORDER.road));
+    add(aisle.meshes(surfaceMaterial('parking', { grain: 0.12, weathering: 0.07 }), 'aisles', ORDER.road - 1));
+    add(asphalt.meshes(roadMat, 'asphalt', ORDER.road + 1));
+    add(major.meshes(roadMat, 'major', ORDER.road + 2));
+    add(freeway.meshes(freewayMat, 'freeway', ORDER.road + 3));
+    add(medians.meshes(medianMat, 'medians', ORDER.road + 4));
+    add(medianPaving.meshes(walkMat, 'median-paving', ORDER.road + 4));
+    add(curbFaces.meshes(faceMat, 'curb-faces', ORDER.road + 5));
+    add(curb.meshes(curbMat, 'curb', ORDER.road + 6));
     add(paintDim.meshes(flatMaterial('paintDim'), 'paint-dim', ORDER.paint));
     add(paint.meshes(flatMaterial('paint'), 'paint', ORDER.paint + 1));
     add(paintYellow.meshes(flatMaterial('paintYellow'), 'paint-yellow', ORDER.paint + 1));
-    const deckMat = surfaceMaterial('freeway', {
+    const deckMat = surfaceMaterial('road', {
+        grain: 0.16,
+        weathering: 0.08,
         depthWrite: true,
         polygonOffset: -1
     });
     add(deckTop.meshes(deckMat, 'deck', ORDER.solid));
+    add(deckMedian.meshes(medianMat, 'deck-median', ORDER.solid + 0.1));
+    add(deckMedianPaving.meshes(walkMat, 'deck-median-paving', ORDER.solid + 0.1));
+    add(deckWalk.meshes(walkMat, 'deck-sidewalk', ORDER.solid + 0.2));
+    add(deckCurbFaces.meshes(faceMat, 'deck-curb-faces', ORDER.solid + 0.3));
+    add(deckCurb.meshes(curbMat, 'deck-curb', ORDER.solid + 0.4));
     const deckPaintMat = surfaceMaterial('paint', {
         depthWrite: true,
         polygonOffset: -3
@@ -1168,162 +1145,51 @@ export function box(s, cx, cz, w, d, y0, y1, yaw) {
     s.quad(t[0], t[1], t[2], t[3]);
 }
 function quadAt(s, p, nx, nz, u0, u1, v0, v1, yOff) {
-    const y = yOff === null ? 0 : p.y + yOff;
+    const y = paintHeight(p.y, yOff);
     const P = (u, v)=>s.vert(p.x + nx * u + p.hx * v, y, p.z + nz * u + p.hz * v);
     const a = P(u0, v0), b = P(u1, v0), c = P(u1, v1), d = P(u0, v1);
     s.quad(a, b, c, d);
 }
-function arrow(s, p, mv, yOff) {
-    const nx = -p.hz, nz = p.hx;
-    const y = yOff === null ? 0 : p.y + yOff;
-    const poly = (pts)=>{
+function paintHeight(y, offset) {
+    return offset === null ? 0 : roadHeight(y) + offset;
+}
+function arrow(s, p, movements, yOff) {
+    const nx = -p.hz, nz = p.hx, y = paintHeight(p.y, yOff);
+    for (const polygon of arrowMarking(movements, p.width)){
         const base = s.count;
-        for (const [u, v] of pts)s.vert(p.x + nx * u + p.hx * v, y, p.z + nz * u + p.hz * v);
-        for(let i = 1; i < pts.length - 1; i++)s.tri(base, base + i + 1, base + i);
-    };
-    const shaft = (u, v0, v1)=>poly([
-            [
-                u - 0.09,
-                v0
-            ],
-            [
-                u + 0.09,
-                v0
-            ],
-            [
-                u + 0.09,
-                v1
-            ],
-            [
-                u - 0.09,
-                v1
-            ]
-        ]);
-    const head = (u, v, du, dv)=>{
-        const L = Math.hypot(du, dv), a = du / L, b = dv / L;
-        poly([
-            [
-                u + a * 0.9,
-                v + b * 0.9
-            ],
-            [
-                u - b * 0.42,
-                v + a * 0.42
-            ],
-            [
-                u + b * 0.42,
-                v - a * 0.42
-            ]
-        ].map(([x, z])=>[
-                x,
-                z
-            ]));
-    };
-    const thru = mv.includes('through') || mv.includes('merge');
-    const left = mv.includes('left'), right = mv.includes('right');
-    shaft(0, -2.6, thru ? 1.2 : 0.2);
-    if (thru) head(0, 1.2, 0, 1);
-    if (left) {
-        poly([
-            [
-                -0.09,
-                0.0
-            ],
-            [
-                -0.09,
-                0.2
-            ],
-            [
-                -1.0,
-                0.2
-            ],
-            [
-                -1.0,
-                0.0
-            ]
-        ].map(([u, v])=>[
-                u,
-                v + 0.1
-            ]));
-        head(-1.0, 0.2, -1, 0);
-    }
-    if (right) {
-        poly([
-            [
-                0.09,
-                0.0
-            ],
-            [
-                1.0,
-                0.0
-            ],
-            [
-                1.0,
-                0.2
-            ],
-            [
-                0.09,
-                0.2
-            ]
-        ].map(([u, v])=>[
-                u,
-                v + 0.1
-            ]));
-        head(1.0, 0.2, 1, 0);
-    }
-    if (mv.includes('uturn')) {
-        shaft(-0.7, -1.2, 0.2);
-        head(-0.7, -1.2, 0, -1);
+        for (const [u, v] of polygon) s.vert(p.x + nx * u + p.hx * v, y, p.z + nz * u + p.hz * v);
+        for(let i = 1; i < polygon.length - 1; i++) s.tri(base, base + i, base + i + 1);
     }
 }
+const ONLY_GLYPHS = [
+    [[0, 0], [0.43, 0], [0.43, 1.6], [0, 1.6], [0, 0]],
+    [[0, 0], [0, 1.6], [0.43, 0], [0.43, 1.6]],
+    [[0, 1.6], [0, 0], [0.43, 0]],
+    [[0, 1.6], [0.215, 0.77], [0.43, 1.6]],
+    [[0.215, 0], [0.215, 0.77]]
+];
 function onlyText(s, p, yOff) {
-    const nx = -p.hz, nz = p.hx;
-    const y = yOff === null ? 0 : p.y + yOff;
-    const W = 0.5, H = 2.2, t = 0.12, tv = 0.26;
-    const rects = [];
-    const R = (u0, v0, u1, v1, off)=>rects.push([
-            off + u0,
-            v0 - H / 2,
-            off + u1,
-            v1 - H / 2
+    const nx = -p.hz, nz = p.hx, y = paintHeight(p.y, yOff);
+    for (let i = 0; i < ONLY_GLYPHS.length; i++){
+        const x = -1.07 + Math.min(i, 3) * 0.57;
+        const points = ONLY_GLYPHS[i].map(([u, v])=>[
+            p.x + nx * (x + u) + p.hx * (v - 0.8),
+            p.z + nz * (x + u) + p.hz * (v - 0.8)
         ]);
-    const glyph = (ch, o)=>{
-        if (ch === 'O') {
-            R(0, 0, W, tv, o);
-            R(0, H - tv, W, H, o);
-            R(0, 0, t, H, o);
-            R(W - t, 0, W, H, o);
-        }
-        if (ch === 'N') {
-            R(0, 0, t, H, o);
-            R(W - t, 0, W, H, o);
-            for(let k = 0; k < 6; k++){
-                const f = k / 6;
-                R(t + f * (W - 2 * t) - 0.02, H - (f + 1 / 6) * H, t + (f + 1 / 6) * (W - 2 * t) + 0.02, H - f * H, o);
-            }
-        }
-        if (ch === 'L') {
-            R(0, 0, t, H, o);
-            R(0, 0, W, tv, o);
-        }
-        if (ch === 'Y') {
-            R(W / 2 - t / 2, 0, W / 2 + t / 2, H * 0.52, o);
-            R(0, H * 0.5, t, H, o);
-            R(W - t, H * 0.5, W, H, o);
-            R(0, H * 0.48, W, H * 0.48 + tv, o);
-        }
-    };
-    const gap = 0.16, total = 4 * W + 3 * gap;
-    [
-        'O',
-        'N',
-        'L',
-        'Y'
-    ].forEach((ch, i)=>glyph(ch, -total / 2 + i * (W + gap)));
-    for (const [u0, v0, u1, v1] of rects){
-        const P = (u, v)=>s.vert(p.x + nx * u + p.hx * v, y, p.z + nz * u + p.hz * v);
-        const a = P(u0, v0), b = P(u1, v0), c = P(u1, v1), d = P(u0, v1);
-        s.quad(a, b, c, d);
+        s.ribbon(points, -0.058, 0.058, y);
+    }
+}
+function addCurb(top, sides, points, heights, from, to) {
+    const lo = Math.min(from, to), hi = Math.max(from, to);
+    top.ribbon(points, lo, hi, heights.map((y)=>y + CURB_HEIGHT));
+    const edge = from === 0 ? points : offsetLine(points, from);
+    let previous = -1;
+    for (let i = 0; i < edge.length; i++){
+        const [x, z] = edge[i], height = heights[i];
+        const vertex = sides.vert(x, height, z);
+        sides.vert(x, height + CURB_HEIGHT, z);
+        if (previous >= 0) sides.quad(previous, vertex, vertex + 1, previous + 1);
+        previous = vertex;
     }
 }
 function departures(line, raw, half) {

@@ -134,7 +134,8 @@ function poolMesh(pools) {
       attribute vec4 iPos, iCol;
       varying vec2 vP; varying vec4 vC;
       void main() { vP = position.xz; vC = iCol;
-        vec4 mvPosition = viewMatrix * vec4(iPos.xyz + vec3(position.x, 0.0, position.z) * iPos.w, 1.0);
+        vec4 wp = vec4(iPos.xyz + vec3(position.x, 0.0, position.z) * iPos.w, 1.0);
+        vec4 mvPosition = viewMatrix * wp;
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
       }`,

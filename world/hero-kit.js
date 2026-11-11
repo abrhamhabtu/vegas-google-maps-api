@@ -356,7 +356,7 @@ export const FRAG = `
       vec3 wl = mix(uWinLit, vec3(1.0, 0.93, 0.8), step(0.5, h21(cell.yx + seed)));
       e += wl * (0.5 + 0.5 * h21(cell * 1.3 + 7.0)) * win * lit * night * 0.85;
       e += base * uSelf * night;
-    } else {
+    } else if (uMode < 5.5) {
       // ribbon (Wynn, Encore): bronze glass, one thin gold line per floor, a dark crown screen.
       // uBay is the floor height here, uCrown the height of the unlined crown band.
       float fy = y / uBay;
@@ -372,13 +372,82 @@ export const FRAG = `
       float faceK = 0.72 + 0.28 * abs(dot(n, v));
       e += uGlow * line * night * uFloodK * faceK * (0.88 + 0.12 * h21(vec2(floor(fy), seed)));
       e += base * uSelf * night;
+    } else if (uMode < 6.5) {
+      // Rio: blue curtain wall with coral washes on Ipanema and violet at Masquerade's centre.
+      float masquerade = step(0.5, variant);
+      float violet = masquerade * (1.0 - smoothstep(13.0, 32.0, abs(vW.x - seed)));
+      float floorY = (y - vAux.w) / uBay;
+      float bayX = u / mix(8.1, 6.0, masquerade);
+      float floorLine = band(floorY, 0.0, 0.17, fwidth(floorY));
+      float pier = band(bayX + 0.025, 0.0, 0.081, fwidth(bayX));
+      // The coloured field arcs down across the broad faces, leaving the lower corners blue.
+      float crownDepth = mix(29.0, 28.0, masquerade);
+      float sweep = masquerade * (1.0 - smoothstep(21.0, 59.0, abs(vW.x - seed))) * 67.0;
+      float wing = sin(3.14159 * clamp(u / max(seed, 1.0), 0.0, 1.0)) * (1.0 - masquerade) * 20.0;
+      float coral = smoothstep(topH - crownDepth - sweep - wing - 2.0,
+                               topH - crownDepth - sweep - wing + 2.0, y);
+      vec3 ruby = mix(vec3(0.29, 0.039, 0.055), vec3(0.16, 0.033, 0.35), violet);
+      vec3 litTrim = mix(uGlow, mix(vec3(0.85, 0.26, 0.27), vec3(0.48, 0.18, 0.94), violet), coral);
+      vec3 glass = mix(base, ruby, coral * mix(0.68, 0.95, night));
+      c = glass * light * (1.0 - night * 0.42);
+      c = mix(c, uHorizon * 0.62, fres * 0.36 * (1.0 - night));
+      c = mix(c, litTrim * light, (floorLine * 0.65 + pier * 0.63) * (1.0 - night));
+      e += glass * (0.25 + violet * 0.22) * night;
+      e += litTrim * (floorLine * 0.43 + pier * 0.76) * night;
+      float room = step(h21(floor(vec2(u / 3.1, floorY)) + 12.0), 0.035);
+      e += uWinLit * room * band(floorY, 0.28, 0.74, fwidth(floorY)) * (1.0 - pier) * night * 0.2;
+    } else if (uMode < 7.5) {
+      // A whole architectural order between two cornices. The window bay reads
+      // as one deep recess from far away, with a slight floor division up close.
+      float baseH = vAux.w, span = topH - baseH;
+      float bay = u / uBay;
+      float across = abs(fract(bay) - 0.5);
+      float halfBay = 0.5 - uPilW * 0.5;
+      float edgeAA = max(0.002, fwidth(bay) * 0.7);
+      float panel = 1.0 - smoothstep(halfBay - edgeAA, halfBay + edgeAA, across);
+      float sill = baseH + min(2.2, span * 0.14);
+      float head = topH - min(2.4, span * 0.16);
+      float aa = max(0.035, fwidth(y) * 0.65);
+      if (variant > 0.5) {
+        float radius = min(halfBay * uBay, span * 0.28);
+        float spring = head - radius;
+        float dx = across / halfBay * radius;
+        float arch = length(vec2(dx, max(0.0, y - spring)));
+        panel *= 1.0 - smoothstep(radius - aa, radius + aa, arch);
+      }
+      panel *= smoothstep(sill - aa, sill + aa, y) * (1.0 - smoothstep(head - aa, head + aa, y));
+      float level = y / 3.35;
+      float mull = band(level, 0.0, 0.085, fwidth(level));
+      vec3 glazing = uWinDark * (0.87 + 0.13 * h21(vec2(floor(bay), seed)));
+      glazing *= 1.0 - mull * 0.12;
+      c = mix(base * light * ao, glazing * (0.48 + light * 0.48), panel);
+      c *= 1.0 - night * 0.48;
+      e += glazing * panel * night * 0.32;
+      float height = max(0.0, y - baseH);
+      float wash = 0.19 + 0.76 * exp(-height / max(3.0, span * 0.35));
+      wash += 0.16 * exp(-max(0.0, topH - y) / 3.5);
+      e += mix(base, uPil, uPilK) * uFlood * night * uFloodK * wash * (1.0 - panel * 0.93);
+      float occupied = step(h21(vec2(floor(bay), floor(level)) + seed), uRate);
+      e += uWinLit * panel * occupied * band(level, 0.21, 0.77, fwidth(level)) * night * 0.2;
+    } else {
+      // Flamingo: pale vertical fins over cool glass, with pink light at the base.
+      float bay = u / uBay;
+      float rib = band(bay, 0.0, 0.07, fwidth(bay));
+      float level = y / 3.35;
+      float mull = band(level, 0.0, 0.06, fwidth(level));
+      vec3 glass = mix(uWinDark, base, 0.34) * (1.0 - mull * 0.12);
+      c = mix(glass, base, rib) * light * (1.0 - night * 0.52);
+      e += mix(uWinDark, base, rib) * night * 0.22;
+      float height = max(0.0, y - vAux.w);
+      float pool = 0.33 + 0.67 * pow(0.5 + 0.5 * cos(6.283185 * (bay - 0.14)), 1.6);
+      e += uGlow * exp(-height / 13.4) * pool * uFloodK * night;
     }
     gl_FragColor = vec4(c + e, 1.0);
     #include <fog_fragment>
     #include <colorspace_fragment>
   }
 `;
-export const MODE = { glass: 0, stucco: 1, masonry: 2, stone: 3, palazzo: 4, ribbon: 5 };
+export const MODE = { glass: 0, stucco: 1, masonry: 2, stone: 3, palazzo: 4, ribbon: 5, rio: 6, arcade: 7, flamingo: 8 };
 export function facade(mode, o = {}) {
   const u = theme.uniforms;
   return new THREE.ShaderMaterial({
@@ -403,7 +472,7 @@ export function facade(mode, o = {}) {
       uPilW: { value: o.pilasterW ?? 0.2 },
       uCrown: { value: o.crown ?? 0 },
       uWinLit: { value: theme.c('windowLit') },
-      uWinDark: { value: theme.c('windowDark') },
+      uWinDark: { value: o.glass ? new THREE.Color(o.glass) : theme.c('windowDark') },
       uHorizon: { value: theme.c('skyHorizon') },
       uTop: { value: theme.c('skyTop') },
       uSunDir: u.uSunDir, uSun: u.uSun, uAmbient: u.uAmbient,

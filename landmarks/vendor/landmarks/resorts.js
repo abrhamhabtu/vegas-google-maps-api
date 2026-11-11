@@ -1626,33 +1626,8 @@ function buildStripResorts(data, engine) {
     }
     const pa = tower(/^le boulevard at paris$/i);
     if (pa) {
-        const skin = sheen('#f4e7c9', {
-            windows: 0.45,
-            masonry: true,
-            glow: '#ffdca0',
-            glowK: 0.08
-        });
-        const mansard = sheen('#5a7d73', {
-            refl: 0.15,
-            spec: 0.5
-        });
-        // the hotel tower itself is drawn by world/four-corners.js; the Arc and forecourt stay here.
+        // Paris and the mapped Arc de Triomphe are drawn by world/four-corners.js.
         const f = frontFrame(data, centroid(pa.ring), 34);
-        f.position.x += 0;
-        const arc = new THREE.Group();
-        arc.position.set(-34, 0, 8);
-        for (const sx of [
-            -9.5,
-            9.5
-        ])block(arc, sx, 0, 0, 7, 21, 9, stone);
-        block(arc, 0, 15, 0, 26, 6, 9, stone);
-        block(arc, 0, 21, 0, 28, 1.2, 10, white);
-        block(arc, 0, 22.2, 0, 26, 4, 9, stone);
-        block(arc, 0, 26.2, 0, 27, 0.9, 9.6, white);
-        const arch = new THREE.Mesh(new THREE.TorusGeometry(6, 1.1, 6, 16, Math.PI), white);
-        arch.position.set(0, 13.6, -4.6);
-        arc.add(arch);
-        f.add(arc);
         adBoard(f, engine, -8, 4, 18, 14, nextAd(), bronze);
         g.add(f);
     }
@@ -1680,19 +1655,7 @@ function buildStripResorts(data, engine) {
         g.add(f);
     }
     const flam = tower(/^flamingo las vegas$/i);
-    const flamTowers = flam ? towersNear(data, centroid(flam.ring)[0], centroid(flam.ring)[1], 170, 45) : [];
-    const pinkSkin = sheen('#f0a6c0', {
-        windows: 0.4,
-        masonry: true,
-        glow: '#ff6fb0',
-        glowK: 0.14
-    });
-    for (const t of flamTowers)dress(g, t, {
-        skin: pinkSkin,
-        trim: white,
-        every: 12
-    });
-    if (flamTowers[0]) faceSign(data, g, flamTowers[0], 'Flamingo', 42, 10, flamTowers[0].h - 8, `italic 700 130px ${SCRIPT}`, '#ff6aa8');
+    // Flamingo's tower wings are drawn by world/four-corners.js. Keep the street marquee.
     if (flam) {
         const f = frontFrame(data, centroid(flam.ring), 30);
         const pink = sheen('#ff5c9f', {

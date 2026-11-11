@@ -30,7 +30,8 @@ export const RESORT_LOOKS = [
         style: 7,
         glow: '#ffd9a0',
         glowK: 0.8,
-        roof: '#c9a77a'
+        roof: '#c9a77a',
+        low: { tint: '#c6b7a4', roof: '#a6aab8', k: 0.68, glow: '#ffe2b7', glowK: 0.7 }
     },
     {
         re: /caesars|augustus|octavius|palace tower|forum tower|nobu/i,
@@ -48,7 +49,8 @@ export const RESORT_LOOKS = [
         style: 10,
         glow: '#ff5cc4',
         glowK: 1.2,
-        podium: 10
+        podium: 3,
+        low: { tint: '#ac9db4', roof: '#8290a8', k: 0.6, glow: '#ffb1db', glowK: 0.64 }
     },
     {
         re: /wynn|encore/i,
@@ -267,15 +269,19 @@ export const RESORT_LOOKS = [
     },
     {
         re: /\brio\b|masquerade|ipanema|voodoo/i,
-        tint: '#9c2f4a',
-        k: 0.72,
-        style: 9,
-        glow: '#ff4060',
-        glowK: 1.0,
-        vary: [
-            '#9c2f4a',
-            '#2f4f9c'
-        ]
+        // Towers are supplied by world/rio.js. Keep the road-cut podium and valet materials here.
+        tint: '#a5b2c5',
+        k: 0.65,
+        style: 3,
+        glow: '#d7e4ff',
+        glowK: 0.82,
+        roof: '#afbed3',
+        low: {
+            tint: '#b3bdcd',
+            k: 0.58,
+            glow: '#ffe9ce',
+            glowK: 0.8
+        }
     },
     {
         re: /palms/i,
@@ -781,6 +787,23 @@ function centroid(r) {
         z / r.length
     ];
 }
+
+// Restore the casino's surveyed lakefront edge without filling the west pool courts.
+function bellagioLakefront(ring) {
+    const west = -168;
+    const edge = [];
+    for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const inA = a[0] >= west, inB = b[0] >= west;
+        if (inA) edge.push(a);
+        if (inA !== inB) {
+            const t = (west - a[0]) / (b[0] - a[0]);
+            edge.push([west, a[1] + t * (b[1] - a[1])]);
+        }
+    }
+    return edge;
+}
+
 export function buildBuildings(data, valets) {
     const group = new THREE.Group();
     group.name = 'buildings';
@@ -816,9 +839,10 @@ export function buildBuildings(data, valets) {
         i++;
         if (b.name && LANDMARK_SKIP.test(b.name.trim())) continue;
         if (valets.canopies.has(b) || heroOwned.has(b)) continue;
-        const ring = b.pts;
+        const lakefront = /^bellagio$/i.test(b.name?.trim() ?? '') && Math.abs(ringArea(b.pts)) > 50000;
+        const ring = lakefront ? bellagioLakefront(b.pts) : b.pts;
+        if (ring.length < 3) continue;
         const area = Math.abs(ringArea(ring));
-        if (b.name && /^bellagio$/i.test(b.name.trim()) && area > 50000) continue;
         const c = centroid(ring);
         if (HERO_TOWERS.some(([x, z, r, minH])=>b.h >= minH && Math.hypot(c[0] - x, c[1] - z) < r)) continue;
         if (skipAt.some(([x, z, r])=>Math.hypot(c[0] - x, c[1] - z) < r)) continue;

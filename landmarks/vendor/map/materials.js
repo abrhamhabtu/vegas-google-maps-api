@@ -34,7 +34,7 @@ const FLAT_FRAG = `
   #include <common>
   #include <fog_pars_fragment>
   uniform vec3 uColor;
-  uniform float uOpacity, uTile, uFadeOn;
+  uniform float uOpacity, uTile, uFadeOn, uGrain, uWeathering, uTone;
   uniform vec4 uFadeRect;
   uniform vec3 uFar;
   uniform sampler2D uMap;
@@ -43,11 +43,11 @@ const FLAT_FRAG = `
   ${SHADOW_PARS}
   void main() {
     // the texture carries grain and joints only; its average is divided out so the theme sets the colour
-    vec3 c = uColor;
+    vec3 c = uColor * uTone;
     if (uTile > 0.0) {
-      c *= mix(vec3(1.0), texture2D(uMap, vW.xz / uTile).rgb / uMapAvg, 0.55);
+      c *= mix(vec3(1.0), texture2D(uMap, vW.xz / uTile).rgb / uMapAvg, uGrain);
       // a second, far larger sampling breaks up the repeat: resurfaced patches and weathering
-      c *= mix(vec3(1.0), texture2D(uMap, vW.zx / (uTile * 11.3)).rgb / uMapAvg, 0.5);
+      c *= mix(vec3(1.0), texture2D(uMap, vW.zx / (uTile * 11.3)).rgb / uMapAvg, uWeathering);
     }
     if (uFadeOn > 0.5) {
       // the city gives way to open desert instead of stopping at the edge of the map data
@@ -62,7 +62,7 @@ const FLAT_FRAG = `
   }
 `;
 export function surfaceMaterial(key, opts = {}) {
-    const s = surfaceFor(key);
+    const s = surfaceFor(opts.texture ?? key);
     const opacity = opts.opacity ?? 1;
     return new THREE.ShaderMaterial({
         uniforms: {
@@ -76,6 +76,15 @@ export function surfaceMaterial(key, opts = {}) {
             },
             uTile: {
                 value: s ? s.tile : 0
+            },
+            uGrain: {
+                value: opts.grain ?? 0.55
+            },
+            uWeathering: {
+                value: opts.weathering ?? 0.5
+            },
+            uTone: {
+                value: opts.tone ?? 1
             },
             uMap: {
                 value: s ? s.map : null

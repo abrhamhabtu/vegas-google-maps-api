@@ -2,6 +2,7 @@
 const THREE = window.THREE;
 import { mercatorSouth } from '../../georeference.mjs';
 import { PLACES, placeXZ } from '../places.js';
+import { landmarkBadgeArt } from '../../../world/landmark-badges.js';
 const KIND = {
     resort: {
         c: '#d58cff',
@@ -307,7 +308,8 @@ export class Labels {
             el.dataset.tipTitle = p.name;
             el.dataset.tipSub = `${p.group || 'Las Vegas Strip'} · 3D Landmark`;
             el.dataset.tip = info;
-            el.innerHTML = `<div class="badge" style="--bg:${gradient(p.badge.bg)}">${badgeSvg(p.badge)}</div><div class="t">${esc(p.name)}</div><span class="lbl-q" aria-hidden="true">?</span>`;
+            const illustration = landmarkBadgeArt(p.id);
+            el.innerHTML = `<div class="badge${illustration ? ' illustrated' : ''}" style="--bg:${gradient(p.badge.bg)}">${illustration || badgeSvg(p.badge)}</div><div class="t">${esc(p.name)}</div><span class="lbl-q" aria-hidden="true">?</span>`;
             el.addEventListener('click', (e)=>{
                 e.stopPropagation();
                 this.controls.flyTo({

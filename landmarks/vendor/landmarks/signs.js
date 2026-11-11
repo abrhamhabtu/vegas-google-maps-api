@@ -5,7 +5,6 @@ import { sample } from '../map/lanegraph.js';
 import { ORIGIN } from '../places.js';
 const SERIF = 'Didot, "Bodoni 72", Georgia, "Times New Roman", serif';
 const SANS = '"Helvetica Neue", "SF Pro Display", Arial, sans-serif';
-const SCRIPT = '"Snell Roundhand", "Brush Script MT", "Segoe Script", cursive';
 const SIGNS = [
     {
         lat: 36.1024,
@@ -15,28 +14,8 @@ const SIGNS = [
         color: '#f6e7a6',
         both: true
     },
-    {
-        lat: 36.1162,
-        lon: -115.1755,
-        text: 'CAESARS PALACE',
-        font: `600 90px ${SERIF}`,
-        color: '#fff3d6'
-    },
-    {
-        lat: 36.1124,
-        lon: -115.1705,
-        text: 'PARIS',
-        font: `700 110px ${SERIF}`,
-        color: '#ff6b6b'
-    },
-    {
-        lat: 36.1162,
-        lon: -115.1702,
-        text: 'Flamingo',
-        font: `italic 700 130px ${SCRIPT}`,
-        color: '#ff8ad0',
-        both: true
-    },
+    // Caesars Palace and Paris signs are positioned on their models in world/four-corners.js.
+    // Flamingo's rooftop wordmarks are drawn by world/four-corners.js.
     {
         lat: 36.0986,
         lon: -115.1754,
@@ -51,14 +30,7 @@ const SIGNS = [
         font: `800 80px ${SANS}`,
         color: '#ffffff'
     },
-    {
-        lat: 36.1166,
-        lon: -115.1866,
-        text: 'RIO',
-        font: `900 150px ${SANS}`,
-        color: '#ff4a6a',
-        both: true
-    },
+    // Rio's signed towers and street marquee are supplied by world/rio.js.
     {
         lat: 36.1140,
         lon: -115.1946,

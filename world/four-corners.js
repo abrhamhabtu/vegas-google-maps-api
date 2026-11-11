@@ -1,16 +1,16 @@
 /**
  * Hand-built models for the Flamingo Road corner ("Four Corners"): Bellagio, Caesars Palace,
- * Paris Las Vegas and its Eiffel Tower. Built with docs/landmark-rebuild-playbook.md against
+ * Paris Las Vegas, its Eiffel Tower and Flamingo. Built with docs/landmark-rebuild-playbook.md against
  * Apple Maps night references. Towers are claimed in heroOwned; podiums stay with the city pipeline.
  */
 import { hash } from '../landmarks/vendor/map/geom.js';
 import { heroOwned } from '../landmarks/vendor/map/buildings.js';
 import { halo, sheen } from '../landmarks/vendor/landmarks/sheen.js';
 import { bakeStatic } from '../landmarks/vendor/landmarks/bake.js';
-import { theme } from '../landmarks/vendor/core/theme.js';
-import { MODE, SERIF, Soup, WHITE, area, centroid, clean, facade, inset, keep, obb, offset, sign, spill } from './hero-kit.js';
+import { MODE, SERIF, Soup, WHITE, centroid, clean, facade, inset, keep, obb, offset, sign, spill } from './hero-kit.js';
 
 const THREE = window.THREE;
+const SCRIPT = '"Snell Roundhand", "Brush Script MT", Georgia, cursive';
 const mesh = (geometry, material, x, y, z, ry = 0) => {
   const m = new THREE.Mesh(geometry, material);
   m.position.set(x, y, z);
@@ -43,6 +43,39 @@ function cut(line, t0, t1) {
   return out;
 }
 
+function cornice(soup, ring, y, projection = 0.52, height = 0.7) {
+  const rim = offset(ring, projection);
+  soup.walls(rim, y - height, y, WHITE, [y, 0, 0, y - height]);
+  soup.skirt(rim, y, ring, y);
+}
+
+// Each entry is the height and arch treatment of an architectural order.
+function arcadeStack(walls, trim, ring, base, tiers, seed, projection) {
+  for (const [top, arch] of tiers) {
+    if (top <= base) continue;
+    walls.walls(ring, base, top, WHITE, [top, seed, arch ? 1 : 0, base]);
+    cornice(trim, ring, top, projection);
+    base = top;
+  }
+}
+
+function roofProfile(soup, ring, eave, rise, setback) {
+  const inner = inset(ring, setback);
+  if (!inner) {
+    soup.cap(ring, eave);
+    return;
+  }
+  soup.skirt(ring, eave, inner, eave + rise);
+  soup.cap(inner, eave + rise);
+}
+
+function ellipse(x, z, rx, rz, n = 36) {
+  return Array.from({ length: n }, (_, i) => {
+    const a = i * Math.PI * 2 / n;
+    return [x + rx * Math.cos(a), z + rz * Math.sin(a)];
+  });
+}
+
 // ─────────────────────────────────── Bellagio ───────────────────────────────────
 // The OSM outline of "Bellagio Las Vegas" is the hotel's Y plan: two wings bowing out toward the
 // lake and one running west, meeting at a hub with the rotunda bay on its lake face. Each wing is
@@ -54,8 +87,7 @@ const WINGS = [
 ];
 // Apple's Bellagio: the wings run at full height, split into three tall tiers by lit cornice bands,
 // with arched bays in each tier. Only the last stretch of each wing drops a little as an end pavilion.
-const BANDS = [22, 60, 98];
-const TIP = 0.9;
+const TIP = 0.86;
 const ROTUNDA = [-162.5, 348, 10.5];
 
 function buildBellagio(data) {
@@ -65,74 +97,96 @@ function buildBellagio(data) {
   out.name = 'Bellagio';
   for (const b of data.buildings) if (b.part && b.h > 100 && (near(b, ROTUNDA[0], ROTUNDA[1], 8) || near(b, -253, 588, 10))) heroOwned.add(b);
 
-  const walls = new Soup(), roofs = new Soup(), rail = new Soup();
-  const top = (ring, h, seed, y0 = 0) => {
-    walls.walls(ring, y0, h, WHITE, [h, seed, 0, 0]);
-    roofs.cap(ring, h);
-    rail.walls(offset(ring, 0.25), h, h + 1.1, WHITE, [h + 1.1, seed, 0, 0]);
-  };
-  const bands = (ring, h) => {
-    for (const y of BANDS) if (y < h - 4) rail.walls(offset(ring, 0.5), y - 0.5, y + 0.7, WHITE, [y + 0.7, 1, 0, y - 6]);
+  const walls = new Soup(), roofs = new Soup(), rail = new Soup(), pavilions = new Soup();
+  const tower = (ring, h, seed) => {
+    arcadeStack(walls, rail, ring, 0, [[30, false], [h - 25, false], [h, true]], seed, 0.63);
+    roofProfile(roofs, ring, h + 0.05, 2.2, 2.2);
   };
   WINGS.forEach(([L, R], w) => {
     const seed = hash(w * 31 + 7) * 40;
     const body = clean([...cut(L, 0, TIP), ...cut(R, 0, TIP).reverse()]);
-    const tip = offset(clean([...cut(L, TIP, 1), ...cut(R, TIP, 1).reverse()]), 0.8);
-    top(body, 116, seed);
-    top(tip, 106, seed + 3);
-    bands(body, 116);
-    bands(tip, 106);
+    const tip = clean([...cut(L, TIP, 1), ...cut(R, TIP, 1).reverse()]);
+    tower(body, 116, seed);
+    tower(tip, 102, seed + 3);
   });
-  // the hub rises a little above the wings; the rotunda bay runs full height in front of it
+  // The central bay reads as part of the wings and ends in a low cupola.
   const hub = clean([[-187, 334], [-160, 338], [-161, 358], [-187, 361]]);
-  top(hub, 122, 5);
-  bands(hub, 122);
-  const [rx, rz, rr] = ROTUNDA, drum = [];
-  for (let k = 0; k < 28; k++) { const a = k / 28 * Math.PI * 2; drum.push([rx + Math.cos(a) * rr, rz + Math.sin(a) * rr]); }
-  top(clean(drum), 123, 9);
-  bands(clean(drum), 123);
-  // a short colonnaded drum above the bay carries the dome
-  const tholos = clean(drum.map(([x, z]) => [rx + (x - rx) * 0.62, rz + (z - rz) * 0.62]));
-  walls.walls(tholos, 123, 130, WHITE, [130, 3, 1, 123]);
-  rail.walls(offset(tholos, 0.35), 129.4, 130.6, WHITE, [130.6, 3, 0, 0]);
+  tower(hub, 118, 5);
+  const [rx, rz, rr] = ROTUNDA;
+  const drum = ellipse(rx, rz, rr, rr);
+  tower(drum, 119, 9);
+  const tholos = ellipse(rx, rz, 6.4, 6.4);
+  arcadeStack(pavilions, rail, tholos, 119, [[127, true]], 3, 0.33);
 
   // the Spa Tower: one plain slab in the same three-tier dress
   const spa = data.buildings.find(b => /^bellagio spa tower$/i.test(b.name ?? ''));
-  if (spa) {
-    const ring = clean(spa.pts);
-    top(ring, 120, 13);
-    bands(ring, 120);
+  if (spa) tower(clean(spa.pts), 120, 13);
+
+  // The independent restaurant bays follow the surveyed lakeshore outlines.
+  for (const b of data.buildings) {
+    const [x, z] = centroid(b.pts);
+    if (b.name || b.part || b.b === 'roof' || b.h !== 18.8 || x < -86 || x > -51 || z < 279 || z > 391) continue;
+    heroOwned.add(b);
+    const ring = clean(b.pts);
+    arcadeStack(pavilions, rail, ring, 0, [[6.1, true], [b.h, true]], hash(x) * 30, 0.36);
+    roofProfile(roofs, ring, b.h + 0.05, 1.6, 1.55);
   }
 
-  const stone = facade(MODE.palazzo, { color: '#ecd9bd', flood: '#ffd9a4', floodK: 1.1, self: 0.05, glow: '#fff1d2', line: 0.6, bay: 5.4, rate: 0, tier: 38, tier0: 22 });
-  const blue = sheen('#3f5ea6', { refl: 0.18, spec: 0.6, glow: '#4a6fd0', glowK: 0.3, baseGlow: 0.03 });
-  const balustrade = facade(MODE.stone, { color: '#f6eedd', flood: '#fff0d4', floodK: 1.3, self: 0.25 });
-  for (const m of [walls.mesh(stone, 'Bellagio facade'), roofs.mesh(blue, 'Bellagio roofs'), rail.mesh(balustrade, 'Bellagio balustrades')]) if (m) out.add(m);
+  const stone = facade(MODE.arcade, { color: '#e8d9c8', glass: '#426083', flood: '#ffe0c6', floodK: 0.92, bay: 8.0, pilasterW: 0.43, rate: 0.015 });
+  const blue = sheen('#526d9c', { refl: 0.12, spec: 0.45, glow: '#5376b1', glowK: 0.27, baseGlow: 0.04 });
+  const balustrade = facade(MODE.stone, { color: '#e9e1d7', roof: '#9faec5', flood: '#ffe8d4', floodK: 0.78, self: 0.13 });
+  const shore = facade(MODE.arcade, { color: '#ded5c5', glass: '#516b81', flood: '#ffdfb8', floodK: 0.75, bay: 4.9, pilasterW: 0.35, rate: 0.14 });
+  for (const m of [walls.mesh(stone, 'Bellagio giant-order arcades'), roofs.mesh(blue, 'Bellagio slate roofs'),
+    rail.mesh(balustrade, 'Bellagio layered cornices'), pavilions.mesh(shore, 'Bellagio lakeside pavilions')]) if (m) out.add(m);
+  const conservatory = buildConservatory(data);
+  if (conservatory) out.add(conservatory);
 
   // copper-blue dome, lantern and finial over the rotunda
   const deco = new THREE.Group();
   const gold = sheen('#d9b766', { refl: 0.4, spec: 1.2, glow: '#ffe09a', glowK: 1.0, baseGlow: 0.1 });
-  deco.add(mesh(new THREE.SphereGeometry(rr * 0.64, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1.2, 1), blue, rx, 130.6, rz));
+  deco.add(mesh(new THREE.SphereGeometry(6.55, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.68, 1), blue, rx, 127, rz));
   for (let k = 0; k < 12; k++) {
     const a = k / 12 * Math.PI * 2;
-    deco.add(mesh(new THREE.BoxGeometry(0.6, 6.4, 0.9), balustrade, rx + Math.cos(a) * rr * 0.6, 126.4, rz + Math.sin(a) * rr * 0.6, -a));
+    deco.add(mesh(new THREE.BoxGeometry(0.52, 5.5, 0.63), balustrade, rx + Math.cos(a) * 6.43, 123.9, rz + Math.sin(a) * 6.43, -a));
   }
-  deco.add(mesh(new THREE.CylinderGeometry(1.6, 1.8, 3.6, 12), balustrade, rx, 140.5, rz));
-  deco.add(mesh(new THREE.ConeGeometry(2.0, 3.2, 12), blue, rx, 143.9, rz));
-  deco.add(mesh(new THREE.CylinderGeometry(0.1, 0.3, 3, 6), gold, rx, 146.8, rz));
+  deco.add(mesh(new THREE.CylinderGeometry(1.35, 1.6, 2.6, 12), balustrade, rx, 132.4, rz));
+  deco.add(mesh(new THREE.ConeGeometry(1.7, 2.0, 12), blue, rx, 134.7, rz));
+  deco.add(mesh(new THREE.CylinderGeometry(0.1, 0.24, 2.4, 6), gold, rx, 136.5, rz));
   // urns along the hub parapet
-  for (let k = 0; k < 4; k++) deco.add(mesh(new THREE.CylinderGeometry(0.5, 0.7, 2.2, 8), balustrade, -185 + k * 7.5, 124.2, 336));
+  for (let k = 0; k < 4; k++) deco.add(mesh(new THREE.CylinderGeometry(0.5, 0.7, 2.2, 8), balustrade, -185 + k * 7.5, 119.8, 336));
   out.add(bakeStatic(deco, keep));
-  out.add(sign('BELLAGIO', 14, 3.2, rx + rr + 0.6, 119.5, rz, 1, 0, { font: `500 110px ${SERIF}`, color: '#fff2d8', background: '#2b2a33' }));
+  out.add(sign('BELLAGIO', 13.4, 2.8, rx + rr + 0.6, 115.5, rz, 1, 0, { font: `500 110px ${SERIF}`, color: '#fff2d8' }));
 
   out.add(spill(-190, 0.45, 350, 260, '#ffd9a8', 0.26));
   const wash = halo(220, '#ffe0b0', 0.12);
   wash.position.set(-175, 70, 348);
   out.add(wash);
-  const crown = halo(46, '#fff0cc', 0.3);
-  crown.position.set(rx, 140, rz);
+  const crown = halo(28, '#fff0cc', 0.15);
+  crown.position.set(rx, 125, rz);
   out.add(crown);
   return out;
+}
+
+function buildConservatory(data) {
+  const b = data.buildings.find(b => /^bellagio conservatory/i.test(b.name ?? ''));
+  if (!b) return null;
+  const ring = clean(b.pts);
+  const walls = new Soup(), roof = new Soup(), trim = new Soup();
+  const eave = b.h - 4.2;
+  arcadeStack(walls, trim, ring, b.mh ?? 0, [[eave, true]], 5, 0.34);
+  roofProfile(roof, ring, eave, 4.15, 2.25);
+  const { cx, cz, w, d, ax, az } = obb(ring);
+  for (let s = -w * 0.35; s < w * 0.38; s += 4.3) {
+    trim.box(cx + ax * s, b.h - 0.17, cz + az * s, d * 0.76, 0.28, 0.24, -az, ax);
+  }
+  const group = new THREE.Group();
+  group.name = 'Bellagio Conservatory';
+  const cream = facade(MODE.arcade, { color: '#ded3c2', glass: '#497580', flood: '#ffdbba', floodK: 0.69, bay: 4.3, pilasterW: 0.3, rate: 0.2 });
+  const glass = sheen('#749ca6', { refl: 0.39, spec: 0.64, glow: '#71a9b6', glowK: 0.43 });
+  const frame = facade(MODE.stone, { color: '#c4c2ab', roof: '#bbc1b5', floodK: 0.44 });
+  group.add(walls.mesh(cream, 'Conservatory arcade'), roof.mesh(glass, 'Conservatory glass'), trim.mesh(frame, 'Conservatory roof ribs'));
+  heroOwned.add(b);
+  return group;
 }
 
 // ──────────────────────────────── Caesars Palace ────────────────────────────────
@@ -149,33 +203,60 @@ function buildCaesars(data) {
   const out = new THREE.Group();
   out.name = 'Caesars Palace';
   const walls = new Soup(), roofs = new Soup(), flats = new Soup(), ends = new Soup(), rail = new Soup();
-  const signs = [];
+  const signs = [], theatre = new Soup(), theatreRoof = new Soup();
   CAESARS.forEach(([re, roof], i) => {
     const b = data.buildings.find(x => re.test(x.name ?? '') && !x.part);
     if (!b) return;
     heroOwned.add(b);
     const ring = clean(b.pts), h = b.h, seed = hash(i * 23 + 11) * 40;
-    walls.walls(ring, 0, h, WHITE, [h, seed, i > 3 ? 1 : 0, 0]);
-    rail.walls(offset(ring, 0.3), h, h + 1.4, WHITE, [h + 1.4, seed, 0, 0]);
-    // a lit band under the attic storey and another over the podium line
-    for (const y of [h - 9, 15]) if (y > 12 && y < h - 6) rail.walls(offset(ring, 0.45), y - 0.45, y + 0.6, WHITE, [y + 0.6, seed, 0, y - 4]);
+    const plinth = Math.min(17, h * 0.23);
+    arcadeStack(walls, rail, ring, 0, [
+      [plinth, true], [plinth + 5.1, false], [h - 11, false], [h - 8.3, false], [h, true],
+    ], seed, 0.74);
+    cornice(rail, ring, h + 0.8, 0.34, 0.8);
     flats.cap(ring, h + 0.05);
     if (roof === 'gable') {
-      // a terracotta gable roof sitting inside the parapet, white pediments at each end
+      // The long roof has two pedimented wings and a raised center terrace.
       const r = obb(ring), shrink = Math.min(4.5, r.d * 0.14);
       const g = { ...r, w: r.w - shrink * 2, d: r.d - shrink * 2 };
-      roofs.gable(g, h + 1.2, Math.min(7, g.d * 0.28), WHITE, [h + 8, seed, 0, 0], ends, [h, seed, 0, 0]);
-      if (r.w > 90) signs.push({ b, r, h });
+      if (g.w > 76) {
+        const endWidth = g.w * 0.23, move = (g.w - endWidth) / 2;
+        for (const side of [-1, 1]) {
+          const end = { ...g, cx: g.cx + side * move * g.ax, cz: g.cz + side * move * g.az, w: endWidth };
+          roofs.gable(end, h + 1.15, Math.min(5.5, end.d * 0.22), WHITE, [h + 7, seed, 0, 0], ends, [h + 7, seed, 0, h]);
+        }
+        const mid = { ...g, w: g.w - endWidth * 2, d: g.d * 0.83 };
+        rail.box(mid.cx, h, mid.cz, mid.w, 2.3, mid.d, mid.ax, mid.az);
+        roofs.gable(mid, h + 2.3, Math.min(4.7, mid.d * 0.2), WHITE, [h + 7, seed, 0, 0], ends, [h + 7, seed, 0, h]);
+        signs.push({ r, h });
+      } else {
+        roofs.gable(g, h + 0.9, Math.min(4.7, g.d * 0.21), WHITE, [h + 7, seed, 0, 0], ends, [h + 7, seed, 0, h]);
+      }
     }
   });
   if (!walls.idx.length) return null;
-  const marble = facade(MODE.palazzo, { color: '#f6ecda', flood: '#ffe6bf', floodK: 1.55, self: 0.07, glow: '#fff4dc', line: 1.0, bay: 3.9, rate: 0.035 });
-  const pediment = facade(MODE.palazzo, { color: '#f6f1e6', flood: '#fff0d6', floodK: 0.6, self: 0.3, glow: '#fff4dc', line: 0.9 });
-  const terracotta = sheen('#b65a52', { refl: 0.12, spec: 0.5, glow: '#e36b5c', glowK: 0.42, baseGlow: 0.04 });
-  const leads = facade(MODE.stone, { color: '#8f7f78', roof: '#6d5250' });
-  const cornice = facade(MODE.stone, { color: '#fbf6ea', flood: '#fff3dc', floodK: 1.4, self: 0.3 });
+  const campus = data.buildings.find(b => /^caesars palace hotel and casino$/i.test(b.name ?? ''));
+  // The theatre's curved exterior is part of the mapped casino perimeter.
+  const first = campus?.pts.findIndex(([x, z]) => Math.hypot(x + 15.4, z + 150) < 1);
+  if (first >= 0) {
+    const shell = clean([...campus.pts.slice(first), campus.pts[0]]);
+    const y = campus.h;
+    arcadeStack(theatre, rail, shell, y - 0.15, [[y + 5, true], [y + 12, true], [y + 19, false]], 21, 0.45);
+    roofProfile(theatreRoof, shell, y + 19.05, 1.65, 2.9);
+    const [x, z] = centroid(shell);
+    out.add(sign('THE COLOSSEUM', 18.4, 2.8, 7.1, y + 15.3, -184, 1, 0,
+      { font: `600 100px ${SERIF}`, color: '#fff0cb' }));
+    out.add(spill(x + 24, 0.45, z, 57, '#ffe7b4', 0.22));
+  }
+  const marble = facade(MODE.arcade, { color: '#f2e6d8', glass: '#3c5275', flood: '#ffe3bc', floodK: 1.19, bay: 4.9, pilasterW: 0.34, rate: 0.025 });
+  const pediment = facade(MODE.stone, { color: '#f0e7d8', roof: '#acb6c3', flood: '#fff0d6', floodK: 0.77, self: 0.12 });
+  const terracotta = sheen('#a9807e', { refl: 0.12, spec: 0.36, glow: '#be9694', glowK: 0.23, baseGlow: 0.05 });
+  const leads = facade(MODE.stone, { color: '#a1a7b1', roof: '#788297' });
+  const edging = facade(MODE.stone, { color: '#f4eadd', roof: '#aeb6c3', flood: '#fff1d6', floodK: 0.91, self: 0.13 });
+  const arenaStone = facade(MODE.arcade, { color: '#e9dcca', glass: '#415776', flood: '#ffdfbd', floodK: 0.98, bay: 5.5, pilasterW: 0.43, rate: 0.06 });
   for (const m of [walls.mesh(marble, 'Caesars towers'), roofs.mesh(terracotta, 'Caesars roofs'), ends.mesh(pediment, 'Caesars pediments'),
-    flats.mesh(leads, 'Caesars flat roofs'), rail.mesh(cornice, 'Caesars cornices')]) if (m) out.add(m);
+    flats.mesh(leads, 'Caesars flat roofs'), rail.mesh(edging, 'Caesars cornices'), theatre.mesh(arenaStone, 'Colosseum arcade'),
+    theatreRoof.mesh(leads, 'Colosseum roof')]) if (m) out.add(m);
 
   // wordmarks on the long faces of the two biggest towers, facing the Strip side
   const style = { font: `500 110px ${SERIF}`, color: '#fff4dc', background: '#3a2f2a' };
@@ -188,7 +269,43 @@ function buildCaesars(data) {
   const wash = halo(260, '#fff2da', 0.1);
   wash.position.set(-150, 60, 30);
   out.add(wash);
+  const pools = buildCaesarsPools(data);
+  if (pools) out.add(pools);
   return out;
+}
+
+function buildCaesarsPools(data) {
+  const water = new Soup(), coping = new Soup();
+  const poolNames = /^(venus|temple|neptune|apollo|bacchus|fortuna|jupiter) pool$/i;
+  let temple;
+  for (const body of data.areas) {
+    if (body.k !== 'water' || !poolNames.test(body.name ?? '')) continue;
+    const c = centroid(body.pts);
+    if (c[0] < -350 || c[0] > -165 || c[1] < -100 || c[1] > 80) continue;
+    const ring = clean(body.pts);
+    water.cap(ring, 0.24);
+    cornice(coping, ring, 0.36, 0.62, 0.28);
+    if (body.name === 'Temple Pool') temple = c;
+  }
+  if (!water.idx.length) return null;
+  const group = new THREE.Group();
+  group.name = 'Caesars pool court';
+  const stone = facade(MODE.stone, { color: '#d7cbba', roof: '#d7cbba', flood: '#ffe6b9', floodK: 0.66 });
+  const blue = sheen('#3b7ca7', { refl: 0.17, spec: 0.52, glow: '#315fa7', glowK: 0.37 });
+  group.add(water.mesh(blue, 'Caesars pools'), coping.mesh(stone, 'Pool coping'));
+  if (temple) {
+    const [x, z] = temple;
+    const cap = new Soup(), columns = new Soup(), r = 5;
+    cap.prism(ellipse(x, z, r, r, 24), 0, 0.74);
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4;
+      columns.prism(ellipse(x + 3.85 * Math.cos(a), z + 3.85 * Math.sin(a), 0.44, 0.44, 8), 0.74, 7.55);
+    }
+    cap.prism(ellipse(x, z, r, r, 24), 7.45, 8.2);
+    group.add(cap.mesh(stone, 'Temple pool pavilion'), columns.mesh(stone, 'Pavilion columns'),
+      mesh(new THREE.SphereGeometry(4.65, 22, 10, 0, 2 * Math.PI, 0, Math.PI / 2).scale(1, 0.57, 1), blue, x, 8.2, z));
+  }
+  return group;
 }
 
 // ─────────────────────────────────── Paris ───────────────────────────────────
@@ -200,23 +317,23 @@ function buildParis(data) {
   out.name = 'Paris Las Vegas';
   const ring = clean(b.pts), h = b.h, c = centroid(ring);
   const walls = new Soup(), slate = new Soup(), rail = new Soup();
-  walls.walls(ring, 0, h, WHITE, [h, 17, 0, 0]);
-  rail.walls(offset(ring, 0.3), h - 0.2, h + 1.2, WHITE, [h + 1.2, 17, 0, 0]);
-  // mansard: steep slate skirt, flat leads on top
-  const inner = inset(ring, 3.2);
-  if (inner) { slate.skirt(ring, h + 1.2, inner, h + 8.5); slate.cap(inner, h + 8.5); } else slate.cap(ring, h + 1.2);
+  arcadeStack(walls, rail, ring, 0, [[34, false], [h - 12, false], [h, true]], 17, 0.62);
+  cornice(rail, ring, h + 1.2, 0.38, 1.1);
+  roofProfile(slate, ring, h + 1.2, 6.8, 2.75);
 
   const deco = new THREE.Group();
-  const blue = sheen('#4a69b4', { refl: 0.2, spec: 0.7, glow: '#5a7fe0', glowK: 0.36, baseGlow: 0.03 });
+  const blue = sheen('#486593', { refl: 0.13, spec: 0.45, glow: '#4d75b8', glowK: 0.3, baseGlow: 0.04 });
   const gold = sheen('#dcb764', { refl: 0.45, spec: 1.3, glow: '#ffe19a', glowK: 1.05, baseGlow: 0.1 });
-  const dormerLit = sheen('#2c3442', { glow: '#ffd796', glowK: 1.2, baseGlow: 0.02 });
+  const dormerLit = sheen('#31425b', { glow: '#b9c5da', glowK: 0.24, baseGlow: 0.02 });
   // dormers march along every mansard edge
   for (let i = 0; i < ring.length; i++) {
     const p = ring[i], q = ring[(i + 1) % ring.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]);
-    const n = Math.floor(L / 4.6), ax = (q[0] - p[0]) / L, az = (q[1] - p[1]) / L;
+    const n = Math.floor(L / 6.4), ax = (q[0] - p[0]) / L, az = (q[1] - p[1]) / L;
     for (let k = 0; k < n; k++) {
-      const s = (k + 0.5) * L / n, x = p[0] + ax * s + az * 1.1, z = p[1] + az * s - ax * 1.1;
-      deco.add(mesh(new THREE.BoxGeometry(1.5, 2.2, 1.2), dormerLit, x, h + 3.6, z, -Math.atan2(az, ax)));
+      const s = (k + 0.5) * L / n, x = p[0] + ax * s - az * 0.35, z = p[1] + az * s + ax * 0.35;
+      const rot = -Math.atan2(az, ax);
+      deco.add(mesh(new THREE.BoxGeometry(1.65, 2.35, 1.4), dormerLit, x, h + 3.0, z, rot));
+      deco.add(mesh(new THREE.ConeGeometry(1.18, 0.96, 4).rotateY(Math.PI / 4), blue, x, h + 4.5, z, rot));
     }
   }
   // pavilions: one at the tip of each wing and one over the crossing, each under a steep slate roof
@@ -224,12 +341,10 @@ function buildParis(data) {
     const px = -Math.sin(ang), pz = Math.cos(ang), ax = Math.cos(ang), az = Math.sin(ang);
     const r = [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]].map(([s, t]) => [x + ax * s + px * t, z + az * s + pz * t]);
     const cr = clean(r);
-    walls.walls(offset(cr, 0.4), y0, y1, WHITE, [y1, hash(x) * 40, 0, y0 - 30]);
-    rail.walls(offset(cr, 0.7), y1, y1 + 1.1, WHITE, [y1 + 1.1, 3, 0, 0]);
-    const roof = new THREE.ConeGeometry(Math.max(w, d) * 0.7071 * 1.02, rise, 4).rotateY(Math.PI / 4).scale(w / Math.max(w, d), 1, d / Math.max(w, d));
-    deco.add(mesh(roof, blue, x, y1 + 1.1 + rise / 2, z, -ang));
-    deco.add(mesh(new THREE.CylinderGeometry(0.1, 0.3, 4.5, 6), gold, x, y1 + 1.1 + rise + 2, z));
-    return r;
+    arcadeStack(walls, rail, offset(cr, 0.38), y0, [[y1, true]], hash(x) * 40, 0.44);
+    cornice(rail, cr, y1 + 0.85, 0.48, 0.85);
+    roofProfile(slate, cr, y1 + 0.85, rise, Math.min(w, d) * 0.21);
+    deco.add(mesh(new THREE.CylinderGeometry(0.09, 0.19, 2.4, 6), gold, x, y1 + 0.85 + rise + 1.1, z));
   };
   const tips = [];
   for (let i = 0; i < ring.length; i++) {
@@ -240,128 +355,130 @@ function buildParis(data) {
   for (const t of tips) {
     const dx = c[0] - t.m[0], dz = c[1] - t.m[1], D = Math.hypot(dx, dz);
     const x = t.m[0] + dx / D * 8, z = t.m[1] + dz / D * 8;
-    pav(x, z, t.L + 0.6, 16, t.ang, h - 14, h + 5, 13);
+    pav(x, z, t.L + 0.6, 18, t.ang, h - 11, h + 8, 8.2);
   }
   if (tips.length) {
     const ang = tips[0].ang;
-    pav(c[0], c[1], 21, 21, ang, h - 10, h + 10, 19);
-    deco.add(mesh(new THREE.CylinderGeometry(1.4, 1.8, 4, 8), gold, c[0], h + 11.1 + 19 + 1.5, c[1]));
+    pav(c[0], c[1], 25, 25, ang, h - 8, h + 8.6, 10.0);
     // the wordmark on the wing tip that faces the Strip and the Bellagio fountains
     const west = tips.slice().sort((p, q) => p.m[0] - q.m[0])[0];
     const dx = west.m[0] - c[0], dz = west.m[1] - c[1], D = Math.hypot(dx, dz);
     out.add(sign('PARIS', 14, 4.6, west.m[0] + dx / D * 1.2, h - 3.5, west.m[1] + dz / D * 1.2, dx / D, dz / D,
       { font: `600 120px ${SERIF}`, color: '#ffe9b6', background: '#2a2c3a' }));
   }
-  const stone = facade(MODE.palazzo, { color: '#eee0c4', flood: '#ffdcaa', floodK: 1.05, self: 0.05, glow: '#ffeccc', line: 1.0, bay: 3.8, rate: 0.06 });
-  const trim = facade(MODE.stone, { color: '#f6ecd8', flood: '#ffe8c2', floodK: 1.2, self: 0.22 });
+  const stone = facade(MODE.arcade, { color: '#e9dace', glass: '#3e5476', flood: '#ffddc3', floodK: 1.12, bay: 4.9, pilasterW: 0.37, rate: 0.022 });
+  const trim = facade(MODE.stone, { color: '#eee2d4', flood: '#ffe8ca', floodK: 0.86, self: 0.13 });
   for (const m of [walls.mesh(stone, 'Paris facade'), slate.mesh(blue, 'Paris mansard'), rail.mesh(trim, 'Paris cornices')]) if (m) out.add(m);
   out.add(bakeStatic(deco, keep));
   out.add(spill(c[0], 0.45, c[1], 200, '#ffd9a2', 0.26));
   const wash = halo(200, '#ffdcaa', 0.1);
   wash.position.set(c[0], 60, c[1]);
   out.add(wash);
+  const arc = buildParisArc(data);
+  if (arc) out.add(arc);
   return out;
 }
 
-// ───────────────────────────────── Eiffel Tower ─────────────────────────────────
-// Half-scale tower: four splayed legs that merge at the second platform, an open lattice drawn
-// procedurally (X bracing, ties, corner members) and dithered away to a lace at distance.
-const LATTICE_VERT = `
-  #include <common>
-  #include <fog_pars_vertex>
-  attribute vec4 aux;
-  varying vec3 vN; varying vec2 vUv; varying float vY, vW;
-  void main() {
-    vN = normalize(mat3(modelMatrix) * normal);
-    vUv = uv; vY = position.y; vW = aux.x;
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    gl_Position = projectionMatrix * mvPosition;
-    #include <fog_vertex>
-  }`;
-const LATTICE_FRAG = `
-  #include <common>
-  #include <fog_pars_fragment>
-  uniform vec3 uDay, uGlow, uSunDir, uSunTint, uAmbientTint;
-  uniform float uNight, uSun, uAmbient;
-  varying vec3 vN; varying vec2 vUv; varying float vY, vW;
-  float bayer(vec2 p) {
-    vec2 q = mod(floor(p), 4.0);
-    float a = mod(q.x + q.y * 2.0, 4.0), b = mod(q.x, 2.0) * 2.0 + mod(q.y, 2.0);
-    return (a * 4.0 + b + 0.5) / 16.0;
+function buildParisArc(data) {
+  const crown = data.buildings.find(b => /^arc de triomphe$/i.test(b.name ?? ''));
+  if (!crown) return null;
+  const [cx, cz] = centroid(crown.pts);
+  const piers = data.buildings.filter(b => b !== crown && !b.name && b.h === crown.h && near(b, cx, cz, 15));
+  if (piers.length !== 2) return null;
+  const { ax, az, w, d } = obb([...crown.pts, ...piers.flatMap(b => b.pts)]);
+  const h = crown.h, opening = obb(crown.pts).d / 2 - 0.6;
+  const spring = crown.mh - opening;
+  const arch = new THREE.Shape();
+  arch.moveTo(-w / 2, 0);
+  arch.lineTo(-w / 2, h - 4.2);
+  arch.lineTo(w / 2, h - 4.2);
+  arch.lineTo(w / 2, 0);
+  arch.lineTo(opening, 0);
+  arch.lineTo(opening, spring);
+  arch.absarc(0, spring, opening, 0, Math.PI, false);
+  arch.lineTo(-opening, 0);
+  arch.closePath();
+  const group = new THREE.Group();
+  group.name = 'Paris Arc de Triomphe';
+  group.position.set(cx, 0, cz);
+  group.rotation.y = -Math.atan2(az, ax);
+  const stone = sheen('#e1d2ba', { glow: '#ffe5bc', glowK: 0.38 });
+  const trim = sheen('#e9dec9', { glow: '#fff0cf', glowK: 0.61 });
+  const dark = sheen('#a79077', { glow: '#ffce9d', glowK: 0.24 });
+  const archBody = new THREE.ExtrudeGeometry(arch, { depth: d, bevelEnabled: false, curveSegments: 18 });
+  group.add(mesh(archBody, stone, 0, 0, -d / 2));
+  for (const [y, width, height, depth] of [
+    [h - 4.0, w + 1.25, 0.95, d + 0.95], [h - 2.1, w - 0.35, 3.5, d - 0.3], [h, w + 0.75, 0.8, d + 0.72],
+  ]) group.add(mesh(new THREE.BoxGeometry(width, height, depth), trim, 0, y, 0));
+  for (const side of [-1, 1]) {
+    const halfPier = (w / 2 + opening) / 2;
+    const curve = new THREE.EllipseCurve(0, spring, opening + 0.44, opening + 0.44, 0, Math.PI);
+    const rim = curve.getPoints(22).map(p => new THREE.Vector3(p.x, p.y, side * (d / 2 + 0.07)));
+    group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rim), 24, 0.39, 5), trim));
+    for (const x of [-halfPier, halfPier]) {
+      group.add(mesh(new THREE.BoxGeometry(3.8, 6.4, 0.45), dark, x, 7.7, side * d / 2));
+      group.add(mesh(new THREE.BoxGeometry(3.0, 5.5, 0.46), trim, x, 7.7, side * (d / 2 + 0.22)));
+    }
   }
-  void main() {
-    float P = 3.4;
-    vec2 g = vec2(vUv.x / P, vY / P);
-    float fw = max(fwidth(g.x), fwidth(g.y));
-    float d1 = abs(fract(g.x + g.y + 0.5) - 0.5), d2 = abs(fract(g.x - g.y + 0.5) - 0.5);
-    float bar = 1.0 - smoothstep(0.06, 0.06 + fw, min(d1, d2));
-    float tie = 1.0 - smoothstep(0.05, 0.05 + fw, abs(fract(g.y * 0.5 + 0.5) - 0.5));
-    float ew = fwidth(vUv.x);
-    float edge = 1.0 - smoothstep(0.85, 0.85 + ew, min(vUv.x, vW - vUv.x));
-    float a = max(max(bar, tie), edge);
-    a = mix(a, max(0.42, edge * 0.9), smoothstep(0.18, 0.6, fw));
-    if (a < bayer(gl_FragCoord.xy)) discard;
-    vec3 n = normalize(vN);
-    float key = abs(dot(n, uSunDir));
-    vec3 c = uDay * (uAmbient * uAmbientTint * 0.9 + uSun * key * uSunTint * 0.8) * mix(1.0, 0.25, uNight);
-    vec3 e = uGlow * uNight * (0.62 + 0.4 * edge) * (0.85 + 0.15 * smoothstep(0.0, 60.0, vY));
-    gl_FragColor = vec4(c + e, 1.0);
-    #include <fog_fragment>
-    #include <colorspace_fragment>
-  }`;
-function lattice() {
-  const u = theme.uniforms;
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
-      uDay: { value: new THREE.Color('#9b8461') }, uGlow: { value: new THREE.Color('#ffd88f') },
-      uSunDir: u.uSunDir, uSun: u.uSun, uAmbient: u.uAmbient, uSunTint: u.uSunTint, uAmbientTint: u.uAmbientTint, uNight: u.uNight,
-    },
-    vertexShader: LATTICE_VERT, fragmentShader: LATTICE_FRAG, fog: true, side: THREE.DoubleSide,
-  });
+  for (const b of [crown, ...piers]) heroOwned.add(b);
+  return bakeStatic(group, keep);
 }
+
+// ───────────────────────────────── Eiffel Tower ─────────────────────────────────
+// The truss uses solid, slender members so its openings stay readable during a camera move.
 function buildEiffel(data) {
   const f = data.buildings.find(b => /^eiffel tower$/i.test(b.name ?? ''));
   if (!f) return null;
-  const r = obb(clean(f.pts)), H = 165;
-  const B = Math.max(24, Math.min(30, r.d / 2)); // half the base, leg outer corner to centre
+  const r = obb(clean(f.pts)), H = f.h;
+  const B = Math.max(24, Math.min(30, r.d / 2));
   const yTop = H * 0.9, y1 = H * 0.19, y2 = H * 0.38;
   const hwO = y => 1.5 + (B - 1.5) * Math.pow(Math.max(0, 1 - y / yTop), 2.3);
   const hwI = y => y >= y2 ? 0 : B * 0.58 * Math.pow(1 - y / y2, 1.3);
-  const soup = new Soup();
-  const face = (P, Q, nrm, y0, ya) => {
-    // P(y), Q(y): the two face edges as functions of height; a vertical strip of quads
-    const steps = Math.max(2, Math.round((ya - y0) / 6));
-    for (let k = 0; k < steps; k++) {
-      const ya0 = y0 + (ya - y0) * k / steps, ya1 = y0 + (ya - y0) * (k + 1) / steps;
-      const p0 = P(ya0), q0 = Q(ya0), p1 = P(ya1), q1 = Q(ya1);
-      const w0 = Math.hypot(q0[0] - p0[0], q0[1] - p0[1]), w1 = Math.hypot(q1[0] - p1[0], q1[1] - p1[1]);
-      const v0 = soup.vert(p0[0], ya0, p0[1], nrm, 0, WHITE, [w0, 0, 0, 0]), v1 = soup.vert(q0[0], ya0, q0[1], nrm, w0, WHITE, [w0, 0, 0, 0]);
-      const v2 = soup.vert(q1[0], ya1, q1[1], nrm, w1, WHITE, [w1, 0, 0, 0]), v3 = soup.vert(p1[0], ya1, p1[1], nrm, 0, WHITE, [w1, 0, 0, 0]);
-      soup.idx.push(v0, v1, v2, v0, v2, v3);
-    }
-  };
-  // legs: square sections [hwI, hwO] on both axes, one per quadrant, faces on all four sides
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    face(y => [sx * hwO(y), sz * hwI(y)], y => [sx * hwO(y), sz * hwO(y)], [sx, 0, 0], 0, y2);
-    face(y => [sx * hwI(y), sz * hwO(y)], y => [sx * hwO(y), sz * hwO(y)], [0, 0, sz], 0, y2);
-    face(y => [sx * hwI(y), sz * hwI(y)], y => [sx * hwI(y), sz * hwO(y)], [-sx, 0, 0], 0, y2);
-    face(y => [sx * hwI(y), sz * hwI(y)], y => [sx * hwO(y), sz * hwI(y)], [0, 0, -sz], 0, y2);
-  }
-  // the single shaft above the second platform
-  for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    const P = y => ax ? [ax * hwO(y), -hwO(y)] : [-hwO(y), az * hwO(y)];
-    const Q = y => ax ? [ax * hwO(y), hwO(y)] : [hwO(y), az * hwO(y)];
-    face(P, Q, [ax, 0, az], y2, yTop);
-  }
   const grp = new THREE.Group();
   grp.name = 'Eiffel Tower';
-  const body = soup.mesh(lattice(), 'Eiffel lattice');
-  if (body) grp.add(body);
   const deco = new THREE.Group();
-  const deck = sheen('#8c7655', { refl: 0.2, spec: 0.6, glow: '#ffcf78', glowK: 0.9, baseGlow: 0.05 });
-  const lamp = sheen('#fff1c8', { glow: '#ffe7a8', glowK: 1.6, baseGlow: 0.3 });
-  // first platform: an open square frame; second: a solid deck; then the top cabin
+  const iron = sheen('#a5937c', { refl: 0.12, spec: 0.54, glow: '#ffe9cc', glowK: 0.84, baseGlow: 0.045 });
+  const deck = sheen('#9d8b76', { refl: 0.15, spec: 0.48, glow: '#ffd7a3', glowK: 0.48, baseGlow: 0.04 });
+  const lamp = sheen('#eee0cb', { glow: '#ffefd4', glowK: 0.96, baseGlow: 0.13 });
+  const member = new THREE.BoxGeometry(1, 1, 1);
+  const up = new THREE.Vector3(0, 1, 0);
+  function beam(a, b, width, material) {
+    const delta = b.clone().sub(a), length = delta.length();
+    if (length < 0.04) return;
+    const part = new THREE.Mesh(member, material);
+    part.position.copy(a).lerp(b, 0.5);
+    part.quaternion.setFromUnitVectors(up, delta.divideScalar(length));
+    part.scale.set(width, length, width);
+    deco.add(part);
+  }
+  function frame(ringAt, bottom, top, count, width) {
+    let prev = ringAt(bottom);
+    for (let level = 1; level <= count; level++) {
+      const next = ringAt(bottom + (top - bottom) * level / count);
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4;
+        beam(prev[i], next[i], width * 1.9, iron);
+        beam(prev[i], next[j], width, iron);
+        beam(prev[j], next[i], width, iron);
+        beam(next[i], next[j], width * 1.22, deck);
+      }
+      prev = next;
+    }
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const leg = y => {
+      const a = hwI(y), b = hwO(y);
+      return [[a, a], [b, a], [b, b], [a, b]].map(([x, z]) => new THREE.Vector3(sx * x, y, sz * z));
+    };
+    frame(leg, 0, y1, 5, 0.46);
+    frame(leg, y1, y2, 5, 0.39);
+  }
+  const shaft = y => {
+    const w = hwO(y);
+    return [[-w, -w], [w, -w], [w, w], [-w, w]].map(([x, z]) => new THREE.Vector3(x, y, z));
+  };
+  frame(shaft, y2, yTop, 13, 0.33);
+  // The first deck stays open in the middle, like the real lattice below it.
   const w1 = hwO(y1) + 1.6;
   for (const [x, z, bw, bd] of [[0, w1 - 2.6, w1 * 2, 5.2], [0, -w1 + 2.6, w1 * 2, 5.2], [w1 - 2.6, 0, 5.2, w1 * 2 - 10.4], [-w1 + 2.6, 0, 5.2, w1 * 2 - 10.4]]) {
     deco.add(mesh(new THREE.BoxGeometry(bw, 3.6, bd), deck, x, y1, z));
@@ -386,13 +503,14 @@ function buildEiffel(data) {
     deco.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.75, 6), deck));
   }
   grp.add(bakeStatic(deco, keep));
+  member.dispose();
   grp.position.set(r.cx, 0, r.cz);
   grp.rotation.y = -Math.atan2(r.az, r.ax);
   const out = new THREE.Group();
   out.name = 'Eiffel Tower';
   out.add(grp);
   out.add(spill(r.cx, 0.45, r.cz, 110, '#ffcf7a', 0.3));
-  const glowMid = halo(150, '#ffc86a', 0.14);
+  const glowMid = halo(105, '#ffe7bf', 0.09);
   glowMid.position.set(r.cx, 60, r.cz);
   out.add(glowMid);
   const tip = halo(14, '#fff2c8', 0.8);
@@ -401,10 +519,38 @@ function buildEiffel(data) {
   return out;
 }
 
+function buildFlamingo(data) {
+  const campus = data.buildings.find(b => /^flamingo las vegas$/i.test(b.name ?? ''));
+  if (!campus) return null;
+  const targets = [[257, 18], [266, -89], [240, -41]];
+  const wings = targets.map(([x, z]) => data.buildings.find(b => !b.name && b.h >= 82 && b.h <= 89 && near(b, x, z, 4)));
+  if (!wings[0]) return null;
+  const group = new THREE.Group();
+  group.name = 'Flamingo Las Vegas';
+  const walls = new Soup(), band = new Soup(), roofs = new Soup();
+  for (const wing of wings.filter(Boolean)) {
+    const ring = clean(wing.pts);
+    walls.walls(ring, 0, wing.h, WHITE, [wing.h, 0, 0, campus.h]);
+    cornice(band, ring, campus.h + 1, 0.32, 0.76);
+    cornice(band, ring, wing.h + 0.38, 0.38, 2.8);
+    roofs.cap(ring, wing.h + 0.36);
+    heroOwned.add(wing);
+  }
+  const pink = facade(MODE.flamingo, { color: '#bd9fb7', glass: '#43567e', glow: '#ff75c8', floodK: 1.12, bay: 10.7 });
+  const trim = facade(MODE.stone, { color: '#a3a9be', roof: '#7e92b2', flood: '#e6aed8', floodK: 0.32, self: 0.12 });
+  const slate = facade(MODE.stone, { color: '#7e90b1', roof: '#7790b2', flood: '#ad94cb', roofGlow: 0.49 });
+  group.add(walls.mesh(pink, 'Flamingo pink-lit fins'), band.mesh(trim, 'Flamingo parapets'), roofs.mesh(slate, 'Flamingo cool roofs'));
+  const style = { font: `italic 700 126px ${SCRIPT}`, color: '#ffc5e3' };
+  group.add(sign('Flamingo', 28, 4.8, 215.25, wings[0].h - 6.2, 13, -1, 0, style));
+  group.add(sign('Flamingo', 30, 4.8, 290, wings[0].h - 6.2, 70.65, 0, 1, style));
+  group.add(spill(220, 0.45, 50, 63, '#ec91ce', 0.22));
+  return group;
+}
+
 export function buildFourCorners(data) {
   const group = new THREE.Group();
   group.name = 'Four Corners resorts';
-  for (const build of [buildBellagio, buildCaesars, buildParis, buildEiffel]) {
+  for (const build of [buildBellagio, buildCaesars, buildParis, buildEiffel, buildFlamingo]) {
     const model = build(data);
     if (model) group.add(model);
   }

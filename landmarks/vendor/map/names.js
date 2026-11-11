@@ -1,8 +1,9 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
 const THREE = window.THREE;
 import { Chunked } from './geom.js';
-import { sample } from './lanegraph.js';
+import { boundaryAt, edgeLine, sample } from './lanegraph.js';
 import { ORDER, themed } from './materials.js';
+import { offsetStation } from '../../../world/road-visuals.mjs';
 const ABBR = [
     [
         /\bNorth\b/g,
@@ -76,7 +77,7 @@ export function shortName(n) {
 }
 export function buildStreetNames(g) {
     const len = new Map();
-    const usable = (e)=>!!e.way.name && !e.elevated && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local');
+    const usable = (e)=>!!e.way.name && !e.internal && !/_link$/.test(e.way.hw) && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local');
     for (const e of g.edges)if (usable(e)) len.set(e.way.name, (len.get(e.way.name) ?? 0) + e.ref.length);
     const names = [
         ...len.entries()
@@ -114,39 +115,49 @@ export function buildStreetNames(g) {
     tex.minFilter = THREE.LinearMipmapLinearFilter;
     const ch = new Chunked(1400);
     const placed = new Map();
+    const clearStart = new Map(), clearEnd = new Map();
+    for (const ix of g.intersections ?? []) for (const leg of ix.legs) for (const approach of leg.approaches) {
+        const reserve = approach.stopAt + (approach.inbound ? 20 : 4);
+        (approach.inbound ? clearEnd : clearStart).set(approach.edge, reserve);
+    }
     for (const e of g.edges){
         if (!usable(e) || !e.oneway && e.twin !== undefined && e.id > e.twin) continue;
         const r = rects.get(e.way.name);
         if (!r) continue;
-        const textH = e.cls === 'arterial' ? 2.6 : 2.1;
+        const textH = e.cls === 'arterial' ? 2.15 : 1.8;
         const textL = r.w / RH * textH;
-        if (e.ref.length < textL + 50) continue;
-        const across = e.oneway ? e.lanes.length * e.laneWidth / 2 : 0;
-        const spacing = e.cls === 'arterial' ? 260 : 200;
-        for(let s = Math.max(25 + textL / 2, e.ref.length / 2 - Math.floor((e.ref.length / 2 - 25 - textL / 2) / spacing) * spacing); s < e.ref.length - 25 - textL / 2; s += spacing){
-            const a = sample(e.ref, s - textL / 2), b = sample(e.ref, s + textL / 2), m = sample(e.ref, s);
-            if (a.hx * b.hx + a.hz * b.hz < 0.985) continue;
-            const nx = -m.hz, nz = m.hx;
-            const cx = m.x + nx * across, cz = m.z + nz * across;
+        const from = (clearStart.get(e.id) ?? (e.prev !== undefined ? 3 : 13)) + textL / 2;
+        const to = e.ref.length - (clearEnd.get(e.id) ?? (e.next !== undefined ? 3 : 17)) - textL / 2;
+        if (to < from) continue;
+        const midLane = (e.lanes.length - 1) / 2;
+        const through = e.turns.map((_, i)=>i).filter((i)=>e.turns[i]?.includes('through'));
+        const lane = through.reduce((best, i)=>Math.abs(i - midLane) < Math.abs(best - midLane) ? i : best, through[0] ?? Math.floor(midLane));
+        const width = (d)=>boundaryAt(e, lane + 1, d) - boundaryAt(e, lane, d);
+        const center = edgeLine(e, (d)=>(boundaryAt(e, lane, d) + boundaryAt(e, lane + 1, d)) / 2);
+        const point = (d)=>sample(center, offsetStation(e.ref, center, d));
+        const spacing = e.cls === 'arterial' ? 105 : 160;
+        const first = (from + to) / 2 - Math.floor((to - from) / (2 * spacing)) * spacing;
+        for(let s = first; s <= to; s += spacing){
+            const a = point(s - textL / 2), b = point(s + textL / 2), m = point(s);
+            if (a.hx * b.hx + a.hz * b.hz < 0.985 || Math.min(width(s - textL / 2), width(s + textL / 2)) < textH + 0.32) continue;
+            const cx = m.x, cz = m.z;
             const prev = placed.get(e.way.name) ?? [];
-            if (prev.some(([px, pz])=>Math.hypot(px - cx, pz - cz) < spacing * 0.8)) continue;
-            prev.push([
-                cx,
-                cz
-            ]);
+            if (prev.some(([px, pz, hx, hz])=>Math.hypot(px - cx, pz - cz) < spacing * 0.8 && (!e.oneway || hx * m.hx + hz * m.hz > 0))) continue;
+            prev.push([cx, cz, m.hx, m.hz]);
             placed.set(e.way.name, prev);
-            let rx = m.hx, rz = m.hz;
-            if (rx < -0.05 || Math.abs(rx) <= 0.05 && rz > 0) {
-                rx = -rx;
-                rz = -rz;
-            }
+            const flip = m.hx < -0.05 || Math.abs(m.hx) <= 0.05 && m.hz > 0;
+            const [start, end] = flip ? [b, a] : [a, b];
+            const length = Math.hypot(end.x - start.x, end.z - start.z) || 1;
+            const rx = (end.x - start.x) / length, rz = (end.z - start.z) / length;
             const ux = rz, uz = -rx;
-            const hl = textL / 2, hh = textH / 2;
+            const hh = textH / 2;
+            const elevated = e.ref.y.some((y)=>y > 0.4);
+            const height = (q)=>elevated ? Math.max(0, q.y) + 0.11 : 0;
             const soup = ch.at(cx, cz);
-            const v0 = soup.vert(cx - rx * hl - ux * hh, 0, cz - rz * hl - uz * hh);
-            const v1 = soup.vert(cx + rx * hl - ux * hh, 0, cz + rz * hl - uz * hh);
-            const v2 = soup.vert(cx + rx * hl + ux * hh, 0, cz + rz * hl + uz * hh);
-            const v3 = soup.vert(cx - rx * hl + ux * hh, 0, cz - rz * hl + uz * hh);
+            const v0 = soup.vert(start.x - ux * hh, height(start), start.z - uz * hh);
+            const v1 = soup.vert(end.x - ux * hh, height(end), end.z - uz * hh);
+            const v2 = soup.vert(end.x + ux * hh, height(end), end.z + uz * hh);
+            const v3 = soup.vert(start.x + ux * hh, height(start), start.z + uz * hh);
             soup.quad(v0, v1, v2, v3);
             const u0 = r.x / W, u1 = (r.x + r.w) / W, vt = 1 - r.y / cv.height, vb = 1 - (r.y + RH) / cv.height;
             soup.uv.push(u0, vb, u1, vb, u1, vt, u0, vt);
@@ -157,8 +168,8 @@ export function buildStreetNames(g) {
         transparent: true,
         depthWrite: false,
         side: THREE.DoubleSide,
-        opacity: 0.9
-    }), 'paintDim');
+        opacity: 0.78
+    }), 'paint');
     const grp = new THREE.Group();
     grp.name = 'street-names';
     for (const mesh of ch.meshes(mat, 'names', ORDER.paint + 3))grp.add(mesh);
