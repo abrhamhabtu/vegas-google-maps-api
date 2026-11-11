@@ -1798,14 +1798,9 @@ function buildStripResorts(data, engine) {
         glow: '#6fffc2',
         glowK: 0.22
     });
-    for (const t of mgm)dress(g, t, {
-        skin: emerald,
-        trim: sheen('#e8e6dc'),
-        every: 20
-    });
+    // The MGM towers, parapets and wordmarks are modelled in world/tropicana-trio.js.
     const main = mgm.slice().sort((a, b)=>b.h - a.h)[0];
     if (main) {
-        faceSign(data, g, main, 'MGM GRAND', 56, 8, main.h - 8, sans(100, 800), '#f4e7b8');
         const f = frontFrame(data, [
             262,
             1652

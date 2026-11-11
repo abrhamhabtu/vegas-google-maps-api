@@ -28,7 +28,7 @@ export function buildDetails(data, engine) {
         if (o) g.add(o);
     };
     const bake = (o)=>o ? bakeStatic(o, (k)=>k.userData.keep === true) : null;
-    add(bake(excalibur(data)));
+    // Excalibur and the NYNY tower crowns are modelled in world/tropicana-trio.js.
     add(bake(nynySkyline(data)));
     add(bake(liberty(data)));
     add(coaster(data, engine));
@@ -324,7 +324,7 @@ function nynySkyline(data) {
     const darkSlate = litColor('#3e4652');
     const wood = litColor('#6e4b32');
     const nynyParts = data.buildings.filter((b)=>{
-        if (!b.part || b.h < 70) return false;
+        if (b) return false; // crowns now come from world/tropicana-trio.js
         const c = centroid(b.pts);
         return c[0] > -95 && c[0] < 40 && c[1] > 1440 && c[1] < 1650;
     });

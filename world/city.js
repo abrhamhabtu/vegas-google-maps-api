@@ -16,6 +16,7 @@ import { buildDetails } from '../landmarks/vendor/landmarks/details.js';
 import { welcomeSign } from '../landmarks/vendor/landmarks/welcome.js';
 import { buildSigns } from '../landmarks/vendor/landmarks/signs.js';
 import { buildRailways } from './railways.js';
+import { buildTropicanaTrio } from './tropicana-trio.js';
 
 const THREE = window.THREE;
 export async function buildCity(data, engine) {
@@ -38,6 +39,8 @@ export async function buildCity(data, engine) {
   buildings.add(buildLandmarks(specialData, engine), buildArenas(data, engine), buildGuitar(data, engine));
   const resorts = buildResorts(data, engine);
   buildings.add(resorts.group, buildDetails(specialData, engine), welcomeSign(graph, engine), valets.group);
+  // Must run before buildBuildings: it claims the tower footprints it models by hand.
+  buildings.add(buildTropicanaTrio(specialData));
   buildings.add(buildBuildings(data, valetPlan).group);
   detail.add(buildTrees(data, graph));
   const lights = buildCityLights(data);

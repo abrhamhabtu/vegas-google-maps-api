@@ -109,7 +109,13 @@ export const RESORT_LOOKS = [
         style: 6,
         glow: '#3dff9a',
         glowK: 1.25,
-        roof: '#1c6e4b'
+        roof: '#1c6e4b',
+        low: {
+            tint: '#cdd6da',
+            k: 0.6,
+            glow: '#fff0c8',
+            glowK: 1.1
+        }
     },
     {
         re: /mandalay|delano|four seasons/i,
@@ -129,7 +135,13 @@ export const RESORT_LOOKS = [
         roof: '#c41e28',
         glow: '#ffe7b0',
         glowK: 0.85,
-        paint: Layer.Masonry
+        paint: Layer.Masonry,
+        low: {
+            tint: '#ece8df',
+            k: 0.6,
+            glow: '#ffe2b4',
+            glowK: 1.0
+        }
     },
     {
         re: /new york|nyny/i,
@@ -452,6 +464,8 @@ const SKIP_AT = [
 ];
 const POS_LOOKS = [];
 export const landmarkFootprints = [];
+// Footprints modelled by hand in world/tropicana-trio.js; the generic extruder skips them.
+export const heroOwned = new Set();
 const GENERIC = [
     '#2f5578',
     '#8e4a36',
@@ -801,7 +815,7 @@ export function buildBuildings(data, valets) {
     for (const b of data.buildings){
         i++;
         if (b.name && LANDMARK_SKIP.test(b.name.trim())) continue;
-        if (valets.canopies.has(b)) continue;
+        if (valets.canopies.has(b) || heroOwned.has(b)) continue;
         const ring = b.pts;
         const area = Math.abs(ringArea(ring));
         if (b.name && /^bellagio$/i.test(b.name.trim()) && area > 50000) continue;
@@ -891,7 +905,8 @@ function lookFor(b, c, resorts) {
             if (b.h < 26 && l.style !== 10 && l.style !== 8) return {
                 ...l,
                 k: l.k * 0.7,
-                style: l.podium ?? 3
+                style: l.podium ?? 3,
+                ...l.low
             };
             return l;
         }
@@ -912,7 +927,8 @@ function lookFor(b, c, resorts) {
     return b.h < 30 ? {
         ...l,
         k: l.k * 0.6,
-        style: l.podium ?? 3
+        style: l.podium ?? 3,
+        ...l.low
     } : l;
 }
 function extrude(s, ring, y0, y1, tint, seed, style, k, roofTint, aux) {
