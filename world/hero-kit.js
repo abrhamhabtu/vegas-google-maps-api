@@ -357,23 +357,35 @@ export const FRAG = `
       e += wl * (0.5 + 0.5 * h21(cell * 1.3 + 7.0)) * win * lit * night * 0.85;
       e += base * uSelf * night;
     } else if (uMode < 5.5) {
-      // ribbon (Wynn, Encore): dark chocolate-brown glass, one crisp gold line per floor, dark chocolate crown.
-      // uBay is the floor height here, uCrown the height of the unlined crown band.
-      float fy = y / uBay;
-      float fw = fwidth(fy);
-      float body = step(4.0, y) * step(y, topH - uCrown);
-      float line = band(fy, 0.0, 0.145, fw) * body;
-      float fu = u / 1.55;
-      float mull = band(fu, 0.0, 0.07, fwidth(fu));
-      c = base * light * mix(1.0, 0.84, mull);
-      c = mix(c, mix(uHorizon, uTop, 0.4) * 0.8, fres * 0.55 * (1.0 - night));
-      c = mix(c, uGlow * light * 0.88, line * 0.78 * (1.0 - night));
-      c *= mix(1.0, 0.28, night);
-      float faceK = 0.76 + 0.24 * abs(dot(n, v));
-      vec3 choc = base * mix(0.28, 0.38, body) * faceK;
-      e += choc * night * (1.0 - mull * 0.22);
-      e += uGlow * line * night * uFloodK * faceK * (0.92 + 0.08 * h21(vec2(floor(fy), seed)));
-      e += base * uSelf * night;
+      // Wynn and Encore: two-storey glazing units, dark floor joints, and one champagne ribbon per unit.
+      float ribbonY = y / uBay;
+      float floorY = ribbonY * 2.0;
+      float bay = u / 1.77;
+      vec2 fw = vec2(fwidth(bay), fwidth(floorY));
+      float body = step(5.0, y) * step(y, topH - uCrown);
+      float ribbon = band(ribbonY, 0.028, mix(0.17, 0.142, night), fwidth(ribbonY)) * body;
+      float mullion = band(bay, 0.008, 0.095, fw.x);
+      float spandrel = band(floorY, 0.015, 0.105, fw.y);
+      float pane = (1.0 - mullion) * (1.0 - spandrel);
+      vec2 panel = floor(vec2(bay, floorY));
+      float detail = 1.0 - clamp(max(fw.x, fw.y) * 1.5, 0.0, 1.0);
+      float tint = mix(0.94, 0.82 + 0.25 * h21(panel + seed), detail);
+      vec3 reflected = reflect(-v, n);
+      float skyK = smoothstep(-0.58, 0.5, reflected.y);
+      vec3 sky = mix(uHorizon, uTop, skyK);
+      float sunGlint = pow(max(0.0, dot(reflected, uSunDir)), 22.0) * uSun;
+      vec3 copper = mix(base, uWinDark, 0.13 + 0.22 * skyK) * tint;
+      c = copper * (light + vec3(0.28, 0.22, 0.19)) * mix(0.56, 1.0, pane);
+      float reflection = 0.35 + 0.65 * smoothstep(-0.55, 0.62, reflected.z);
+      c += copper * sky * (0.34 + 0.42 * reflection) * pane * (1.0 - night);
+      c += uSunTint * vec3(0.82, 0.44, 0.27) * sunGlint * pane * (1.0 - night);
+      c = mix(c, uPil * (0.83 + 0.17 * light), ribbon * (1.0 - night));
+      c *= mix(1.0, 0.13, night);
+      float face = 0.78 + 0.22 * abs(dot(n, v));
+      float occupied = mix(uRate, step(h21(panel + seed * 3.0), uRate), detail);
+      e += uWinLit * pane * occupied * body * night * 0.13;
+      e += copper * (0.1 + uSelf) * night * face * mix(0.6, 1.0, pane);
+      e += uGlow * ribbon * night * uFloodK * face;
     } else if (uMode < 6.5) {
       // Rio: blue curtain wall with coral washes on Ipanema and violet at Masquerade's centre.
       float masquerade = step(0.5, variant);

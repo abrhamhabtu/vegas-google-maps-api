@@ -44,105 +44,122 @@ function addSlatePavilion(arcadeSoup, slateSoup, trimSoup, ring, y0, y1, archTop
   slateSoup.cap(r0, y1 + 0.2, WHITE, [y1 + 0.2, seed, 0, y1]);
 }
 
-/** A script wordmark bent along a facade polyline, read from outside, with a soft warm amber halo. */
-function ribbonSign(text, chain, f0, f1, y0, y1, out, o = {}) {
+function crownSignature(text) {
   const canvas = document.createElement('canvas');
   canvas.width = 1024; canvas.height = 320;
-  const x = canvas.getContext('2d');
-  const gold = o.color ?? '#ffda78';
-  const core = o.core ?? '#fff3c4';
-  x.font = o.font ?? `italic 700 220px ${SCRIPT}`;
-  x.textBaseline = 'alphabetic';
-  const raw = Math.max(1, x.measureText(text).width), w = 580, k = w / raw, base = 208;
-
-  // Soft elliptical warm amber-chocolate glow behind the script letters that fades to 0 inside canvas bounds
-  x.save();
-  x.translate(430, 160);
-  x.scale(2.85, 1.0);
-  const gr = x.createRadialGradient(0, 0, 8, 0, 0, 142);
-  gr.addColorStop(0.0, 'rgba(255, 182, 84, 0.44)');
-  gr.addColorStop(0.45, 'rgba(215, 132, 56, 0.22)');
-  gr.addColorStop(0.78, 'rgba(130, 72, 30, 0.06)');
-  gr.addColorStop(1.0, 'rgba(80, 42, 18, 0.0)');
-  x.fillStyle = gr;
-  x.beginPath();
-  x.arc(0, 0, 142, 0, Math.PI * 2);
-  x.fill();
-  x.restore();
-
-  const drawSignature = (strokeCol, fillCol, blur, lw) => {
-    x.save();
-    x.fillStyle = fillCol;
-    x.strokeStyle = strokeCol;
-    x.shadowColor = 'rgba(255, 192, 88, 0.96)';
-    x.shadowBlur = blur;
-    x.save();
-    x.translate(46, base);
-    x.scale(k, Math.min(1.3, Math.max(0.95, k)));
-    x.lineWidth = lw;
-    x.lineJoin = 'round';
-    x.fillText(text, 0, 0);
-    x.strokeText(text, 0, 0);
-    x.restore();
-    const tx = 46 + w - 10;
-    x.lineCap = 'round';
-    x.lineWidth = lw * 2.35;
-    x.beginPath();
-    x.moveTo(tx - 30, base - 8);
-    x.bezierCurveTo(tx + 60, base - 4, tx + 185, base - 22, tx + 305, base - 35);
-    x.stroke();
-    if (o.dot) {
-      x.beginPath();
-      x.arc(tx + 348, base - 41, 10, 0, Math.PI * 2);
-      x.fill();
-    }
-    x.restore();
-  };
-
-  drawSignature(gold, gold, 28, 3.8);
-  drawSignature(core, core, 10, 1.8);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  // arc-length samples of the chain between f0 and f1
-  const len = [0];
-  for (let i = 1; i < chain.length; i++) len.push(len[i - 1] + Math.hypot(chain[i][0] - chain[i - 1][0], chain[i][1] - chain[i - 1][1]));
-  const total = len[len.length - 1], at = s => {
-    for (let i = 1; i < chain.length; i++) if (len[i] >= s) {
-      const k = (s - len[i - 1]) / ((len[i] - len[i - 1]) || 1), p = chain[i - 1], q = chain[i];
-      const L = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
-      return { x: p[0] + (q[0] - p[0]) * k, z: p[1] + (q[1] - p[1]) * k, nx: (q[1] - p[1]) / L * out, nz: -(q[0] - p[0]) / L * out };
-    }
-    return null;
-  };
-  const N = 28, pos = [], uv = [], idx = [];
-  for (let k = 0; k <= N; k++) {
-    const t = f0 + (f1 - f0) * k / N, p = at(t * total);
-    const u = out > 0 ? 1 - k / N : k / N;
-    for (const [y, v] of [[y0, 0], [y1, 1]]) { pos.push(p.x + p.nx * 0.72, y, p.z + p.nz * 0.72); uv.push(u, v); }
-    if (k) idx.push(2 * k - 2, 2 * k - 1, 2 * k, 2 * k - 1, 2 * k + 1, 2 * k);
+  const ctx = canvas.getContext('2d');
+  ctx.lineJoin = ctx.lineCap = 'round';
+  ctx.fillStyle = ctx.strokeStyle = '#ffe0a6';
+  ctx.shadowColor = 'rgba(255, 174, 80, 0.55)';
+  ctx.shadowBlur = 7;
+  if (text === 'Wynn') {
+    // The looped descender, rising tail and dot of the tower's handwritten signature.
+    ctx.translate(40, 15);
+    ctx.scale(2.45, 1.92);
+    ctx.lineWidth = 7.0;
+    ctx.stroke(new Path2D(`
+      M21 51 C12 61 4 76 14 82 C24 88 53 66 73 49
+      C60 68 50 82 60 86 C73 91 97 66 113 48 C124 34 128 19 121 14
+      M113 48 C110 56 119 56 129 49 C128 59 114 75 106 86
+      C99 96 111 94 125 84 C141 72 151 61 164 52
+      C154 64 143 79 138 95 C134 111 125 128 109 139
+      C88 154 61 157 49 144 C37 132 52 113 76 95 C99 78 117 70 141 62
+      M143 77 C156 65 171 56 179 59 C185 61 175 75 175 82
+      C185 76 195 63 205 63 C215 64 205 81 214 81
+      C223 81 234 62 243 62 C252 62 239 81 246 82
+      C256 83 264 71 276 71 C309 69 332 79 356 72
+    `));
+    ctx.beginPath();
+    ctx.arc(374, 69, 3.6, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.font = `600 216px ${SCRIPT}`;
+    const scale = 740 / Math.max(1, ctx.measureText(text).width);
+    ctx.save();
+    ctx.translate(40, 217);
+    ctx.scale(scale, 0.95);
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(740, 203);
+    ctx.bezierCurveTo(810, 193, 896, 210, 979, 193);
+    ctx.stroke();
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(idx);
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.005, depthWrite: false, side: THREE.DoubleSide, fog: true }));
-  m.userData.keep = true;
-  m.name = `${text} wordmark`;
-  return m;
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 8;
+  const material = new THREE.MeshBasicMaterial({
+    map, transparent: true, alphaTest: 0.025, depthWrite: false, side: THREE.DoubleSide, fog: true,
+  });
+  const sync = () => material.color.setScalar(THREE.MathUtils.lerp(0.90, 1.23, theme.uniforms.uNight.value));
+  theme.onChange(sync);
+  sync();
+  return material;
+}
+
+/** Clip the façade polyline at the sign edges, retaining each survey vertex between them. */
+function ribbonSign(chain, topAt, crownBottom, northAtStart, material, name) {
+  const distance = [0];
+  for (let i = 1; i < chain.length; i++) {
+    distance.push(distance[i - 1] + Math.hypot(chain[i][0] - chain[i - 1][0], chain[i][1] - chain[i - 1][1]));
+  }
+  const total = distance.at(-1);
+  const start = total * (northAtStart ? 0.068 : 0.595);
+  const end = total * (northAtStart ? 0.405 : 0.932);
+  const span = [];
+  for (let i = 1; i < chain.length; i++) {
+    const a = Math.max(start, distance[i - 1]), b = Math.min(end, distance[i]);
+    if (a >= b) continue;
+    const at = s => {
+      const t = (s - distance[i - 1]) / (distance[i] - distance[i - 1]);
+      const p = chain[i - 1], q = chain[i];
+      return [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, 1 - (s - start) / (end - start)];
+    };
+    if (!span.length) span.push(at(a));
+    span.push(at(b));
+  }
+  const y1 = Math.min(...span.map(topAt)) - 2.0;
+  const y0 = Math.max(crownBottom + 1.6, y1 - 23.5);
+  const pos = [], uv = [], idx = [];
+  for (const [x, z, u] of span) {
+    const i = pos.length / 3;
+    pos.push(x, y0, z, x, y1, z);
+    uv.push(u, 0, u, 1);
+    if (i) idx.push(i - 2, i - 1, i, i - 1, i + 1, i);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geometry.setIndex(idx);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = `${name} wordmark`;
+  return mesh;
 }
 
 // ─────────────────────────────── Wynn and Encore Crescent Towers ───────────────────────────────
 /** Walls whose base and top follow functions of plan position (a raked roofline). */
-function slopedWalls(soup, ring, y0, y1, a) {
+function slopedWalls(soup, ring, y0, y1, a, smooth = false) {
+  const edges = ring.map((p, i) => {
+    const q = ring[(i + 1) % ring.length];
+    const dx = q[0] - p[0], dz = q[1] - p[1], length = Math.hypot(dx, dz);
+    return { normal: [dz / (length || 1), 0, -dx / (length || 1)], length };
+  });
+  const average = (n, other) => {
+    // Keep the folded ends sharp while sharing normals across the curved curtain wall.
+    if (!smooth || n[0] * other[0] + n[2] * other[2] < 0.94) return n;
+    const x = n[0] + other[0], z = n[2] + other[2], length = Math.hypot(x, z);
+    return [x / length, 0, z / length];
+  };
   let u = 0;
   for (let i = 0; i < ring.length; i++) {
-    const p = ring[i], q = ring[(i + 1) % ring.length], dx = q[0] - p[0], dz = q[1] - p[1], L = Math.hypot(dx, dz);
+    const next = (i + 1) % ring.length, p = ring[i], q = ring[next];
+    const { normal, length: L } = edges[i];
     if (L < 0.05) continue;
-    const n = [dz / L, 0, -dx / L];
-    const v0 = soup.vert(p[0], y0(p), p[1], n, u, WHITE, a), v1 = soup.vert(q[0], y0(q), q[1], n, u + L, WHITE, a);
-    const v2 = soup.vert(q[0], y1(q), q[1], n, u + L, WHITE, a), v3 = soup.vert(p[0], y1(p), p[1], n, u, WHITE, a);
+    const n0 = average(normal, edges[(i + ring.length - 1) % ring.length].normal);
+    const n1 = average(normal, edges[next].normal);
+    const v0 = soup.vert(p[0], y0(p), p[1], n0, u, WHITE, a), v1 = soup.vert(q[0], y0(q), q[1], n1, u + L, WHITE, a);
+    const v2 = soup.vert(q[0], y1(q), q[1], n1, u + L, WHITE, a), v3 = soup.vert(p[0], y1(p), p[1], n0, u, WHITE, a);
     soup.idx.push(v0, v2, v1, v0, v3, v2);
     u += L;
   }
@@ -167,37 +184,72 @@ function slopedBand(soup, outer, inner, y) {
   }
 }
 
+/** Low roof plant follows the sweep and stays inside each section of the crescent. */
+function crescentRoofPlant(soup, ring, axis, along, start, end, topAt) {
+  for (const fraction of [0.22, 0.47, 0.74]) {
+    const position = start + (end - start) * fraction;
+    const section = [];
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i], q = ring[(i + 1) % ring.length];
+      const a = along(p), b = along(q);
+      if (position < Math.min(a, b) || position >= Math.max(a, b)) continue;
+      const t = (position - a) / (b - a);
+      section.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
+    }
+    if (section.length !== 2) continue;
+    const [a, b] = section;
+    const depth = Math.min(5.4, Math.hypot(a[0] - b[0], a[1] - b[1]) * 0.38);
+    const equipment = rectRing((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 13.4, depth, axis.ax, axis.az);
+    const cover = p => topAt(p) + 0.96;
+    slopedWalls(soup, equipment, p => topAt(p) + 0.1, cover, [cover(equipment[0]), 7, 0, 0]);
+    slopedCap(soup, equipment, cover);
+  }
+}
+
 function crescent(data, re, name, o) {
   const b = data.buildings.find(x => re.test(x.name ?? '') && x.h > 150);
   if (!b) return null;
   heroOwned.add(b);
   const out = new THREE.Group();
   out.name = name;
-  const ring0 = clean(b.pts), h = b.h, r = obb(ring0), seed = hash(h) * 40;
+  const ring = clean(b.pts), h = b.h, r = obb(ring), seed = hash(h) * 40;
   const s = p => (p[0] - r.cx) * r.ax + (p[1] - r.cz) * r.az;
   let i0 = 0, i1 = 0;
-  ring0.forEach((p, i) => { if (s(p) < s(ring0[i0])) i0 = i; if (s(p) > s(ring0[i1])) i1 = i; });
-  const chainOf = (rg, a, z) => { const c = []; for (let i = a; ; i = (i + 1) % rg.length) { c.push(rg[i]); if (i === z) break; } return c; };
-  const A0 = chainOf(ring0, i0, i1), B0 = chainOf(ring0, i1, i0);
-  const ring = ring0, A = A0, B = B0;
+  ring.forEach((p, i) => {
+    if (s(p) < s(ring[i0])) i0 = i;
+    if (s(p) > s(ring[i1])) i1 = i;
+  });
+  const chainOf = (outline, first, last) => {
+    const points = [];
+    for (let i = first; i !== last; i = (i + 1) % outline.length) points.push(outline[i]);
+    points.push(outline[last]);
+    return points;
+  };
+  const A = chainOf(ring, i0, i1), B = chainOf(ring, i1, i0);
   const facing = c => { let x = 0, z = 0; for (let i = 1; i < c.length; i++) { x += c[i][1] - c[i - 1][1]; z -= c[i][0] - c[i - 1][0]; } return -x + z; };
   const [concave, convex] = facing(A) > facing(B) ? [A, B] : [B, A];
   const front = Math.sign((concave[Math.floor(concave.length / 2)][0] - r.cx) * -r.az + (concave[Math.floor(concave.length / 2)][1] - r.cz) * r.ax) || 1;
-  // Raked roofline: highest over the logo end of the concave face, falling toward the right end
-  const sHigh = s(concave[concave.length - 1]), sLow = s(concave[0]);
-  const topAt = p => h - o.drop * Math.min(1, Math.max(0, (s(p) - sHigh) / (sLow - sHigh)));
+  // Both elevations carry their signature toward the north end. Encore has the shallower rake.
+  const northAtMin = ring[i0][1] < ring[i1][1];
+  const start = s(ring[i0]), end = s(ring[i1]);
+  const topAt = p => {
+    const t = THREE.MathUtils.clamp((s(p) - start) / (end - start), 0, 1);
+    const north = northAtMin ? 1 - t : t;
+    return h - o.drop * (1 - north) - o.sweep * Math.sin(north * Math.PI);
+  };
   const linesTop = h - o.crown;
 
-  const walls = new Soup(), gilt = new Soup(), roof = new Soup(), coping = new Soup(), dark = new Soup();
-  slopedWalls(walls, ring, () => 0, topAt, [h, seed, 0, 0]);
-  slopedCap(roof, ring, p => topAt(p) + 0.35);
+  const walls = new Soup(), gilt = new Soup(), roof = new Soup(), coping = new Soup(), dark = new Soup(), plant = new Soup();
+  slopedWalls(walls, ring, () => 0, topAt, [h, seed, 0, 0], true);
+  slopedCap(roof, ring, p => topAt(p) + 0.12);
+  crescentRoofPlant(plant, ring, r, s, start, end, topAt);
 
-  // Continuous sleek dark cocoa-taupe raked parapet coping rim framing the recessed dark chocolate roof deck
-  const rimOut = offset(ring, 0.42);
-  const rimIn = offset(ring, -2.1);
-  slopedWalls(coping, rimOut, p => topAt(p) - 0.9, p => topAt(p) + 1.85, [h + 2, 2, 0, 0]);
-  slopedWalls(coping, rimIn, p => topAt(p) + 0.35, p => topAt(p) + 1.85, [h + 2, 2, 0, 0]);
-  slopedBand(coping, rimOut, rimIn, p => topAt(p) + 1.85);
+  const rimOut = offset(ring, 0.32);
+  const rimIn = offset(ring, -1.15);
+  const rimTop = p => topAt(p) + 1.04;
+  slopedWalls(coping, rimOut, p => topAt(p) - 0.57, rimTop, [h + 1.04, 2, 0, 0]);
+  slopedWalls(coping, rimIn, p => topAt(p) + 0.12, rimTop, [h + 1.04, 2, 0, 0]);
+  slopedBand(coping, rimOut, rimIn, rimTop);
 
   // Each face ends in a dark chocolate-bronze bookend pier with an illuminated vertical gold strip just inside it
   for (const [face, side] of [[concave, front], [convex, -front]]) {
@@ -214,32 +266,35 @@ function crescent(data, re, name, o) {
       const L = Math.hypot(q[0] - c0[0], q[1] - c0[1]), tx = (q[0] - c0[0]) / L, tz = (q[1] - c0[1]) / L;
       let nx = tz, nz = -tx;
       if (nx * ox + nz * oz < 0) { nx = -nx; nz = -nz; }
-      const finTop = topAt(c0) + 1.82;
-      dark.box(c0[0] + tx * 0.7 + nx * 1.15, 0, c0[1] + tz * 0.7 + nz * 1.15, 2.8, finTop, 3.2, tx, tz, WHITE, [finTop, 1, 0, 0]);
-      gilt.box(c0[0] + tx * 3.8 + nx * 0.42, 4, c0[1] + tz * 3.8 + nz * 0.42, 2.2, linesTop - 4, 0.55, tx, tz);
+      const finTop = topAt(c0) + 0.78;
+      dark.box(c0[0] + tx * 0.7 + nx * 0.86, 0, c0[1] + tz * 0.7 + nz * 0.86, 2.7, finTop, 2.8, tx, tz, WHITE, [finTop, 1, 0, 0]);
+      gilt.box(c0[0] + tx * 3.8 + nx * 0.52, 4, c0[1] + tz * 3.8 + nz * 0.52, 1.15, linesTop - 4, 0.4, tx, tz);
     }
   }
 
-  const glass = facade(MODE.ribbon, { color: o.glass, glow: '#ffcf6e', floodK: 1.38, self: 0.05, bay: o.floor, crown: o.crown, roof: '#2b1b14' });
-  const gold = sheen('#d8ae5c', { refl: 0.55, spec: 1.35, glow: '#ffd67c', glowK: 1.35, baseGlow: 0.16 });
-  const lid = facade(MODE.stone, { color: '#2e1e17', roof: '#241711', self: 0.06 });
-  const parapetMat = facade(MODE.stone, { color: '#5c4d4d', roof: '#4e4142', flood: '#ffdfa8', floodK: 0.28, self: 0.1 });
-  const bronze = facade(MODE.stone, { color: '#3b241b', roof: '#4a352c', flood: '#ffd28a', floodK: 0.22, self: 0.08 });
+  const glass = facade(MODE.ribbon, {
+    color: o.glass, glass: '#56392f', pilaster: '#e5cda7', glow: '#ffd491',
+    floodK: 1.13, self: 0.05, rate: 0.05, bay: o.floor, crown: o.crown,
+  });
+  const gold = sheen('#d8b479', { refl: 0.55, spec: 1.35, glow: '#ffd697', glowK: 1.11, baseGlow: 0.1 });
+  const lid = facade(MODE.stone, { color: '#423a36', roof: '#4a4240', self: 0.06 });
+  const parapetMat = facade(MODE.stone, { color: '#6f5950', roof: '#77645a', flood: '#ffdfa8', floodK: 0.22, self: 0.07 });
+  const bronze = facade(MODE.stone, { color: '#624337', roof: '#634d44', flood: '#ffd28a', floodK: 0.19, self: 0.08 });
+  const rooftop = facade(MODE.stone, { color: '#685d57', roof: '#665c58' });
   for (const m of [
     walls.mesh(glass, `${name} glass`),
     gilt.mesh(gold, `${name} gilding`),
     roof.mesh(lid, `${name} roof`),
     coping.mesh(parapetMat, `${name} coping`),
     dark.mesh(bronze, `${name} fins`),
+    plant.mesh(rooftop, `${name} roof plant`),
   ]) if (m) out.add(m);
 
-  // Wordmarks sit high on the left of each face, in the tall wedge of the dark chocolate crown
-  const ringSign = (c, outSign) => {
-    const span = c.filter((p, i) => i >= c.length * 0.5);
-    const top = Math.min(...span.map(topAt)) - 3.5, bottom = Math.max(linesTop + 2.5, top - 26.5);
-    return ribbonSign(o.mark, c, 0.50, 0.90, bottom, top, outSign, { dot: o.dot });
-  };
-  out.add(ringSign(concave, 1), ringSign(convex, 1));
+  const signature = crownSignature(name), signOutline = offset(ring, 0.48);
+  out.add(
+    ribbonSign(chainOf(signOutline, i0, i1), topAt, linesTop, northAtMin, signature, name),
+    ribbonSign(chainOf(signOutline, i1, i0), topAt, linesTop, !northAtMin, signature, name),
+  );
   const c = centroid(ring);
   out.add(spill(c[0], 0.45, c[1], 220, '#ffc972', 0.2));
   return out;
@@ -497,10 +552,10 @@ function makeGolfTurfMaterial() {
         float fairway = smoothstep(0.36, 0.66, n1 * 0.65 + n2 * 0.35);
         float mower = 0.5 + 0.5 * sin((vW.x * 0.85 + vW.z * 0.52) * 0.28);
         fairway *= 0.86 + 0.14 * mower;
-        vec3 dayRough = vec3(0.22, 0.50, 0.28);
-        vec3 dayFair  = vec3(0.32, 0.64, 0.37);
-        vec3 nightRough = vec3(0.038, 0.20, 0.13);
-        vec3 nightFair  = vec3(0.072, 0.30, 0.19);
+        vec3 dayRough = vec3(0.16, 0.39, 0.19);
+        vec3 dayFair  = vec3(0.25, 0.53, 0.25);
+        vec3 nightRough = vec3(0.026, 0.092, 0.055);
+        vec3 nightFair  = vec3(0.046, 0.146, 0.084);
         vec3 dayCol = mix(dayRough, dayFair, fairway) * (0.72 + 0.28 * (uAmbient + uSun * 0.6));
         vec3 nightCol = mix(nightRough, nightFair, fairway);
         vec3 c = mix(dayCol, nightCol, uNight);
@@ -514,36 +569,6 @@ function makeGolfTurfMaterial() {
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -2,
   });
-}
-
-/** Chaikin corner-cutting subdivision so stream polylines curve organically. */
-function smoothChain(pts, passes = 2) {
-  let cur = pts;
-  for (let p = 0; p < passes; p++) {
-    const next = [cur[0]];
-    for (let i = 0; i < cur.length - 1; i++) {
-      const a = cur[i], b = cur[i + 1];
-      next.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
-      next.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
-    }
-    next.push(cur[cur.length - 1]);
-    cur = next;
-  }
-  return cur;
-}
-
-/** Ribbon polygon along a polyline of [x, z] points with half-width r. */
-function ribbonPoly(pts, r) {
-  const sm = smoothChain(pts, 2);
-  const left = [], right = [];
-  for (let i = 0; i < sm.length; i++) {
-    const a = sm[Math.max(0, i - 1)], b = sm[Math.min(sm.length - 1, i + 1)];
-    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1;
-    const nx = -dz / L, nz = dx / L;
-    left.push([sm[i][0] + nx * r, sm[i][1] + nz * r]);
-    right.push([sm[i][0] - nx * r, sm[i][1] - nz * r]);
-  }
-  return clean([...left, ...right.reverse()]);
 }
 
 /** Add lush conical pine & rounded canopy trees around the Wynn marquee, Lake of Dreams & E Wynn Main Gate. */
@@ -805,19 +830,6 @@ function buildWynnCampusAndGolf(data) {
     turquoiseWater.cap(pRing, 1.24, WHITE, [1.24, 2, 0, 0]);
   }
 
-  // Smooth winding royal-blue golf course streams & ponds matching the Apple Maps aerial view
-  const golfStreams = [
-    [[1015, -1355], [1045, -1315], [1072, -1265], [1095, -1210], [1132, -1158], [1165, -1102]],
-    [[1165, -1102], [1192, -1055], [1222, -1012], [1258, -975], [1295, -945]],
-    [[1132, -1158], [1185, -1168], [1235, -1152], [1285, -1125], [1335, -1095]],
-    [[1055, -1015], [1085, -1045], [1120, -1068], [1165, -1102]],
-    [[985, -955], [1025, -982], [1055, -1015]],
-  ];
-  for (const chain of golfStreams) {
-    cobaltWater.cap(ribbonPoly(chain, 4.6), 0.28, WHITE, [0.28, 4, 0, 0]);
-  }
-  cobaltWater.cap(disk(954, -966, 17, 22, 0.85, 1.35, 0.25), 0.28, WHITE, [0.28, 4, 0, 0]);
-
   // Add pine & cypress trees around the Wynn marquee sign, Lake of Dreams, and E Wynn Main Gate
   addWynnPineGrove(pineFoliage, pineTrunks);
 
@@ -914,8 +926,8 @@ export function buildWynnTI(data) {
   const group = new THREE.Group();
   group.name = 'Wynn, Encore and Treasure Island';
   for (const model of [
-    crescent(data, /^wynn las vegas$/i, 'Wynn', { glass: '#3b2318', floor: 6.7, crown: 42, drop: 27, mark: 'Wynn', dot: true }),
-    crescent(data, /^encore las vegas$/i, 'Encore', { glass: '#3b2318', floor: 6.6, crown: 44, drop: 28, mark: 'Encore' }),
+    crescent(data, /^wynn las vegas$/i, 'Wynn', { glass: '#9a5e45', floor: 6.7, crown: 33, drop: 17, sweep: 2.8 }),
+    crescent(data, /^encore las vegas$/i, 'Encore', { glass: '#a56651', floor: 6.6, crown: 34, drop: 8, sweep: 5.2 }),
     buildWynnCampusAndGolf(data),
     buildTI(data),
   ]) if (model) group.add(model);
