@@ -3,7 +3,7 @@
  * Geometry soup with battlements, the facade shader and its modes, night light spill,
  * sign panels and storybook turrets. Resort modules in world/ import from here.
  */
-import { hash, ringArea } from '../landmarks/vendor/map/geom.js';
+import { convexHull, hash, ringArea } from '../landmarks/vendor/map/geom.js';
 import { theme } from '../landmarks/vendor/core/theme.js';
 import { SHADOW_PARS, shadowUniforms } from '../landmarks/vendor/core/shadows.js';
 import { sheen, textPanel } from '../landmarks/vendor/landmarks/sheen.js';
@@ -59,6 +59,28 @@ export function inset(ring, d) {
   return a > a0 * 0.25 && a < a0 ? r : null;
 }
 
+/** Minimum-area oriented rectangle: centre, unit long axis (ax, az), long side w, short side d. */
+export function obb(ring) {
+  const hull = convexHull(ring.map(p => [p[0], p[1]]));
+  let best = null;
+  for (let i = 0; i < hull.length; i++) {
+    const p = hull[i], q = hull[(i + 1) % hull.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (L < 1e-3) continue;
+    const ax = (q[0] - p[0]) / L, az = (q[1] - p[1]) / L;
+    let s0 = Infinity, s1 = -Infinity, t0 = Infinity, t1 = -Infinity;
+    for (const h of hull) {
+      const s = h[0] * ax + h[1] * az, t = -h[0] * az + h[1] * ax;
+      s0 = Math.min(s0, s); s1 = Math.max(s1, s); t0 = Math.min(t0, t); t1 = Math.max(t1, t);
+    }
+    const A = (s1 - s0) * (t1 - t0);
+    if (!best || A < best.A) best = { A, ax, az, s: (s0 + s1) / 2, t: (t0 + t1) / 2, w: s1 - s0, d: t1 - t0 };
+  }
+  let { ax, az, w, d } = best;
+  const cx = best.s * ax - best.t * az, cz = best.s * az + best.t * ax;
+  if (d > w) { [w, d] = [d, w]; [ax, az] = [-az, ax]; }
+  return { cx, cz, ax, az, w, d };
+}
+
 export class Soup {
   pos = []; nrm = []; uv = []; col = []; aux = []; idx = [];
   vert(x, y, z, n, u, c, a) {
@@ -87,6 +109,41 @@ export class Soup {
     for (const t of tris) this.idx.push(base + t[0], base + t[2], base + t[1]);
   }
   prism(ring, y0, y1, c, a) { this.walls(ring, y0, y1, c, a); this.cap(ring, y1, c, a); }
+  /** Sloped band from ring `a` at y0 up to ring `b` at y1 (same vertex count, e.g. offset(a, -d)): mansards, hips. */
+  skirt(a, y0, b, y1, c = WHITE, x = [y1, 0, 0, 0]) {
+    let u = 0;
+    for (let i = 0; i < a.length; i++) {
+      const j = (i + 1) % a.length, p = a[i], q = a[j], P = b[i], Q = b[j];
+      const dx = q[0] - p[0], dz = q[1] - p[1], L = Math.hypot(dx, dz);
+      if (L < 0.05) continue;
+      let nx = dz / L, nz = -dx / L;
+      let run = ((p[0] - P[0] + q[0] - Q[0]) * nx + (p[1] - P[1] + q[1] - Q[1]) * nz) / 2;
+      if (run < 0) { nx = -nx; nz = -nz; run = -run; }
+      const rise = y1 - y0, k = Math.hypot(rise, run) || 1, n = [nx * rise / k, run / k, nz * rise / k];
+      const v0 = this.vert(p[0], y0, p[1], n, u, c, x), v1 = this.vert(q[0], y0, q[1], n, u + L, c, x);
+      const v2 = this.vert(Q[0], y1, Q[1], n, u + L, c, x), v3 = this.vert(P[0], y1, P[1], n, u, c, x);
+      this.idx.push(v0, v2, v1, v0, v3, v2);
+      u += L;
+    }
+  }
+  /** Gable roof over an obb() rectangle: ridge along the long axis, pediment triangles into `ends` (another Soup). */
+  gable(r, y, rise, c = WHITE, x = [y + rise, 0, 0, 0], ends = this, endAux = [y - 1, 0, 0, 0]) {
+    const { cx, cz, ax, az, w, d } = r, px = -az, pz = ax;
+    const E = (s, t) => [cx + ax * s + px * t, cz + az * s + pz * t];
+    for (const sd of [-1, 1]) {
+      const k = Math.hypot(rise, d / 2), n = [px * sd * rise / k, d / 2 / k, pz * sd * rise / k];
+      const a0 = E(-w / 2, sd * d / 2), a1 = E(w / 2, sd * d / 2), b1 = E(w / 2, 0), b0 = E(-w / 2, 0);
+      const v0 = this.vert(a0[0], y, a0[1], n, 0, c, x), v1 = this.vert(a1[0], y, a1[1], n, w, c, x);
+      const v2 = this.vert(b1[0], y + rise, b1[1], n, w, c, x), v3 = this.vert(b0[0], y + rise, b0[1], n, 0, c, x);
+      this.idx.push(v0, v2, v1, v0, v3, v2);
+    }
+    for (const se of [-1, 1]) {
+      const n = [ax * se, 0, az * se], p0 = E(se * w / 2, -d / 2), p1 = E(se * w / 2, d / 2), top = E(se * w / 2, 0);
+      const v0 = ends.vert(p0[0], y, p0[1], n, 0, c, endAux), v1 = ends.vert(p1[0], y, p1[1], n, d, c, endAux);
+      const v2 = ends.vert(top[0], y + rise, top[1], n, d / 2, c, endAux);
+      ends.idx.push(v0, v2, v1);
+    }
+  }
   /** Upright box; (ax, az) is the unit direction of its width. */
   box(cx, y0, cz, w, h, d, ax = 1, az = 0, c = WHITE, a = [y0 + h, 0, 0, 0]) {
     const px = -az, pz = ax, hw = w / 2, hd = d / 2;
@@ -152,8 +209,8 @@ export const VERT = `
 export const FRAG = `
   #include <common>
   #include <fog_pars_fragment>
-  uniform vec3 uColor, uGlow, uFlood, uRoof, uWinLit, uWinDark, uSunDir, uSunTint, uAmbientTint, uHorizon, uTop;
-  uniform float uSun, uAmbient, uNight, uMode, uFloodK, uSelf, uRoofGlow;
+  uniform vec3 uColor, uGlow, uFlood, uRoof, uWinLit, uWinDark, uSunDir, uSunTint, uAmbientTint, uHorizon, uTop, uPil;
+  uniform float uSun, uAmbient, uNight, uMode, uFloodK, uSelf, uRoofGlow, uBay, uRate, uLine, uTier, uTier0, uPilK, uPilW, uCrown;
   varying vec3 vN;
   varying vec3 vW;
   varying vec3 vC;
@@ -252,7 +309,7 @@ export const FRAG = `
       float crown = smoothstep(topH * 0.8, topH, y);
       e += base * uFlood * night * uFloodK * (crown * 0.85 + 0.2 * exp(-y / 16.0));
       e += base * uSelf * night;
-    } else {
+    } else if (uMode < 3.5) {
       // dressed stone: turrets, keeps and gatehouses, washed warm from below
       float fy = y / 2.3;
       c = base * light * ao;
@@ -260,13 +317,68 @@ export const FRAG = `
       c *= mix(1.0, 0.6, night);
       e += base * uFlood * uFloodK * night * (0.2 + 0.62 * exp(-max(y - vAux.w, 0.0) / 26.0));
       e += base * uSelf * night;
+    } else if (uMode < 4.5) {
+      // palazzo (Bellagio, Caesars, Paris): pale walls, recessed window bays between pilasters,
+      // pilasters floodlit from the base and the crown, a lit entablature under every setback
+      float fu = u / uBay, fy = y / 3.1;
+      vec2 fw = vec2(fwidth(fu), fwidth(fy));
+      float pil = band(fu, 0.0, uPilW, fw.x);
+      float body = step(4.5, y) * step(y, topH - 2.6);
+      // two windows per bay, split by a slim mullion
+      float win = (band(fu, 0.3, 0.58, fw.x) + band(fu, 0.64, 0.92, fw.x)) * band(fy, 0.16, 0.8, fw.y) * body;
+      float ent = smoothstep(topH - 2.2 - fw.y * 3.1, topH - 2.2, y);
+      float fb = max(y - vAux.w, 0.0);
+      float wash = 0.38 + 0.45 * exp(-fb / 38.0) + 0.55 * smoothstep(topH - 30.0, topH - 3.0, y);
+      if (uTier > 0.5) {
+        // giant order: one tall arched bay per tier, lit up from the cornice band at its base
+        float tb = y < uTier0 ? 0.0 : uTier0 + floor((y - uTier0) / uTier) * uTier;
+        float tt = min(y < uTier0 ? uTier0 : tb + uTier, topH);
+        float hw = 0.27 * uBay, spring = tt - 2.6 - hw;
+        float ax = (fract(fu) - 0.6) * uBay;
+        float arch = y < spring ? 1.0 : 1.0 - smoothstep(hw - 0.12, hw + 0.12, length(vec2(ax, y - spring)));
+        win = band(fu, 0.33, 0.87, fw.x) * step(tb + 2.2, y) * step(y, tt - 2.6) * arch * step(y, topH - 2.6);
+        wash = 0.2 + 1.25 * exp(-(y - tb) / 11.0);
+        ent = 0.0;
+      }
+      float aa = clamp(1.0 - max(fw.x, fw.y) * 1.6, 0.0, 1.0);
+      vec2 cell = floor(vec2(fu * 2.0, fy));
+      base = mix(base, uPil, uPilK * pil);
+      c = base * light * ao;
+      c = mix(c, c * 0.8, (1.0 - pil) * body * 0.6);
+      c = mix(c, uWinDark * (0.5 + 0.5 * (uAmbient + uSun * key)), win * 0.78 * (1.0 - night));
+      c = mix(c, uHorizon, fres * 0.18 * win * (1.0 - night));
+      c = mix(c, base * light * 1.12, ent);
+      c *= mix(1.0, 0.4, night);
+      c = mix(c, c * 0.35, win * night);
+      e += base * uFlood * uFloodK * night * wash * (pil * 1.15 + 0.12) * (1.0 - win * 0.8) * mix(1.0, 0.7, variant);
+      e += uGlow * uLine * night * ent;
+      float lit = mix(uRate, step(h21(cell + seed * 9.0), uRate), aa);
+      vec3 wl = mix(uWinLit, vec3(1.0, 0.93, 0.8), step(0.5, h21(cell.yx + seed)));
+      e += wl * (0.5 + 0.5 * h21(cell * 1.3 + 7.0)) * win * lit * night * 0.85;
+      e += base * uSelf * night;
+    } else {
+      // ribbon (Wynn, Encore): bronze glass, one thin gold line per floor, a dark crown screen.
+      // uBay is the floor height here, uCrown the height of the unlined crown band.
+      float fy = y / uBay;
+      float fw = fwidth(fy);
+      float body = step(4.0, y) * step(y, topH - uCrown);
+      float line = band(fy, 0.0, 0.14, fw) * body;
+      float fu = u / 1.55;
+      float mull = band(fu, 0.0, 0.07, fwidth(fu));
+      c = base * light * mix(1.0, 0.82, mull);
+      c = mix(c, mix(uHorizon, uTop, 0.4) * 0.8, fres * 0.6 * (1.0 - night));
+      c = mix(c, uGlow * light * 0.85, line * 0.75 * (1.0 - night));
+      c *= mix(1.0, 0.2, night);
+      float faceK = 0.72 + 0.28 * abs(dot(n, v));
+      e += uGlow * line * night * uFloodK * faceK * (0.88 + 0.12 * h21(vec2(floor(fy), seed)));
+      e += base * uSelf * night;
     }
     gl_FragColor = vec4(c + e, 1.0);
     #include <fog_fragment>
     #include <colorspace_fragment>
   }
 `;
-export const MODE = { glass: 0, stucco: 1, masonry: 2, stone: 3 };
+export const MODE = { glass: 0, stucco: 1, masonry: 2, stone: 3, palazzo: 4, ribbon: 5 };
 export function facade(mode, o = {}) {
   const u = theme.uniforms;
   return new THREE.ShaderMaterial({
@@ -281,6 +393,15 @@ export function facade(mode, o = {}) {
       uSelf: { value: o.self ?? 0 },
       uRoof: { value: new THREE.Color(o.roof ?? '#3a4150') },
       uRoofGlow: { value: o.roofGlow ?? 0 },
+      uBay: { value: o.bay ?? 3.4 },
+      uRate: { value: o.rate ?? 0.12 },
+      uLine: { value: o.line ?? 0 },
+      uTier: { value: o.tier ?? 0 },
+      uTier0: { value: o.tier0 ?? 0 },
+      uPil: { value: new THREE.Color(o.pilaster ?? '#ffffff') },
+      uPilK: { value: o.pilasterK ?? 0 },
+      uPilW: { value: o.pilasterW ?? 0.2 },
+      uCrown: { value: o.crown ?? 0 },
       uWinLit: { value: theme.c('windowLit') },
       uWinDark: { value: theme.c('windowDark') },
       uHorizon: { value: theme.c('skyHorizon') },

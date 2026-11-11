@@ -93,7 +93,7 @@ export function buildLandmarks(data, engine) {
     };
     add(sphere(data, engine));
     add(highRoller(data, engine));
-    add(eiffel(data));
+    // Eiffel Tower: drawn by world/four-corners.js.
     add(balloon(data));
     add(luxor(data));
     add(strat(data));

@@ -442,15 +442,12 @@ export function buildResorts(data, engine) {
             h
         ]);
     };
-    for (const name of [
-        'Wynn',
-        'Encore'
-    ])add(crescent(data, name));
+    // Wynn and Encore towers: drawn by world/wynn-ti.js.
     add(resortsWorld(data, engine));
     add(fontainebleau(data));
     add(treasureIsland(data));
-    const bel = bellagio(data);
-    if (bel) add(bel.group, bel.at[0], bel.at[1], bel.h);
+    // Bellagio is drawn by world/four-corners.js now; keep its height for the camera index.
+    heights.push([-170, 348, 155]);
     add(cosmopolitan(data));
     add(mandalay(data));
     add(parkMgm(data));
@@ -874,27 +871,7 @@ function treasureIsland(data) {
     const g = new THREE.Group();
     g.name = 'Treasure Island';
     g.position.set(c[0], 0, c[1]);
-    ringTower(g, f.ring, c, 0, H - 2, sheen('#d7b895', {
-        windows: 0.42,
-        masonry: true,
-        refl: 0.05,
-        glow: '#ff7a5a',
-        glowK: 0.06
-    }));
-    pilasters(g, f.ring, c, 12, H - 2, 9.5, sheen('#efd2b0', {
-        glow: '#ff6f5e',
-        glowK: 1.6,
-        baseGlow: 0.02
-    }));
-    ringTower(g, f.ring, c, H - 2, H, sheen('#a9623f', {
-        glow: '#ff7a5a',
-        glowK: 0.5
-    }), 1.015);
-    ringTower(g, f.ring, c, H, H + 7, sheen('#b5714c'), 0.62);
-    for (const y of [
-        14,
-        16.5
-    ])ringTower(g, f.ring, c, y, y + 0.7, ivory, 1.012);
+    // the tower itself is drawn by world/wynn-ti.js; the pirate lagoon and TI pylon stay here.
     const fr = frontage(data, c);
     const front = new THREE.Group();
     front.name = 'Treasure Island front';
@@ -955,19 +932,6 @@ function treasureIsland(data) {
     board2.position.set(-34, 19.5, 13.9);
     front.add(pylon, board, board2);
     g.add(front);
-    for (const r of [
-        0,
-        Math.PI
-    ]){
-        const sign = textPanel('TREASURE ISLAND', 62, 7.5, {
-            font: `600 90px ${SERIF}`,
-            color: '#ffe1ae'
-        });
-        const d = r ? -1 : 1;
-        sign.position.set(fr.out[0] * -5 * d, H + 12, fr.out[1] * -5 * d);
-        sign.rotation.y = Math.atan2(-fr.out[0] * d, -fr.out[1] * d);
-        g.add(sign);
-    }
     return bakeStatic(g, keep);
 }
 function bellagio(data) {
@@ -1536,31 +1500,8 @@ function buildStripResorts(data, engine) {
         glow: '#bfe0ff',
         glowK: 0.12
     });
-    for (const re of [
-        /^augustus tower$/i,
-        /^octavius tower$/i
-    ]){
-        const t = tower(re);
-        if (t) dress(g, t, {
-            skin: cream,
-            trim: white,
-            every: 16
-        });
-    }
-    for (const re of [
-        /^palace tower$/i,
-        /^forum tower$/i,
-        /^nobu hotel/i
-    ]){
-        const t = tower(re);
-        if (t) dress(g, t, {
-            skin: palaceGlass,
-            trim: white,
-            every: 22
-        });
-    }
+    // Caesars towers (and their signs) are drawn by world/four-corners.js; the forecourt stays here.
     const aug = tower(/^palace tower$/i);
-    if (aug) faceSign(data, g, aug, 'CAESARS PALACE', 62, 7.5, aug.h - 7, serif(92), '#fff3d6');
     const caes = tower(/^caesars palace hotel and casino$/i) ?? aug;
     if (caes) {
         const f = frontFrame(data, centroid(caes.ring), 54);
@@ -1695,14 +1636,7 @@ function buildStripResorts(data, engine) {
             refl: 0.15,
             spec: 0.5
         });
-        dress(g, pa, {
-            skin,
-            trim: white,
-            crown: mansard,
-            crownH: 11,
-            every: 13
-        });
-        faceSign(data, g, pa, 'PARIS', 34, 8, pa.h - 8, serif(112), '#ffe7b2');
+        // the hotel tower itself is drawn by world/four-corners.js; the Arc and forecourt stay here.
         const f = frontFrame(data, centroid(pa.ring), 34);
         f.position.x += 0;
         const arc = new THREE.Group();
