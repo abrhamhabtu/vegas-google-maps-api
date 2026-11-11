@@ -54,12 +54,14 @@ export const RESORT_LOOKS = [
     },
     {
         re: /wynn|encore/i,
-        tint: '#a8743e',
-        k: 0.85,
+        tint: '#8b9bb4',
+        k: 0.78,
         style: 6,
         glow: '#ffc76b',
-        glowK: 1.1,
-        roof: '#6d4d2c'
+        glowK: 1.0,
+        roof: '#6d7f9b',
+        podium: 3,
+        low: { tint: '#8b9bb4', roof: '#6d7f9b', k: 0.78, glow: '#ffe2ad', glowK: 0.95 }
     },
     {
         re: /hard rock|mirage/i,
@@ -543,7 +545,7 @@ const FRAG = `
     if (cut.b > 0.45 || (cut.g > 0.5 && vExt.y < ${OPEN_LIMIT.toFixed(1)}) || (cut.r > 0.5 && vW.y < 6.5)) discard;
     vec3 n = normalize(vN);
     float style = floor(vExt.w / 10.0 + 0.001);
-    float tintK = clamp(fract(vExt.w / 10.0) * 10.0 / 9.0, 0.0, 1.0);
+    float tintK = clamp(fract(vExt.w / 10.0) * 10.0 / 0.9, 0.0, 1.0);
     vec3 glow = vAux.rgb;
     float gk = vAux.a;
     bool roof = n.y > 0.5;
@@ -571,6 +573,7 @@ const FRAG = `
       float unit = step(0.68, h21(cell + 7.0)) * step(max(abs(f.x), abs(f.y)), size);
       float lip = unit * smoothstep(size - 0.015, size, max(abs(f.x), abs(f.y)));
       c = mix(c, c * (1.25 - lip * 0.55), unit * near);
+      c += tintN * night * 0.24 * step(0.8, tintK);
     }
 
     if (!roof && abs(n.y) < 0.3) {
