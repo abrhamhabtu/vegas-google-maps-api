@@ -37,6 +37,8 @@ const FLAT_FRAG = `
   uniform float uOpacity, uTile, uFadeOn, uGrain, uWeathering, uTone;
   uniform vec4 uFadeRect;
   uniform vec3 uFar;
+  uniform vec4 uLocalSurface;
+  uniform vec3 uLocalColor;
   uniform sampler2D uMap;
   uniform vec3 uMapAvg;
   varying vec3 vW;
@@ -44,6 +46,11 @@ const FLAT_FRAG = `
   void main() {
     // the texture carries grain and joints only; its average is divided out so the theme sets the colour
     vec3 c = uColor * uTone;
+    if (uLocalSurface.w > 0.0) {
+      float distanceToCenter = distance(vW.xz, uLocalSurface.xy);
+      float local = 1.0 - smoothstep(uLocalSurface.z, uLocalSurface.w, distanceToCenter);
+      c = mix(c, uLocalColor * uTone, local);
+    }
     if (uTile > 0.0) {
       c *= mix(vec3(1.0), texture2D(uMap, vW.xz / uTile).rgb / uMapAvg, uGrain);
       // a second, far larger sampling breaks up the repeat: resurfaced patches and weathering
@@ -64,6 +71,7 @@ const FLAT_FRAG = `
 export function surfaceMaterial(key, opts = {}) {
     const s = surfaceFor(opts.texture ?? key);
     const opacity = opts.opacity ?? 1;
+    const local = opts.local;
     return new THREE.ShaderMaterial({
         uniforms: {
             ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
@@ -105,6 +113,12 @@ export function surfaceMaterial(key, opts = {}) {
             },
             uFar: {
                 value: theme.c('sand')
+            },
+            uLocalSurface: {
+                value: local ? new THREE.Vector4(...local.center, local.innerRadius, local.outerRadius) : new THREE.Vector4(0, 0, 0, 0)
+            },
+            uLocalColor: {
+                value: theme.c(local?.color ?? key)
             }
         },
         vertexShader: FLAT_VERT,

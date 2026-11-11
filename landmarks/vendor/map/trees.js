@@ -6,6 +6,7 @@ import { boundaryAt, boundaryLine, roadMask, sample } from './lanegraph.js';
 import { litColor } from './materials.js';
 import { latLonToXZ } from '../core/data.js';
 import { ORIGIN, SIGN_LATLON } from '../places.js';
+import { hasFlamingoConcreteMedian } from '../../../world/flamingo-streets.mjs';
 export function palmGeometry() {
     const parts = [];
     const trunk = new THREE.CylinderGeometry(0.16, 0.26, 9, 5, 1, true);
@@ -190,7 +191,7 @@ export function plantTrees(data, g) {
         return bestT;
     };
     for (const e of g.edges){
-        if (!e.oneway || e.elevated || e.internal || /_link$/.test(e.way.hw)) continue;
+        if (!e.oneway || e.elevated || e.internal || /_link$/.test(e.way.hw) || hasFlamingoConcreteMedian(e)) continue;
         const name = e.way.name ?? '';
         if (!/Las Vegas Boulevard|Flamingo Road|Tropicana Avenue|Harmon Avenue|Spring Mountain Road|Bruno Mars Drive|Park Avenue/i.test(name)) continue;
         const isStrip = /Las Vegas Boulevard/i.test(name);

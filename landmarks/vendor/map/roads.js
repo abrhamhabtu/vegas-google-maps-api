@@ -5,6 +5,7 @@ import { boundaryAt, boundaryLine, cornerFillets, edgeLine, offset, roadMask, sa
 import { planIntersections } from './intersections.js';
 import { flatMaterial, litMaterial, ORDER, surfaceMaterial } from './materials.js';
 import { arrowMarking, dashRuns, offsetStation, zebraBars } from '../../../world/road-visuals.mjs';
+import { FLAMINGO_PAVEMENT, hasFlamingoConcreteMedian, isFlamingoApproach, isFlamingoJunction } from '../../../world/flamingo-streets.mjs';
 const ELEV = 0.4;
 const WALK_HEIGHT = 0.11;
 const CURB_HEIGHT = 0.17;
@@ -15,6 +16,7 @@ export function buildRoads(data, g, valetZones = []) {
     group.name = 'roads';
     const C = 1400;
     const sidewalk = new Chunked(C), curb = new Chunked(C), curbFaces = new Chunked(C), medians = new Chunked(C), medianPaving = new Chunked(C);
+    const concreteMedians = new Chunked(C);
     const deckWalk = new Chunked(C), deckCurb = new Chunked(C), deckCurbFaces = new Chunked(C), deckMedian = new Chunked(C), deckMedianPaving = new Chunked(C);
     const oppGrid = new Map();
     for (const e of g.edges){
@@ -183,7 +185,7 @@ export function buildRoads(data, g, valetZones = []) {
             }
         }
     }
-    const medianProfileAt = (e, x, z, hx, hz, y)=>{
+    const medianProfileAt = (e, x, z, hx, hz, y, refined)=>{
         const lx = hz, lz = -hx;
         let bestT = 34, bestM = null, bestHd = 0, bestDir;
         const cx = Math.floor(x / 40), cz = Math.floor(z / 40);
@@ -220,7 +222,8 @@ export function buildRoads(data, g, valetZones = []) {
         const dx = hx - ux, dz = hz - uz;
         if ((Math.abs(dx) >= Math.abs(dz) ? dx : dz) <= 0) return;
         let from = 0, to = 0, start = 0;
-        const count = Math.ceil(bestT / 1.05), step = bestT / count;
+        // Narrow concrete noses need finer clearance samples than planted islands.
+        const count = Math.ceil(bestT / (refined ? 0.25 : 1.05)), step = bestT / count;
         for(let i = 0; i < count; i++){
             const d = (i + 0.5) * step, px = x + lx * d, pz = z + lz * d;
             if (onAnyNonServiceRoad(px, pz, y, step * 0.5, e.way.id, e.id) || y < 1.5 && onConnector(px, pz, step * 0.5)) {
@@ -286,6 +289,8 @@ export function buildRoads(data, g, valetZones = []) {
     for (const e of g.edges){
         const [l0, l1] = extents(e);
         const air = isAir(e.ref);
+        const flamingoApproach = !air && isFlamingoApproach(e);
+        const concreteMedian = !air && hasFlamingoConcreteMedian(e);
         const W = e.lanes.length * e.laneWidth;
         const isLink = /_link$/.test(e.way.hw);
         const isLinkOrRamp = isLink || e.cls === 'ramp';
@@ -347,13 +352,13 @@ export function buildRoads(data, g, valetZones = []) {
             const profileAt = (d)=>{
                 if (!profiles.has(d)) {
                     const q = atStation(e, left, d);
-                    profiles.set(d, medianProfileAt(e, q.x, q.z, q.hx, q.hz, q.y));
+                    profiles.set(d, medianProfileAt(e, q.x, q.z, q.hx, q.hz, q.y, flamingoApproach));
                 }
                 return profiles.get(d);
             };
             const mSpans = clearSpans(cut0, e.ref.length - cut1, 1.6, (d)=>!!profileAt(d));
             for (const [s0, s1] of mSpans){
-                const length = s1 - s0, steps = Math.max(2, Math.ceil(length / 1.5));
+                const length = s1 - s0, steps = Math.max(2, Math.ceil(length / (flamingoApproach ? 0.55 : 1.5)));
                 const stations = Array.from({ length: steps + 1 }, (_, i)=>i === steps ? s1 : s0 + length * i / steps);
                 for (const d of e.ref.cum) if (d > s0 + 0.01 && d < s1 - 0.01) stations.push(d);
                 stations.sort((a,b)=>a-b);
@@ -364,7 +369,7 @@ export function buildRoads(data, g, valetZones = []) {
                     const profile = profileAt(d);
                     pts.push([q.x, q.z]);
                     widths.push(profile?.width ?? 0);
-                    crowns.push(profile && profile.to - profile.from >= 0.85 ? profile : null);
+                    crowns.push(profile && profile.to - profile.from >= (concreteMedian ? 0.55 : 0.85) ? profile : null);
                     heights.push(air ? roadHeight(q.y) : 0);
                     dists.push(d);
                 }
@@ -396,10 +401,11 @@ export function buildRoads(data, g, valetZones = []) {
                         }
                         const y = heights.slice(start, end);
                         const planted = len >= 7 && maxWidth >= 1.7;
-                        const target = planted ? (air ? deckMedian : medians) : (air ? deckMedianPaving : medianPaving);
+                        const target = concreteMedian ? concreteMedians : planted ? (air ? deckMedian : medians) : (air ? deckMedianPaving : medianPaving);
                         ribbonY(target.at(x, z), {pts: far, y}, {pts: near, y}, WALK_HEIGHT);
-                        sidewalkPiece({pts: near, y}, 0, -0.19, 0, air);
-                        sidewalkPiece({pts: far, y}, 0, 0.19, 0, air);
+                        const curbWidth = concreteMedian ? 0.12 : 0.19;
+                        sidewalkPiece({pts: near, y}, 0, -curbWidth, 0, air);
+                        sidewalkPiece({pts: far, y}, 0, curbWidth, 0, air);
                     }
                     start = last;
                 }
@@ -474,6 +480,16 @@ export function buildRoads(data, g, valetZones = []) {
         };
         for(let i = 1; i < e.lanes.length; i++){
             const line = laneBoundary(e, i);
+            if (flamingoApproach) {
+                // The four-metre pattern shares the existing twelve-metre phase across splits.
+                for (const [d0, d1] of dashRuns(a0, a1, 1.15, 2.85, dashStart.get(e.id) ?? 0)){
+                    const d = (d0 + d1) * 0.5, mid = boundaryAt(e, i, d);
+                    if (Math.min(mid - boundaryAt(e, i - 1, d), boundaryAt(e, i + 1, d) - mid) < 1.15) continue;
+                    if (isLinkOrRamp && !crossSectionClear(d)) continue;
+                    strip(line, d0, d1, 0.063, P);
+                }
+                continue;
+            }
             const closes = (j)=>!!j && (Math.abs(j[i] - j[i - 1]) < 0.5 || Math.abs(j[i + 1] - j[i]) < 0.5);
             const from = closes(e.jointStart) ? Math.max(a0, e.taperStart ?? 0) : a0;
             const to = closes(e.jointEnd) ? Math.min(a1, e.ref.length - (e.taperEnd ?? 0)) : a1;
@@ -588,10 +604,13 @@ export function buildRoads(data, g, valetZones = []) {
                     if (!mv || !mv.length) return;
                     const q = chainLaneSample(i, a1 - 7.5);
                     if (!q) return;
-                    arrow(at(P, q.x, q.z), q, mv, yOff);
+                    arrow(at(P, q.x, q.z), q, mv, yOff, flamingoApproach ? 0.77 : 1);
                     if (mv.length === 1 && (mv[0] === 'left' || mv[0] === 'right')) {
                         const q2 = chainLaneSample(i, a1 - 16.5);
-                        if (q2 && q2.width >= 2.4) onlyText(at(P, q2.x, q2.z), q2, yOff);
+                        if (q2 && q2.width >= 2.4) {
+                            if (flamingoApproach) arrow(at(P, q2.x, q2.z), q2, mv, yOff, 0.77);
+                            else onlyText(at(P, q2.x, q2.z), q2, yOff);
+                        }
                     }
                 });
             }
@@ -918,7 +937,7 @@ export function buildRoads(data, g, valetZones = []) {
             const toEdge = toLane ? g.edges[toLane.edge] : null;
             if (!fromEdge || !toEdge || fromEdge.cls === 'service' || toEdge.cls === 'service') continue;
             const ix = intersectionAt(fromEdge.toNode);
-            if (!ix || ix.control !== 'signal') continue;
+            if (!ix || ix.control !== 'signal' || isFlamingoJunction(ix.x, ix.z)) continue;
             const isPocket = /_link$/.test(fromEdge.way.hw) || (fromEdge.turns[fromLane.index]?.length === 1 && fromEdge.turns[fromLane.index][0] === 'left');
             if (!isPocket) continue;
             const guideKey = `${fromLane.id}->${toEdge.id}`;
@@ -945,8 +964,8 @@ export function buildRoads(data, g, valetZones = []) {
         }
     }
     const add = (arr)=>arr.forEach((m)=>group.add(m));
-    const roadMat = surfaceMaterial('road', { grain: 0.16, weathering: 0.08 });
-    const serviceMat = surfaceMaterial('service', { grain: 0.13, weathering: 0.05 });
+    const roadMat = surfaceMaterial('road', { grain: 0.16, weathering: 0.08, local: FLAMINGO_PAVEMENT });
+    const serviceMat = surfaceMaterial('service', { grain: 0.13, weathering: 0.05, local: FLAMINGO_PAVEMENT });
     const freewayMat = surfaceMaterial('freeway', { grain: 0.13, weathering: 0.08 });
     const walkMat = surfaceMaterial('sidewalk', { grain: 0.22, weathering: 0.04 });
     const curbMat = surfaceMaterial('curb', { grain: 0, weathering: 0 });
@@ -960,6 +979,7 @@ export function buildRoads(data, g, valetZones = []) {
     add(freeway.meshes(freewayMat, 'freeway', ORDER.road + 3));
     add(medians.meshes(medianMat, 'medians', ORDER.road + 4));
     add(medianPaving.meshes(walkMat, 'median-paving', ORDER.road + 4));
+    add(concreteMedians.meshes(surfaceMaterial('medianConcrete', { texture: 'sidewalk', grain: 0.12, weathering: 0.02 }), 'concrete-medians', ORDER.road + 4));
     add(curbFaces.meshes(faceMat, 'curb-faces', ORDER.road + 5));
     add(curb.meshes(curbMat, 'curb', ORDER.road + 6));
     add(paintDim.meshes(flatMaterial('paintDim'), 'paint-dim', ORDER.paint));
@@ -1153,11 +1173,11 @@ function quadAt(s, p, nx, nz, u0, u1, v0, v1, yOff) {
 function paintHeight(y, offset) {
     return offset === null ? 0 : roadHeight(y) + offset;
 }
-function arrow(s, p, movements, yOff) {
+function arrow(s, p, movements, yOff, scale = 1) {
     const nx = -p.hz, nz = p.hx, y = paintHeight(p.y, yOff);
     for (const polygon of arrowMarking(movements, p.width)){
         const base = s.count;
-        for (const [u, v] of polygon) s.vert(p.x + nx * u + p.hx * v, y, p.z + nz * u + p.hz * v);
+        for (const [u, v] of polygon) s.vert(p.x + (nx * u + p.hx * v) * scale, y, p.z + (nz * u + p.hz * v) * scale);
         for(let i = 1; i < polygon.length - 1; i++) s.tri(base, base + i, base + i + 1);
     }
 }
