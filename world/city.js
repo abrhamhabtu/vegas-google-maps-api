@@ -44,9 +44,9 @@ export async function buildCity(data, engine) {
   const specialData = { ...data, rail: [] };
   buildings.add(buildLandmarks(specialData, engine), buildArenas(data, engine), buildGuitar(data, engine));
   const resorts = buildResorts(data, engine);
-  buildings.add(resorts.group, buildDetails(specialData, engine), welcomeSign(graph, engine), valets.group);
+  buildings.add(resorts.group, buildDetails(specialData, engine, graph), welcomeSign(graph, engine), valets.group);
   // Must run before buildBuildings: it claims the tower footprints it models by hand.
-  buildings.add(buildTropicanaTrio(specialData), buildFourCorners(specialData), buildWynnTI(specialData));
+  buildings.add(buildTropicanaTrio(specialData, graph), buildFourCorners(specialData), buildWynnTI(specialData));
   buildings.add(buildRio(specialData, graph), buildNorthStrip(specialData, graph));
   buildings.add(buildLuxor(specialData, graph), buildMandalayBay(specialData, graph));
   buildings.add(buildBuildings(data, valetPlan).group);

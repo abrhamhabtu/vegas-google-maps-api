@@ -450,7 +450,7 @@ export function buildResorts(data, engine) {
     add(cosmopolitan(data));
     // Mandalay Bay and W Las Vegas are drawn by world/mandalay-bay.js.
     add(parkMgm(data));
-    add(nynyBridge(data));
+    // Brooklyn Bridge is drawn from the mapped footway in world/tropicana-fronts.js.
     add(buildStripResorts(data, engine));
     return {
         group: out,

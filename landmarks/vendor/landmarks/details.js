@@ -2,6 +2,7 @@
 const THREE = window.THREE;
 import { Soup, convexHull, normals, ringArea } from '../map/geom.js';
 import { litColor } from '../map/materials.js';
+import { roadMask } from '../map/lanegraph.js';
 import { sheen, textPanel } from './sheen.js';
 import { box } from '../map/roads.js';
 import { bakeStatic } from './bake.js';
@@ -21,17 +22,16 @@ const glow = (c)=>new THREE.MeshBasicMaterial({
         color: c,
         fog: true
     });
-export function buildDetails(data, engine) {
+export function buildDetails(data, engine, graph) {
     const g = new THREE.Group();
     g.name = 'strip-details';
     const add = (o)=>{
         if (o) g.add(o);
     };
     const bake = (o)=>o ? bakeStatic(o, (k)=>k.userData.keep === true) : null;
-    // Excalibur and the NYNY tower crowns are modelled in world/tropicana-trio.js.
+    // The NYNY tower crowns and Statue of Liberty are drawn by world/tropicana-trio.js.
     add(bake(nynySkyline(data)));
-    add(bake(liberty(data)));
-    add(coaster(data, engine));
+    add(coaster(data, engine, graph));
     // Luxor's Sphinx and obelisk are drawn by world/luxor.js.
     add(trams(data));
     return g;
@@ -530,7 +530,7 @@ function liberty(data) {
     grp.rotation.y = -Math.PI / 2;
     return grp;
 }
-function coaster(data, engine) {
+function coaster(data, engine, graph) {
     const anchor = findB(data, /^new york new york hotel and casino$/i);
     if (!anchor) return null;
     const rawPts = [
@@ -645,46 +645,63 @@ function coaster(data, engine) {
         glowK: 0.28,
         baseGlow: 0.1
     });
-    const spineMat = litColor('#a81920');
-    const tieMat = litColor('#c82028');
-    for (const [dx, dy] of [
-        [
-            -0.55,
-            0.22
-        ],
-        [
-            0.55,
-            0.22
-        ]
-    ]){
-        const rail = new THREE.Mesh(new THREE.TubeGeometry(curve, 560, 0.22, 6, true), redRail);
-        rail.position.set(dx, dy, 0);
-        trackGrp.add(rail);
-    }
-    const spine = new THREE.Mesh(new THREE.TubeGeometry(curve, 560, 0.38, 6, true), spineMat);
-    spine.position.y = -0.35;
-    trackGrp.add(spine);
-    const ties = new Soup();
-    const sup = new Soup();
-    const footers = new Soup();
-    const samples = 360;
-    for(let i = 0; i < samples; i++){
-        const u = i / samples;
-        const p = curve.getPointAt(u);
-        const tan = curve.getTangentAt(u);
-        const yaw = Math.atan2(tan.x, tan.z);
-        if (i % 2 === 0) {
-            box(ties, p.x, p.z, 1.35, 0.22, p.y - 0.15, p.y + 0.18, yaw);
-        }
+    const spineMat = litColor('#962f28');
+    const tieMat = litColor('#c73d35');
+    const support = litColor('#bea78a');
+    const samples = 576;
+    const points = curve.getSpacedPoints(samples);
+    const { tangents, normals, binormals } = curve.computeFrenetFrames(samples, true);
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const startUp = worldUp.clone().addScaledVector(tangents[0], -tangents[0].y).normalize();
+    const n = startUp.dot(normals[0]), b = startUp.dot(binormals[0]);
+    const up = normals.map((normal, i)=>normal.clone().multiplyScalar(n).addScaledVector(binormals[i], b));
+    const across = up.map((normal, i)=>normal.clone().cross(tangents[i]));
+    const rail = (side, height, radius, material)=>{
+        const path = new THREE.CatmullRomCurve3(points.slice(0, -1).map((p, i)=>p.clone()
+            .addScaledVector(across[i], side).addScaledVector(up[i], height)), true);
+        trackGrp.add(new THREE.Mesh(new THREE.TubeGeometry(path, samples, radius, 6, true), material));
+    };
+    rail(-0.53, 0.17, 0.17, redRail);
+    rail(0.53, 0.17, 0.17, redRail);
+    rail(0, -0.36, 0.25, spineMat);
+
+    const tie = new THREE.BoxGeometry(1.36, 0.28, 0.24);
+    const basis = new THREE.Matrix4();
+    const feet = new Soup();
+    const onRoad = graph ? roadMask(graph, true) : ()=>false;
+    const strut = (a, b, radius)=>{
+        const dir = b.clone().sub(a);
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, dir.length(), 6), support);
+        mesh.position.copy(a).addScaledVector(dir, 0.5);
+        mesh.quaternion.setFromUnitVectors(worldUp, dir.normalize());
+        trackGrp.add(mesh);
+    };
+    for(let i = 0; i < samples; i += 3){
+        const p = points[i];
+        const rung = new THREE.Mesh(tie, tieMat);
+        rung.position.copy(p).addScaledVector(up[i], -0.08);
+        rung.quaternion.setFromRotationMatrix(basis.makeBasis(across[i], up[i], tangents[i]));
+        trackGrp.add(rung);
         const inLoopTop = p.z > 1506 && p.z < 1530 && p.x > 70 && p.y > 24;
-        if (i % 9 === 0 && !inLoopTop) {
-            box(sup, p.x, p.z, 0.55, 0.55, 0, p.y - 0.35, 0);
-            box(footers, p.x, p.z, 1.2, 1.2, 0, 1.2, 0);
+        if (i % 15 !== 0 || inLoopTop || up[i].y < 0.18) continue;
+        const tangent = tangents[i], horizontal = Math.hypot(tangent.x, tangent.z);
+        if (horizontal < 0.3) continue;
+        const tx = tangent.z / horizontal, tz = -tangent.x / horizontal;
+        const head = p.clone().addScaledVector(up[i], -0.52);
+        const offsets = p.y > 23 ? [-2.9, 2.9] : [0];
+        const legs = offsets.map(d=>new THREE.Vector3(p.x + tx * d, 0.62, p.z + tz * d))
+            .filter(q=>!onRoad(q.x, q.z, 0.9));
+        if (legs.length === 2) {
+            const brace = legs[0].clone().lerp(legs[1], 0.5);
+            brace.y = head.y * 0.54;
+            for (const foot of legs) strut(foot.clone().lerp(head, 0.27), brace, 0.15);
+        }
+        for (const foot of legs) {
+            strut(foot, head, 0.33);
+            box(feet, foot.x, foot.z, 1.55, 1.55, 0, 0.73, 0);
         }
     }
-    trackGrp.add(new THREE.Mesh(ties.geometry(), tieMat));
-    trackGrp.add(new THREE.Mesh(sup.geometry(), litColor('#7a828e')));
-    trackGrp.add(new THREE.Mesh(footers.geometry(), litColor('#cfc8ba')));
+    trackGrp.add(new THREE.Mesh(feet.geometry(), litColor('#c9bead')));
     grp.add(bakeStatic(trackGrp));
     const trainGrp = new THREE.Group();
     trainGrp.name = 'NYC Taxi Coaster Train';
@@ -748,6 +765,8 @@ function coaster(data, engine) {
                 const tan = curve.getTangentAt(u);
                 const car = cars[c];
                 car.position.copy(p);
+                const f = u * samples, i = Math.floor(f);
+                car.up.copy(up[i]).lerp(up[i + 1], f - i).normalize();
                 lookTarget.copy(p).add(tan);
                 car.lookAt(lookTarget);
                 car.updateMatrix();

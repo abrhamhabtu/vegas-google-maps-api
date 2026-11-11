@@ -118,7 +118,8 @@ export const RESORT_LOOKS = [
             tint: '#cdd6da',
             k: 0.6,
             glow: '#fff0c8',
-            glowK: 1.1
+            glowK: 1.1,
+            roof: '#89918a'
         }
     },
     {
@@ -151,7 +152,8 @@ export const RESORT_LOOKS = [
             tint: '#ece8df',
             k: 0.6,
             glow: '#ffe2b4',
-            glowK: 1.0
+            glowK: 1.0,
+            roof: '#b9ae9b'
         }
     },
     {
@@ -172,7 +174,10 @@ export const RESORT_LOOKS = [
             '#a66b4f',
             '#e6dcc8'
         ],
-        paint: Layer.Masonry
+        paint: Layer.Masonry,
+        low: {
+            roof: '#9c9889'
+        }
     },
     {
         re: /t-mobile arena/i,

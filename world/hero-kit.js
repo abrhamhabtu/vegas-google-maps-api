@@ -273,65 +273,76 @@ export const FRAG = `
       c = rc * light * mix(1.0, 0.8, night);
       e = rc * uFlood * uRoofGlow * night + uGlow * 0.03 * night;
     } else if (uMode < 0.5) {
-      // MGM Grand: emerald curtain wall, every floor a continuous lit spandrel
+      // MGM Grand: dark emerald glazing between continuous green light strips.
       float fy = y / 3.3;
       float fw = fwidth(fy);
-      float line = band(fy, 0.06, 0.5, fw);
+      float crown = smoothstep(topH - 5.9, topH - 5.55, y);
+      float line = band(fy, 0.065, 0.355, fw) * (1.0 - crown);
       float fu = u / 1.55;
-      float mull = band(fu, 0.0, 0.13, fwidth(fu));
+      float mull = band(fu, 0.0, 0.085, fwidth(fu));
       float row = floor(fy);
-      c = mix(base * mix(0.52, 0.34, night), base * 1.08, line) * light;
-      c = mix(c, c * 0.78, mull * (1.0 - line) * 0.7);
-      c = mix(c, mix(uHorizon, uTop, 0.35), fres * 0.5 * (1.0 - line * 0.6) * (1.0 - night * 0.8));
-      c *= mix(1.0, 0.55, night);
-      float rowK = 0.84 + 0.16 * h21(vec2(row, seed));
-      float faceK = 0.8 + 0.2 * dot(n, normalize(vec3(-0.5, 0.0, 0.86)));
-      float rise = mix(1.0, 0.78, smoothstep(0.0, max(topH, 1.0), y));
-      e += uGlow * line * rowK * faceK * rise * night * (1.0 - mull * 0.22);
+      vec3 reflection = mix(uHorizon, uTop, smoothstep(-0.5, 0.65, reflect(-v, n).y));
+      c = mix(base * 0.61, base * 1.16, line + crown * 0.72) * (light + 0.22);
+      c *= 1.0 - mull * 0.24 * (1.0 - line);
+      c += base * reflection * (0.18 + 0.43 * fres) * (1.0 - night);
+      c *= mix(1.0, 0.23, night);
+      float rowK = 0.89 + 0.11 * h21(vec2(row, seed));
+      float faceK = 0.89 + 0.11 * dot(n, normalize(vec3(-0.5, 0.0, 0.86)));
+      e += uGlow * (line * rowK * 0.83 + crown * 0.22) * faceK * night;
       float bay = u / 3.4;
-      float room = step(h21(vec2(floor(bay), row) + seed), 0.085) * (1.0 - line) * band(bay, 0.07, 0.93, fwidth(bay));
-      e += mix(uGlow, vec3(1.0, 0.97, 0.82), 0.45) * room * night * 0.5;
+      float room = step(h21(vec2(floor(bay), row) + seed), uRate) * (1.0 - crown);
+      room *= band(bay, 0.19, 0.79, fwidth(bay)) * band(fy, 0.43, 0.82, fw);
+      e += uWinLit * room * night * 0.27;
       e += base * uSelf * night * faceK;
     } else if (uMode < 1.5) {
       // Excalibur towers: pale stucco with recessed vertical window bays, floodlit from the moat
-      float fu = u / 3.6, fy = y / 3.25;
+      float fu = u / 3.45, fy = (y - vAux.w) / 3.22;
       vec2 fw = vec2(fwidth(fu), fwidth(fy));
-      float strip = band(fu, 0.27, 0.73, fw.x);
-      float win = strip * band(fy, 0.2, 0.8, fw.y) * step(5.0, y) * step(y, topH - 2.4);
+      float strip = band(fu, 0.23, 0.77, fw.x);
+      float gable = 0.84 - 0.44 * abs(fract(fu) - 0.5);
+      float window = band(fu, 0.31, 0.69, fw.x) * band(fy, 0.18, gable, fw.y);
+      float win = window * step(vAux.w + 1.2, y) * step(y, topH - 2.4);
       float aa = clamp(1.0 - max(fw.x, fw.y) * 1.6, 0.0, 1.0);
       vec2 cell = floor(vec2(fu, fy));
       c = base * light * ao;
-      c = mix(c, c * 0.78, strip * 0.85);
+      c = mix(c, c * 0.77, strip * 0.82);
       c = mix(c, uWinDark * (0.55 + 0.45 * (uAmbient + uSun * key)), win * 0.82 * (1.0 - night));
       c *= mix(1.0, 0.62, night);
       c = mix(c, c * 0.4, win * night);
       float lit = mix(0.11, step(h21(cell + seed * 7.0), 0.11), aa);
       e += mix(uWinLit, vec3(1.0, 0.95, 0.86), step(0.6, h21(cell.yx + seed))) * (0.55 + 0.45 * h21(cell * 1.7 + 3.0)) * win * lit * night * 0.95;
-      e += base * uFlood * uFloodK * night * (0.06 + 0.6 * exp(-y / 17.0));
+      float wallWash = 0.17 + 0.49 * exp(-max(y - vAux.w, 0.0) / 23.0);
+      wallWash += 0.25 * exp(-max(topH - y, 0.0) / 6.2);
+      e += base * uFlood * uFloodK * night * wallWash * (1.0 - win * 0.84);
       e += base * uSelf * night;
     } else if (uMode < 2.5) {
       // New York-New York: masonry piers, punched windows, floodlit crowns
-      float bayW = 2.9 + 0.9 * fract(seed * 3.7);
+      float modern = step(1.5, variant);
+      float bayW = mix(2.46 + 0.65 * fract(seed * 3.7), 1.58, modern);
       float fu = u / bayW, fy = y / 3.4;
       vec2 fw = vec2(fwidth(fu), fwidth(fy));
-      float pier = band(fu, 0.0, 0.24, fw.x);
+      float pier = band(fu, 0.0, mix(0.24, 0.11, modern), fw.x);
       float body = step(5.0, y) * step(y, topH - 1.6);
-      float win = band(fu, 0.32, 0.92, fw.x) * (variant > 0.5 ? band(fy, 0.08, 0.88, fw.y) : band(fy, 0.24, 0.8, fw.y)) * body;
+      float tall = step(0.5, variant);
+      float win = band(fu, mix(0.32, 0.15, modern), 0.88, fw.x)
+        * band(fy, mix(0.24, 0.095, tall), mix(0.76, 0.89, tall), fw.y) * body;
       float aa = clamp(1.0 - max(fw.x, fw.y) * 1.6, 0.0, 1.0);
       vec2 cell = floor(vec2(fu, fy));
       c = base * light * ao;
       c = mix(c, c * 1.12, pier * 0.6);
       c *= 1.0 - 0.1 * band(fy, 0.0, 0.1, fw.y) * (1.0 - pier);
+      c *= 1.0 - 0.13 * band(fy / 4.0, 0.0, 0.045, fwidth(fy) / 4.0) * (1.0 - modern);
       c = mix(c, uWinDark * (0.5 + 0.5 * (uAmbient + uSun * key)), win * 0.85 * (1.0 - night));
       c = mix(c, uHorizon, fres * 0.22 * win * (1.0 - night));
       c *= mix(1.0, 0.44, night);
       c = mix(c, c * 0.3, win * night);
-      float rate = 0.17 + 0.12 * fract(seed * 5.3);
+      float rate = uRate * (0.72 + 0.52 * fract(seed * 5.3));
       float lit = mix(rate, step(h21(cell + seed * 11.0), rate), aa);
       vec3 wl = mix(uWinLit, vec3(0.78, 0.88, 1.0), step(0.82, h21(cell.yx + seed * 2.0)));
-      e += wl * (0.5 + 0.5 * h21(cell * 1.7 + 3.0)) * win * lit * night * mix(0.6, 1.0, aa);
+      e += wl * (0.4 + 0.47 * h21(cell * 1.7 + 3.0)) * win * lit * night * mix(0.4, 0.82, aa);
       float crown = smoothstep(topH * 0.8, topH, y);
-      e += base * uFlood * night * uFloodK * (crown * 0.85 + 0.2 * exp(-y / 16.0));
+      float uplight = 0.22 + (0.39 + 0.17 * tall) * crown;
+      e += base * uFlood * night * uFloodK * uplight * (1.0 - win * 0.93) * (1.0 - modern * 0.52);
       e += base * uSelf * night;
     } else if (uMode < 3.5) {
       // dressed stone: turrets, keeps and gatehouses, washed warm from below
