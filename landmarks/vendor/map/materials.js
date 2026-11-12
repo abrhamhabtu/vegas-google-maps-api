@@ -37,24 +37,46 @@ const FLAT_FRAG = `
   uniform float uOpacity, uTile, uFadeOn, uGrain, uWeathering, uTone;
   uniform vec4 uFadeRect;
   uniform vec3 uFar;
-  uniform vec4 uLocalSurface;
-  uniform vec3 uLocalColor;
   uniform sampler2D uMap;
   uniform vec3 uMapAvg;
   varying vec3 vW;
   ${SHADOW_PARS}
+  #ifdef DECK_TINT
+    uniform vec3 uDeckColor;
+  #endif
+  #ifdef ROAD_CORRIDOR_POINTS
+    uniform vec2 uCorridorPath[ROAD_CORRIDOR_POINTS], uCorridorFade;
+    uniform vec4 uCorridorBounds;
+    uniform vec3 uCorridorColor;
+    float corridorWeight(vec2 p) {
+      if (any(lessThan(p, uCorridorBounds.xy)) || any(greaterThan(p, uCorridorBounds.zw))) return 0.0;
+      float reach = uCorridorFade.y;
+      float closest = reach * reach;
+      for (int i = 0; i < ROAD_CORRIDOR_POINTS - 1; ++i) {
+        vec2 a = uCorridorPath[i], b = uCorridorPath[i + 1];
+        if (p.y < min(a.y, b.y) - reach || p.y > max(a.y, b.y) + reach) continue;
+        vec2 span = b - a;
+        vec2 delta = p - a - span * clamp(dot(p - a, span) / dot(span, span), 0.0, 1.0);
+        closest = min(closest, dot(delta, delta));
+      }
+      return 1.0 - smoothstep(uCorridorFade.x, reach, sqrt(closest));
+    }
+  #endif
   void main() {
     // the texture carries grain and joints only; its average is divided out so the theme sets the colour
     vec3 c = uColor * uTone;
-    if (uLocalSurface.w > 0.0) {
-      float distanceToCenter = distance(vW.xz, uLocalSurface.xy);
-      float local = 1.0 - smoothstep(uLocalSurface.z, uLocalSurface.w, distanceToCenter);
-      c = mix(c, uLocalColor * uTone, local);
-    }
+    float pavement = 0.0;
+    #ifdef ROAD_CORRIDOR_POINTS
+      pavement = corridorWeight(vW.xz);
+      c = mix(c, uCorridorColor * uTone, pavement);
+    #endif
+    #ifdef DECK_TINT
+      c = mix(c, uDeckColor * uTone, smoothstep(0.2, 4.5, vW.y));
+    #endif
     if (uTile > 0.0) {
-      c *= mix(vec3(1.0), texture2D(uMap, vW.xz / uTile).rgb / uMapAvg, uGrain);
+      c *= mix(vec3(1.0), texture2D(uMap, vW.xz / uTile).rgb / uMapAvg, uGrain * (1.0 - 0.25 * pavement));
       // a second, far larger sampling breaks up the repeat: resurfaced patches and weathering
-      c *= mix(vec3(1.0), texture2D(uMap, vW.zx / (uTile * 11.3)).rgb / uMapAvg, uWeathering);
+      c *= mix(vec3(1.0), texture2D(uMap, vW.zx / (uTile * 11.3)).rgb / uMapAvg, uWeathering * (1.0 - 0.48 * pavement));
     }
     if (uFadeOn > 0.5) {
       // the city gives way to open desert instead of stopping at the edge of the map data
@@ -71,11 +93,27 @@ const FLAT_FRAG = `
 export function surfaceMaterial(key, opts = {}) {
     const s = surfaceFor(opts.texture ?? key);
     const opacity = opts.opacity ?? 1;
-    const local = opts.local;
+    const corridor = opts.corridor;
+    let corridorUniforms = {};
+    if (corridor) {
+        const xs = corridor.path.map(p => p[0]), zs = corridor.path.map(p => p[1]), radius = corridor.outerRadius;
+        corridorUniforms = {
+            uCorridorPath: { value: corridor.path.map(p => new THREE.Vector2(...p)) },
+            uCorridorFade: { value: new THREE.Vector2(corridor.innerRadius, radius) },
+            uCorridorBounds: { value: new THREE.Vector4(Math.min(...xs) - radius, Math.min(...zs) - radius, Math.max(...xs) + radius, Math.max(...zs) + radius) },
+            uCorridorColor: { value: theme.c(corridor.color) }
+        };
+    }
     return new THREE.ShaderMaterial({
+        defines: {
+            ...(corridor ? { ROAD_CORRIDOR_POINTS: corridor.path.length } : {}),
+            ...(opts.deckTint ? { DECK_TINT: 1 } : {})
+        },
         uniforms: {
             ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
             ...shadowUniforms,
+            ...corridorUniforms,
+            ...(opts.deckTint ? { uDeckColor: { value: theme.c(opts.deckTint) } } : {}),
             uColor: {
                 value: theme.c(key)
             },
@@ -113,12 +151,6 @@ export function surfaceMaterial(key, opts = {}) {
             },
             uFar: {
                 value: theme.c('sand')
-            },
-            uLocalSurface: {
-                value: local ? new THREE.Vector4(...local.center, local.innerRadius, local.outerRadius) : new THREE.Vector4(0, 0, 0, 0)
-            },
-            uLocalColor: {
-                value: theme.c(local?.color ?? key)
             }
         },
         vertexShader: FLAT_VERT,

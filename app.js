@@ -1,10 +1,4 @@
-/**
- * Las Vegas Strip — Google Maps Carbon Copy (High-DPI Lane-Level Street Tiles + Three.js 3D Resorts + Multi-Lane AV Fleet)
- *
- * Uses Google Maps Retina Road Tiles (`mt0..3.google.com/vt/lyrs=m&hl=en&scale=2` up to zoom 22) as the primary ground
- * layer so every individual dashed lane line, turn pocket arrow, crosswalk zebra stripe, median, and POI icon matches
- * Google Maps 1:1 (including `S Las Vegas Blvd`, `Bruno Mars Dr`, and `MGM Rd`).
- */
+/** Las Vegas Strip with a Google raster basemap and an OpenStreetMap-based 3D road and vehicle model. */
 
 const MGM_BRUNO_MARS_INTERSECTION = { lat: 36.10305, lng: -115.17275 }; // Exact view from the user's Google Maps screenshot
 const VEGAS_STRIP_CENTER = { lat: 36.1127, lng: -115.1735 };
@@ -157,8 +151,7 @@ function initWebGLVegasMap() {
   glMap.on("load", () => {
     // Google raster layers are the only ground map. Buildings come from the
     // consolidated footprint snapshot, so no streamed vector masses can duplicate them.
-    // Add Google Maps High-DPI Retina Street & Lane Tiles (`lyrs=m&scale=2` up to zoom 22)
-    // This renders the exact grey-blue streets, dashed lane lines, turn-lane arrows, crosswalks, and POI icons from Google Maps!
+    // Google supplies the rendered backdrop. The 3D street layer and fleet read the local lane graph.
     glMap.addSource("google-roadmap-lanes", {
       type: "raster",
       tiles: [
@@ -234,7 +227,7 @@ function initWebGLVegasMap() {
       }
     );
 
-    // 4. Add Subtle AV Lane Path Guide Line (thin & translucent so Google Maps lane markings stay visible underneath!)
+    // 4. Add a translucent route guide for the fallback map view.
     glMap.addSource("av-route", {
       type: "geojson",
       data: {
@@ -309,7 +302,7 @@ function flyToLocation(lat, lng, zoom = 17.0, tilt = 60, heading = 0) {
 /**
  * Offset a (lat, lng) coordinate laterally by `lateralMeters` perpendicular to `headingDeg`
  * (+lateralMeters shifts right of travel direction, -lateralMeters shifts left of travel direction)
- * so autonomous vehicles drive inside specific Google Maps lanes!
+ * for the fallback vehicle preview's modeled lanes.
  */
 function offsetLatLngByLaneMeters(lat, lng, headingDeg, lateralMeters) {
   const rightAngleRad = ((headingDeg + 90) * Math.PI) / 180;
@@ -452,7 +445,7 @@ function placeEgoVehicleAt(miles) {
   const basePose = interpolatePoseAtMiles(miles);
   if (!glMap) return;
 
-  // Apply lateral lane offset (each Google Maps lane is ~3.5m wide)
+  // Apply the fallback lane width estimate.
   const lateralMeters = selectedLaneIndex * 3.5;
   const lanePos = offsetLatLngByLaneMeters(
     basePose.lat,

@@ -1,6 +1,7 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
 import { sample } from './lanegraph.js';
 import { rebuildMovements } from './movements.js';
+import { isStripEdge } from '../../../world/strip-streets.mjs';
 export function planIntersections(data, g) {
     const waysAt = new Map();
     for (const e of g.edges)for (const n of [
@@ -248,6 +249,7 @@ export function planIntersections(data, g) {
                         });
                     }
                 }
+                const stripJunction = mine.some(leg=>leg.entries.some(({e})=>isStripEdge(e)));
                 for (const leg of mine){
                     let d = 0;
                     for (const { e, node, atStart } of leg.entries){
@@ -261,6 +263,11 @@ export function planIntersections(data, g) {
                             const along = (c.x - mx) * leg.a[0] + (c.z - mz) * leg.a[1], across = (c.x - mx) * leg.perp[0] + (c.z - mz) * leg.perp[1];
                             if (along > -14 && along < 34 && Math.abs(across) < 34) {
                                 usedCrossings.add(c.id);
+                                if (stripJunction && c.m && c.m !== 'no' && c.m !== 'unmarked') {
+                                    for (const { e } of leg.entries) if (e.way.n.includes(c.id)) {
+                                        (leg.markedEdges ??= new Set()).add(e.id);
+                                    }
+                                }
                                 if (real || /traffic_signals/.test(c.k ?? '') || /marked|zebra/.test(c.k ?? '') && !leg.entries.some(({ e })=>e.cls === 'arterial')) leg.cross = true;
                             }
                         }
@@ -269,8 +276,7 @@ export function planIntersections(data, g) {
                     if (leg.cross && leg.entries.some(({ e })=>e.cls === 'arterial') && !nearSignal(ctr[0], ctr[1], 40) && !nearSignal(mx, mz, 35) && !pedSignalAt(ctr[0], ctr[1], 25)) leg.cross = false;
                     if (leg.cross && spans.some((sp)=>Math.hypot(sp.x - mx, sp.z - mz) < 42 && Math.abs(sp.hx * leg.a[0] + sp.hz * leg.a[1]) < 0.45)) leg.cross = false;
                     if (leg.cross && leg.entries.some(({ e })=>e.cls === 'arterial') && spans.filter((sp)=>Math.hypot(sp.x - ctr[0], sp.z - ctr[1]) < 95).length >= 2) leg.cross = false;
-                    const target = (t, e, atStart)=>{
-                        const max = e.ref.length * 0.5;
+                    const target = (t, e, atStart, max = e.ref.length * 0.5)=>{
                         for(let dd = 0; dd < max; dd += 0.5){
                             const q = sample(e.ref, atStart ? dd : e.ref.length - dd);
                             if ((q.x - ctr[0]) * leg.a[0] + (q.z - ctr[1]) * leg.a[1] >= t) return dd;
@@ -279,18 +285,24 @@ export function planIntersections(data, g) {
                     };
                     for (const { e, atStart } of leg.entries){
                         const inner = target(leg.d, e, atStart);
-                        const room = e.ref.length * 0.5 > inner + 8;
+                        // A mapped crossing can use the clear part of a short approach
+                        // past its midpoint, up to the setback for the next junction.
+                        const marked = leg.cross && leg.markedEdges?.has(e.id);
+                        const otherNode = atStart ? e.toNode : e.fromNode;
+                        const half = e.ref.length * 0.5;
+                        const max = marked ? Math.max(half, e.ref.length - Math.max(2, endSetback(e, otherNode) + 1.5)) : half;
+                        const room = max > inner + (marked ? 5.2 : 8);
                         const cross = leg.cross && room;
                         const band = [
-                            target(leg.d + 0.6, e, atStart),
-                            target(leg.d + 3.8, e, atStart)
+                            target(leg.d + 0.6, e, atStart, max),
+                            target(leg.d + 3.8, e, atStart, max)
                         ];
-                        const stopWith = target(leg.d + 5.0, e, atStart);
-                        const fits = cross && stopWith > band[1];
+                        const stopWith = target(leg.d + 5.0, e, atStart, max);
+                        const fits = cross && band[1] > band[0] && stopWith > band[1];
                         const m = {
                             inner,
                             stop: fits ? stopWith : target(leg.d + 0.6, e, atStart),
-                            clear: fits ? target(leg.d + 4.4, e, atStart) : target(leg.d + 0.6, e, atStart),
+                            clear: fits ? target(leg.d + 4.4, e, atStart, max) : target(leg.d + 0.6, e, atStart),
                             band: fits ? band : undefined,
                             leg
                         };

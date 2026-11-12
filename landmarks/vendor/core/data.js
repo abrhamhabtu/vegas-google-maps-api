@@ -320,6 +320,27 @@ function solveRoadElevations(roads) {
     for (const [nd, mh] of maxH){
         if ((H.get(nd) ?? 0) > mh) H.set(nd, mh);
     }
+    // Main roads set the elevation at a ramp join. Keep their solved deck height
+    // and carry the approach grade into the ramp before applying low-road caps.
+    const rampFloor = new Map();
+    for (const nd of rampGraph.keys()){
+        const h = H.get(nd) ?? 0;
+        if (!mainNodes.has(nd) || h <= 0) continue;
+        rampFloor.set(nd, h);
+        pushMax(nd, h);
+    }
+    while(heap.length){
+        const [h, n] = popMax();
+        if ((rampFloor.get(n) ?? 0) > h + 1e-6) continue;
+        for (const { to, d } of rampGraph.get(n) ?? []){
+            if (mainNodes.has(to)) continue;
+            const floor = h - 0.072 * d;
+            if (floor > 0.05 && floor > (rampFloor.get(to) ?? 0) + 1e-4) {
+                rampFloor.set(to, floor);
+                pushMax(to, floor);
+            }
+        }
+    }
     for (const nd of rampGraph.keys()){
         if (mainNodes.has(nd) || (H.get(nd) ?? 0) === 0) {
             const h0 = H.get(nd) ?? 0;
@@ -331,6 +352,7 @@ function solveRoadElevations(roads) {
         const [h, n] = popMin();
         if ((maxH.get(n) ?? Infinity) < h - 1e-6) continue;
         for (const { to, d } of rampGraph.get(n) ?? []){
+            if (mainNodes.has(to)) continue;
             const nh = h + 0.072 * d;
             if (nh < (maxH.get(to) ?? Infinity) - 1e-4) {
                 maxH.set(to, nh);
@@ -339,7 +361,7 @@ function solveRoadElevations(roads) {
         }
     }
     for (const [nd, mh] of maxH){
-        if ((H.get(nd) ?? 0) > mh) H.set(nd, mh);
+        if (!mainNodes.has(nd) && (H.get(nd) ?? 0) > mh) H.set(nd, Math.max(mh, rampFloor.get(nd) ?? 0));
     }
     for (const r of roads){
         if (r.tn) {

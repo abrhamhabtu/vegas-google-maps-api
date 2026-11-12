@@ -91,5 +91,5 @@ export async function buildCity(data, engine) {
   const lights = buildCityLights(data);
   detail.add(lights.group, stage('streetscape', () => buildStreetscape(graph, engine, lights.spots)), buildSigns(data, graph));
   engine.reveal?.('streets');
-  return { graph, buildings, roads, detail, heightAt: makeHeightIndex(data, resorts.heights) };
+  return { graph, buildings, roads, detail, bridgeDecks: roadOutput.bridgeDecks, heightAt: makeHeightIndex(data, resorts.heights) };
 }

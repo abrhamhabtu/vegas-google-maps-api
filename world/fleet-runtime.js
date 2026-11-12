@@ -8,11 +8,14 @@ export function startFleet(map, data, city, engine, prepareMaterials) {
   let fleet;
   const controls = createMapControls(map, () => fleet);
   fleet = new Fleet(engine, controls, city.graph, data);
-  const roadSurface = createRoadSurface(city.graph);
+  let roadSurface;
   const originalManualStep = fleet.manualStep.bind(fleet);
   fleet.manualStep = (car, dt) => {
+    const { x, z } = car;
     originalManualStep(car, dt);
-    car.y = roadSurface.heightAt(car.x, car.z, car.y);
+    const step = Math.hypot(car.x - x, car.z - z);
+    roadSurface ??= createRoadSurface(city.graph);
+    car.y = roadSurface.heightAt(car.x, car.z, car.y, Math.max(0.3, step * 0.18));
   };
   fleet.listen = (type, listener, options) => engine.listen(window, type, listener, options);
   fleet.paused = false;

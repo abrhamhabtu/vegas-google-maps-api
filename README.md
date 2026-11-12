@@ -15,7 +15,7 @@ npm start
 - **Street lanes** returns to the original MGM Road / Bruno Mars Drive intersection in unobstructed 2D.
 - The driving card includes the source **Zoox / Waymo / Tesla** models, four driving profiles, pickup/dropoff bookings, follow camera, manual driving and telemetry. **Pause / Resume / Reset** controls the fleet.
 - **Lab** opens the original eight driving scenarios and traffic density control. Autonomous driving uses the source lane graph, signals, stop lines, valets and road-deck elevations.
-- **Places → Bridges & rail** includes the I-15/Tropicana interchange, Flamingo freeway bridge, south Strip pedestrian bridges and ARIA resort tram.
+- **Places → Streets & bridges** includes the Tropicana flyover over Joey Bishop Drive and the Airport Connector at Terminal 3, along with the Flamingo freeway bridge and ARIA tram.
 
 Drag to pan, scroll/pinch to zoom, Shift/right-drag to orbit. Use the camera dock to zoom, turn, tilt or reset north. Keyboard: **T** cycles lighting, **D** toggles 2D/3D, **N** resets north, **P** opens places, **L** opens layers, **B** opens the vehicle Lab, **C** cycles the car camera, **H** hides controls, **Escape** closes panels. In manual driving, use **W/A/S/D** or arrows and **Space** to brake. Map shortcuts yield to manual driving and text fields. Reduced motion stops decorative animation while the vehicle test clock keeps running.
 
@@ -27,7 +27,9 @@ The detailed models and 23,764 building footprints were imported from `abrhamhab
 
 Original building polygons, heights and geographic origin are retained. The custom layer projects source east/up/south metres into MapLibre's Mercator frame, including animated instances. The source renderer's building ownership rules suppress the plain building masses beneath detailed models. Google raster streets, satellite and traffic retain their existing coordinates.
 
-Detailed source roads, freeway ramps, pedestrian bridges, sidewalks, trees, signals and street furniture sit over the Google base. The original road elevation solver and lane graph provide both the rendered decks and vehicle paths. Manual vehicles sample the same road surfaces; vehicles on separate decks are excluded from proximity/contact checks.
+The Google raster basemap supplies imagery. The OpenStreetMap-based snapshot supplies road geometry, lane tags, and bridge levels for the 3D scene and simulator. The renderer estimates lane boundaries and deck elevations from those tags. Google's [road-level map details](https://developers.google.com/maps/comms/msa-road-level-details) are available for display, and the [Navigation SDK](https://developers.google.com/maps/documentation/navigation/android-sdk/tbt-feed#lane_guidance) exposes turn directions and recommendations per lane.
+
+The road elevation solver and lane graph provide both the rendered decks and vehicle paths. Bridge supports are placed around lower carriageways, including raised ramps beneath a flyover. Manual vehicles interpolate grade on their current level and can follow connected ramps.
 
 Rail footprints remain geographically fixed. The guideway planner raises connected spans to preserve at least 5.6 metres of clearance above intersecting road surfaces, and places supports outside drivable road envelopes. Road/rail planning is geometric; the simulation is a local testing environment, with the source's simplified vehicle physics.
 

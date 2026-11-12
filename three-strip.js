@@ -135,6 +135,7 @@ window.createVegasThreeLayer = function() {
       runtime.labels.enabled = labelsEnabled;
       shadows = new Shadows(engine, () => runtime.controls.cur);
       for (const root of [city.buildings, city.detail]) shadows.addCasters(root);
+      for (const deck of city.bridgeDecks) shadows.addCasters(deck);
       for (const animation of animations) {
         if (!animation.bounds || animation.bounds.radius > 2000) {
           animation.bounds = new THREE.Box3().setFromObject(animation.object).getBoundingSphere(new THREE.Sphere());

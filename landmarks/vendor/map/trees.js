@@ -6,7 +6,7 @@ import { boundaryAt, boundaryLine, roadMask, sample } from './lanegraph.js';
 import { litColor } from './materials.js';
 import { latLonToXZ } from '../core/data.js';
 import { ORIGIN, SIGN_LATLON } from '../places.js';
-import { hasFlamingoConcreteMedian } from '../../../world/flamingo-streets.mjs';
+import { hasPavedStripMedian, isStripEdge } from '../../../world/strip-streets.mjs';
 export function palmGeometry() {
     const parts = [];
     const trunk = new THREE.CylinderGeometry(0.16, 0.26, 9, 5, 1, true);
@@ -191,16 +191,17 @@ export function plantTrees(data, g) {
         return bestT;
     };
     for (const e of g.edges){
-        if (!e.oneway || e.elevated || e.internal || /_link$/.test(e.way.hw) || hasFlamingoConcreteMedian(e)) continue;
+        if (!e.oneway || e.elevated || e.internal || /_link$/.test(e.way.hw) || hasPavedStripMedian(e)) continue;
         const name = e.way.name ?? '';
         if (!/Las Vegas Boulevard|Flamingo Road|Tropicana Avenue|Harmon Avenue|Spring Mountain Road|Bruno Mars Drive|Park Avenue/i.test(name)) continue;
         const isStrip = /Las Vegas Boulevard/i.test(name);
+        const minGap = isStripEdge(e) ? 3.4 : 2.0;
         const step = isStrip ? 12.5 : 16;
         const left = boundaryLine(e, 0);
         for(let s = 12; s < left.length - 12; s += step){
             const q = sample(left, s);
             const gap = islandWidthAt(e, q.x, q.z, q.hx, q.hz);
-            if (gap < 2.0) continue;
+            if (gap < minGap) continue;
             const lx = q.hz, lz = -q.hx;
             const x = q.x + lx * (gap * 0.5), z = q.z + lz * (gap * 0.5);
             if (occupied.has(key(x, z)) || inLot(x, z) || onRoad(x, z, 0.9) || onCarriageway(x, z, 0.75) || onConn(x, z, 0.85)) continue;

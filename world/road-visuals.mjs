@@ -24,6 +24,31 @@ export function dashRuns(start, end, length, gap, phase) {
   return runs;
 }
 
+// Sample across a median, then refine the boundaries of the widest clear span.
+// This keeps the curb smooth when the next carriageway or turn sweeps past it.
+export function widestClearSpan(width, blocked) {
+  const count = Math.ceil(width / 0.3);
+  let open = !blocked(0);
+  let start = 0;
+  let best = [0, 0];
+  for (let i = 1; i <= count; i++) {
+    const at = width * i / count;
+    const next = !blocked(at);
+    if (next === open) continue;
+    let lo = width * (i - 1) / count;
+    let hi = at;
+    for (let k = 0; k < 5; k++) {
+      const mid = (lo + hi) / 2;
+      if (!blocked(mid) === open) lo = mid;
+      else hi = mid;
+    }
+    if (open && lo - start > best[1] - best[0]) best = [start, lo];
+    if (next) start = hi;
+    open = next;
+  }
+  return open && width - start > best[1] - best[0] ? [start, width] : best;
+}
+
 export function arrowMarking(movements, laneWidth) {
   if (laneWidth < 1.8) return [];
   const through = movements.includes('through') || movements.includes('merge');
