@@ -141,19 +141,12 @@ body[data-theme='night'] #driving-ui .lab-result.bad { color: #ff9288; }
   #driving-ui .ride { left: 14px; max-width: calc(100vw - 100px); }
 }
 @media (max-width: 850px) {
-  body.fleet-panel-mounted .top-bar { flex-wrap: wrap; gap: 8px; }
-  body.fleet-panel-mounted .top-bar .search-panel { flex: 1 0 100%; }
-  body.fleet-panel-mounted .top-bar > .floating-button { order: 4; height: 44px; padding: 0 10px; gap: 6px; }
-  body.fleet-panel-mounted .theme-btn { padding: 0 8px; font-size: 11px; }
   #driving-ui .dr-pill { top: 130px; max-width: calc(100vw - 28px); }
   #driving-ui .dr-turn { max-width: 180px; }
   #driving-ui .ride { max-height: calc(100dvh - 234px); }
   #driving-ui .lab { max-height: calc(100dvh - 282px); }
 }
 @media (max-width: 520px) {
-  body.fleet-panel-mounted .theme-btn { font-size: 0; padding: 0 7px; }
-  body.fleet-panel-mounted .theme-btn span { font-size: 18px; }
-  body.fleet-panel-mounted .top-bar > .floating-button { font-size: 11px; }
   #driving-ui .ride { bottom: max(54px, calc(env(safe-area-inset-bottom) + 42px)); width: calc(100vw - 28px); max-width: calc(100vw - 28px); }
   #driving-ui .ride.folded { width: min(292px, calc(100vw - 100px)); }
   #driving-ui .ride-head .seg button { min-height: 32px; font-size: 10px; }

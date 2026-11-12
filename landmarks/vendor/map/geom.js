@@ -83,6 +83,8 @@ export class Soup {
         return g;
     }
 }
+/** Numeric key for a grid cell: far cheaper to build and hash than a "x,z" string. */
+export const cellKey = (x, z)=>(x + 32768) * 65536 + (z + 32768);
 export class Chunked {
     size;
     m = new Map();

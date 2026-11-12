@@ -653,10 +653,14 @@ function roundCorners(line, keepHeight) {
     const passes = keepHeight ? 12 : 26;
     for(let k = 0; k < passes; k++)relax(null);
     const TARGET = 6.5, spacing = line.length / n, reach = Math.ceil(7 / spacing), hot = new Uint8Array(n + 1);
+    // Only points whose 3-point stencil (i-2, i, i+2) moved in the last relax can change curvature,
+    // so after the first full scan each pass rechecks just those. Same result, far fewer scans.
+    const check = new Uint8Array(n + 1).fill(1);
     for(let k = 0; k < 400; k++){
         hot.fill(0);
         let any = false;
         for(let i = hold + 2; i <= n - hold - 2; i++){
+            if (!check[i]) continue;
             const ax = xs[i - 2], az = zs[i - 2], bx = xs[i], bz = zs[i], cx = xs[i + 2], cz = zs[i + 2];
             const area = Math.abs((bx - ax) * (cz - az) - (bz - az) * (cx - ax)) / 2;
             if (area < 1e-5) continue;
@@ -667,6 +671,7 @@ function roundCorners(line, keepHeight) {
         }
         if (!any) break;
         relax(hot);
+        for(let i = 0; i <= n; i++)check[i] = hot[i] || i >= 2 && hot[i - 2] || i + 2 <= n && hot[i + 2] ? 1 : 0;
     }
     const pts = [];
     for(let i = 0; i <= n; i++)pts.push([

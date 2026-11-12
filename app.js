@@ -120,6 +120,10 @@ function initApp() {
   window.setupMapChrome({ getMap: () => glMap, getLayer: () => threeStripLayer });
 }
 
+// Google's own POI pins, transit icons and flat building shapes fight the 3D city drawn on top,
+// so the ground tiles are styled down to roads, water, land use and street names.
+const GOOGLE_GROUND_STYLE = "&apistyle=" + encodeURIComponent("s.t:2|p.v:off,s.t:4|s.e:l.i|p.v:off,s.t:81|p.v:off");
+
 function initWebGLVegasMap() {
   // Open on the central Strip; Street lanes still jumps to the original MGM intersection.
   glMap = new maplibregl.Map({
@@ -132,6 +136,9 @@ function initWebGLVegasMap() {
     bearing: -12,
     maxZoom: 23.5,
     antialias: true,
+    // Phones render at up to 3x; 2x looks identical on a moving 3D map and costs half the pixels.
+    pixelRatio: Math.min(window.devicePixelRatio || 1, matchMedia("(max-width: 720px), (pointer: coarse)").matches ? 2 : 2.5),
+    fadeDuration: 0,
     maxPitch: 82,
     transformCameraUpdate: () => ({ elevation: threeStripLayer?.getFollowElevation?.() || 0 }),
   });
@@ -155,10 +162,10 @@ function initWebGLVegasMap() {
     glMap.addSource("google-roadmap-lanes", {
       type: "raster",
       tiles: [
-        "https://mt0.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2",
-        "https://mt1.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2",
-        "https://mt2.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2",
-        "https://mt3.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2",
+        "https://mt0.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2" + GOOGLE_GROUND_STYLE,
+        "https://mt1.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2" + GOOGLE_GROUND_STYLE,
+        "https://mt2.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2" + GOOGLE_GROUND_STYLE,
+        "https://mt3.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2" + GOOGLE_GROUND_STYLE,
       ],
       tileSize: 256,
       maxzoom: 22,
@@ -170,8 +177,8 @@ function initWebGLVegasMap() {
       type: "raster",
       attribution: "Map imagery ©2026 Google",
       tiles: [
-        "https://mt0.google.com/vt/lyrs=y&hl=en&x={x}&y={y}&z={z}&scale=2",
-        "https://mt1.google.com/vt/lyrs=y&hl=en&x={x}&y={y}&z={z}&scale=2",
+        "https://mt0.google.com/vt/lyrs=y&hl=en&x={x}&y={y}&z={z}&scale=2" + GOOGLE_GROUND_STYLE,
+        "https://mt1.google.com/vt/lyrs=y&hl=en&x={x}&y={y}&z={z}&scale=2" + GOOGLE_GROUND_STYLE,
       ],
       tileSize: 256,
       maxzoom: 22,

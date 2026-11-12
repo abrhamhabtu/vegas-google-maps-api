@@ -91,7 +91,7 @@ Paste this in the page console (or run it through the browser tool) to drive the
 
 ```js
 window.shot = (lat, lng, zoom, bearing, pitch) => glMap.jumpTo({ center: [lng, lat], zoom, bearing, pitch });
-window.hideUi = () => { for (const s of ['header.top-bar', '.camera-hud', '.view-caption', '.map-hint', '#labels', '#driving-ui', '#av-panel', '#show-controls', '.vegas-hover-tip', '.maplibregl-control-container']) document.querySelectorAll(s).forEach(e => e.style.display = 'none'); };
+window.hideUi = () => { for (const s of ['header.top-bar', '.top-controls', '.camera-hud', '.view-caption', '.map-hint', '#labels', '#driving-ui', '#av-panel', '#show-controls', '.vegas-hover-tip', '.maplibregl-control-container']) document.querySelectorAll(s).forEach(e => e.style.display = 'none'); };
 hideUi(); shot(36.1004, -115.1737, 16.2, 18, 62);
 ```
 
@@ -102,7 +102,7 @@ Take one wide shot matching the reference and one close shot per tower. Keep the
 **Traps that cost time in the worked example:**
 
 - Navigating to the same URL with a different `#hash` does **not** reload. Use `location.reload()`.
-- The city takes about 15 seconds to build. Wait until `document.documentElement.dataset.scene === 'ready'` before judging anything. Until then the night ground is not dimmed and looks white.
+- The city builds in phases (see `world/city.js`): a loading screen covers the map until the skyline exists (~8 s), then roads, bridges and street furniture stream in. Wait until `document.documentElement.dataset.scene === 'ready'` (~20 s) before judging anything. The DevTools Performance panel shows each builder as a `city:*` timing.
 - A browser tab that is not in front does not render. Screenshots of a background tab time out. Bring the tab to the front.
 - The `H` key toggles the controls and the state is remembered across reloads. Use `hideUi()` instead.
 - The console already shows one shader error from `citylights.js` (`iPos` / `vegasProject`). It is old and unrelated. Any *other* shader error is yours.

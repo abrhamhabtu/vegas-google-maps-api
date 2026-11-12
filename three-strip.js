@@ -43,10 +43,30 @@ window.createVegasThreeLayer = function() {
   let themeName = 'day';
 
   const requestFrame = () => { if (!disposed && !document.hidden) map?.triggerRepaint(); };
-  function status(text, state = 'loading') {
+  function status(text, state = 'loading', fraction) {
+    performance.mark(`scene:${text}`);
     const element = document.getElementById('scene-status');
     if (element) { element.textContent = text; element.dataset.state = state; }
     document.documentElement.dataset.scene = state;
+    window.dispatchEvent(new CustomEvent('vegas-progress', { detail: { text, state, fraction } }));
+  }
+  // The city's three groups join the scene as soon as they exist and fill in phase by phase,
+  // so the skyline is on screen long before the last street lamp is built.
+  let parts = null;
+  function attach(groups) {
+    parts = groups;
+    groups.buildings.visible = visible;
+    groups.roads.visible = groups.detail.visible = detailed;
+    scene.add(groups.buildings, groups.roads, groups.detail);
+  }
+  function reveal(phase) {
+    if (disposed || !parts) return;
+    scene.updateMatrixWorld(true);
+    prepareMaterials(scene);
+    theme.apply(themeName);
+    performance.mark(`scene:reveal ${phase}`);
+    window.dispatchEvent(new CustomEvent('vegas-city-reveal', { detail: { phase } }));
+    requestFrame();
   }
   const engine = {
     scene, camera, afterRender: [], updaters: [],
@@ -58,7 +78,9 @@ window.createVegasThreeLayer = function() {
       (object.name === 'road users' ? simulationAnimations : animations).push(entry);
     },
     invalidate: requestFrame,
-    progress: status,
+    progress: (text, fraction) => status(text, 'loading', fraction),
+    attach,
+    reveal,
     yield: () => new Promise(resolve => setTimeout(resolve, 0)),
     schedule(callback, delay) {
       const id = setTimeout(() => { scheduled.delete(id); if (!disposed) callback(); }, delay);
@@ -89,22 +111,24 @@ window.createVegasThreeLayer = function() {
   }
 
   async function load() {
-    status('Preparing Las Vegas…');
+    status('Loading Las Vegas…', 'loading', 0.02);
     try {
       abortController = new AbortController();
       const response = await fetch('landmarks/footprints.json', { signal: abortController.signal });
       if (!response.ok) throw new Error(`City data: HTTP ${response.status}`);
       const raw = await response.json();
+      performance.mark('scene:json parsed');
       if (disposed) return;
       if (raw.origin.lat !== ORIGIN.lat || raw.origin.lon !== ORIGIN.lon) throw new Error('City coordinate origin does not match the map.');
       const data = decode(raw);
+      performance.mark('scene:decoded');
       await engine.yield();
       if (disposed) return;
       city = await buildCity(data, engine);
       if (disposed) return;
-      scene.add(city.buildings, city.roads, city.detail);
-      city.buildings.visible = visible;
-      city.roads.visible = city.detail.visible = detailed;
+      if (!parts) attach(city);
+      performance.mark('scene:city built');
+      window.__vegas = { scene, city, data }; // debugging hook: inspect the built city from the console
       scene.updateMatrixWorld(true);
       prepareMaterials(scene);
       runtime = startFleet(map, data, city, engine, prepareMaterials);

@@ -1,6 +1,6 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
 const THREE = window.THREE;
-import { Chunked, Soup, convexHull, hash, normals, offsetLine, slice } from './geom.js';
+import { Chunked, Soup, cellKey, convexHull, hash, normals, offsetLine, slice } from './geom.js';
 import { boundaryAt, boundaryLine, cornerFillets, edgeLine, offset, roadMask, sample } from './lanegraph.js';
 import { planIntersections } from './intersections.js';
 import { flatMaterial, litMaterial, ORDER, surfaceMaterial } from './materials.js';
@@ -11,7 +11,12 @@ const WALK_HEIGHT = 0.11;
 const CURB_HEIGHT = 0.17;
 const sidewalkWidth = (e)=>e.cls === 'arterial' ? 3.2 : e.cls === 'collector' ? 2.6 : 2.1;
 const roadHeight = (y)=>y > 0.03 ? y : 0;
-export function buildRoads(data, g, valetZones = []) {
+/**
+ * `plan` may be passed in when the caller already ran planIntersections (it mutates the lane graph,
+ * so it must only run once); `pause` is an optional async yield so the long per-edge pass can be
+ * time-sliced and the map stays responsive while the streets build.
+ */
+export async function buildRoads(data, g, valetZones = [], plan = planIntersections(data, g), pause = null) {
     const group = new THREE.Group();
     group.name = 'roads';
     const C = 1400;
@@ -22,7 +27,7 @@ export function buildRoads(data, g, valetZones = []) {
     for (const e of g.edges){
         if (!e.oneway || e.cls !== 'arterial' && e.cls !== 'collector') continue;
         for (const p of e.ref.pts){
-            const k = `${Math.floor(p[0] / 50)},${Math.floor(p[1] / 50)}`;
+            const k = cellKey(Math.floor(p[0] / 50), Math.floor(p[1] / 50));
             const l = oppGrid.get(k);
             if (!l) oppGrid.set(k, [
                 e
@@ -34,7 +39,7 @@ export function buildRoads(data, g, valetZones = []) {
         const mid = sample(e.ref, e.ref.length / 2), nx = -mid.hz, nz = mid.hx;
         let best = Infinity;
         const cx = Math.floor(mid.x / 50), cz = Math.floor(mid.z / 50);
-        for(let i = -1; i <= 1; i++)for(let j = -1; j <= 1; j++)for (const o of oppGrid.get(`${cx + i},${cz + j}`) ?? []){
+        for(let i = -1; i <= 1; i++)for(let j = -1; j <= 1; j++)for (const o of oppGrid.get(cellKey(cx + i, cz + j)) ?? []){
             if (o === e) continue;
             for (const p of o.ref.pts){
                 const dx = p[0] - mid.x, dz = p[1] - mid.z, side = dx * nx + dz * nz, along = dx * mid.hx + dz * mid.hz;
@@ -77,7 +82,6 @@ export function buildRoads(data, g, valetZones = []) {
         addCurb((air ? deckCurb : curb).at(x, z), (air ? deckCurbFaces : curbFaces).at(x, z), piece.pts, heights, from, to);
     };
     const isAir = (l)=>l.y.some((v)=>v > ELEV);
-    const plan = planIntersections(data, g);
     const { legs, mouthStart, mouthEnd, usedCrossings, setback, endSetback, intersectionAt } = plan;
     const edgeCut = (e, atStart)=>{
         const node = atStart ? e.fromNode : e.toNode;
@@ -85,18 +89,34 @@ export function buildRoads(data, g, valetZones = []) {
         return Math.min(mouth?.inner ?? endSetback(e, node), e.ref.length / 2);
     };
     const onGroundRoad = roadMask(g);
+    // Point-on-carriageway tests run millions of times. Each road segment is rasterised once into
+    // a fine grid over everything it can answer "yes" for (its lateral extent padded by PAD), so a
+    // query reads a single cell. Margins above PAD fall back to the original 3x3 coarse scan.
+    const PAD = 4, FINE = 8;
+    const fineCells = (corners, add)=>{
+        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (const [x, z] of corners){ x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+        for(let i = Math.floor(x0 / FINE); i <= Math.floor(x1 / FINE); i++)for(let j = Math.floor(z0 / FINE); j <= Math.floor(z1 / FINE); j++)add(cellKey(i, j));
+    };
+    // the widest lateral range boundary i can reach anywhere along e (tapers ease monotonically)
+    const boundaryRange = (e, i)=>{
+        const base = i * e.laneWidth;
+        const dS = e.jointStart && e.taperStart ? e.jointStart[i] - base : 0, dE = e.jointEnd && e.taperEnd ? e.jointEnd[i] - base : 0;
+        return [base + Math.min(0, dS) + Math.min(0, dE), base + Math.max(0, dS) + Math.max(0, dE)];
+    };
     const buildCarriagewayTest = (pred)=>{
-        const cell = 25, grid = new Map();
+        const cell = 25, grid = new Map(), fine = new Map();
         for (const m of g.edges){
             if (!pred(m)) continue;
             const [ml0, ml1] = extents(m), mW = m.lanes.length * m.laneWidth;
             const lAdd = ml0, rAdd = ml1 - mW;
+            const latLo = boundaryRange(m, 0)[0] + lAdd - PAD, latHi = boundaryRange(m, m.lanes.length)[1] + rAdd + PAD;
             for(let i = 0; i < m.ref.pts.length - 1; i++){
                 const a = m.ref.pts[i], b = m.ref.pts[i + 1];
                 const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / (cell * 0.5)));
                 for(let k = 0; k <= n; k++){
                     const x = a[0] + (b[0] - a[0]) * k / n, z = a[1] + (b[1] - a[1]) * k / n;
-                    const key = `${Math.floor(x / cell)},${Math.floor(z / cell)}`;
+                    const key = cellKey(Math.floor(x / cell), Math.floor(z / cell));
                     let list = grid.get(key);
                     if (!list) grid.set(key, list = []);
                     if (!list.length || list[list.length - 1][0] !== m || list[list.length - 1][1] !== i) list.push([
@@ -106,27 +126,44 @@ export function buildRoads(data, g, valetZones = []) {
                         rAdd
                     ]);
                 }
+                if (L < 1e-4) continue;
+                const hx = (b[0] - a[0]) / L, hz = (b[1] - a[1]) / L, nx = -hz, nz = hx, entry = [m, i, lAdd, rAdd];
+                const at = (s, t)=>[a[0] + hx * s + nx * t, a[1] + hz * s + nz * t];
+                fineCells([at(-1.2, latLo), at(L + 1.2, latLo), at(L + 1.2, latHi), at(-1.2, latHi)], (key)=>{
+                    let list = fine.get(key);
+                    if (!list) fine.set(key, list = []);
+                    list.push(entry);
+                });
             }
         }
+        const hit = (x, z, y, margin, excludeWayId, excludeEdgeId, m, seg, lAdd, rAdd)=>{
+            if (m.id === excludeEdgeId) return false;
+            if (excludeWayId !== undefined && (m.way.id === excludeWayId || m.twin !== undefined && g.edges[m.twin].way.id === excludeWayId)) return false;
+            const u = m.ref.pts[seg], v = m.ref.pts[seg + 1];
+            const dx = v[0] - u[0], dz = v[1] - u[1], L = Math.hypot(dx, dz);
+            if (L < 1e-4) return false;
+            const hx = dx / L, hz = dz / L, nx = -hz, nz = hx;
+            const along = (x - u[0]) * hx + (z - u[1]) * hz;
+            if (along < -1.2 || along > L + 1.2) return false;
+            const t = Math.max(0, Math.min(1, along / L));
+            const my = m.ref.y[seg] + (m.ref.y[seg + 1] - m.ref.y[seg]) * t;
+            if (Math.abs(y - my) > 2.5) return false;
+            const lat = (x - u[0]) * nx + (z - u[1]) * nz;
+            const s = m.ref.cum[seg] + t * L;
+            const leftB = boundaryAt(m, 0, s) + lAdd - margin;
+            const rightB = boundaryAt(m, m.lanes.length, s) + rAdd + margin;
+            return lat >= leftB && lat <= rightB;
+        };
         return (x, z, y, margin, excludeWayId, excludeEdgeId)=>{
+            if (margin <= PAD) {
+                for (const [m, seg, lAdd, rAdd] of fine.get(cellKey(Math.floor(x / FINE), Math.floor(z / FINE))) ?? []){
+                    if (hit(x, z, y, margin, excludeWayId, excludeEdgeId, m, seg, lAdd, rAdd)) return true;
+                }
+                return false;
+            }
             const cx = Math.floor(x / cell), cz = Math.floor(z / cell);
-            for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [m, seg, lAdd, rAdd] of grid.get(`${cx + a},${cz + b}`) ?? []){
-                if (m.id === excludeEdgeId) continue;
-                if (excludeWayId !== undefined && (m.way.id === excludeWayId || m.twin !== undefined && g.edges[m.twin].way.id === excludeWayId)) continue;
-                const u = m.ref.pts[seg], v = m.ref.pts[seg + 1];
-                const dx = v[0] - u[0], dz = v[1] - u[1], L = Math.hypot(dx, dz);
-                if (L < 1e-4) continue;
-                const hx = dx / L, hz = dz / L, nx = -hz, nz = hx;
-                const along = (x - u[0]) * hx + (z - u[1]) * hz;
-                if (along < -1.2 || along > L + 1.2) continue;
-                const t = Math.max(0, Math.min(1, along / L));
-                const my = m.ref.y[seg] + (m.ref.y[seg + 1] - m.ref.y[seg]) * t;
-                if (Math.abs(y - my) > 2.5) continue;
-                const lat = (x - u[0]) * nx + (z - u[1]) * nz;
-                const s = m.ref.cum[seg] + t * L;
-                const leftB = boundaryAt(m, 0, s) + lAdd - margin;
-                const rightB = boundaryAt(m, m.lanes.length, s) + rAdd + margin;
-                if (lat >= leftB && lat <= rightB) return true;
+            for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [m, seg, lAdd, rAdd] of grid.get(cellKey(cx + a, cz + b)) ?? []){
+                if (hit(x, z, y, margin, excludeWayId, excludeEdgeId, m, seg, lAdd, rAdd)) return true;
             }
             return false;
         };
@@ -136,7 +173,7 @@ export function buildRoads(data, g, valetZones = []) {
     const onAnyNonServiceRoad = buildCarriagewayTest((m)=>m.cls !== 'service');
     const onElevatedDeck = buildCarriagewayTest((m)=>!m.internal && isAir(m.ref));
     const onConnector = (()=>{
-        const cell = 25, grid = new Map();
+        const cell = 25, grid = new Map(), fine = new Map();
         for (const k of g.lanes){
             if (!k.connector || k.line.pts.length < 2 || k.line.y.some((v)=>v > 2.0)) continue;
             const hw = (k.width ?? 3.5) * 0.5;
@@ -145,7 +182,7 @@ export function buildRoads(data, g, valetZones = []) {
                 const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / (cell * 0.5)));
                 for(let j = 0; j <= n; j++){
                     const x = a[0] + (b[0] - a[0]) * j / n, z = a[1] + (b[1] - a[1]) * j / n;
-                    const key = `${Math.floor(x / cell)},${Math.floor(z / cell)}`;
+                    const key = cellKey(Math.floor(x / cell), Math.floor(z / cell));
                     let list = grid.get(key);
                     if (!list) grid.set(key, list = []);
                     if (!list.length || list[list.length - 1][0] !== k || list[list.length - 1][1] !== i) list.push([
@@ -154,16 +191,27 @@ export function buildRoads(data, g, valetZones = []) {
                         hw
                     ]);
                 }
+                const r = hw + PAD, entry = [k, i, hw];
+                fineCells([[Math.min(a[0], b[0]) - r, Math.min(a[1], b[1]) - r], [Math.max(a[0], b[0]) + r, Math.max(a[1], b[1]) + r]], (key)=>{
+                    let list = fine.get(key);
+                    if (!list) fine.set(key, list = []);
+                    list.push(entry);
+                });
             }
         }
+        const near = (x, z, margin, k, seg, hw)=>{
+            const u = k.line.pts[seg], v = k.line.pts[seg + 1];
+            const dx = v[0] - u[0], dz = v[1] - u[1], L2 = dx * dx + dz * dz || 1;
+            const t = Math.max(0, Math.min(1, ((x - u[0]) * dx + (z - u[1]) * dz) / L2));
+            return Math.hypot(x - (u[0] + dx * t), z - (u[1] + dz * t)) <= hw + margin;
+        };
         return (x, z, margin = 0.2)=>{
-            const cx = Math.floor(x / cell), cz = Math.floor(z / cell);
-            for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [k, seg, hw] of grid.get(`${cx + a},${cz + b}`) ?? []){
-                const u = k.line.pts[seg], v = k.line.pts[seg + 1];
-                const dx = v[0] - u[0], dz = v[1] - u[1], L2 = dx * dx + dz * dz || 1;
-                const t = Math.max(0, Math.min(1, ((x - u[0]) * dx + (z - u[1]) * dz) / L2));
-                if (Math.hypot(x - (u[0] + dx * t), z - (u[1] + dz * t)) <= hw + margin) return true;
+            if (margin <= PAD) {
+                for (const [k, seg, hw] of fine.get(cellKey(Math.floor(x / FINE), Math.floor(z / FINE))) ?? [])if (near(x, z, margin, k, seg, hw)) return true;
+                return false;
             }
+            const cx = Math.floor(x / cell), cz = Math.floor(z / cell);
+            for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [k, seg, hw] of grid.get(cellKey(cx + a, cz + b)) ?? [])if (near(x, z, margin, k, seg, hw)) return true;
             return false;
         };
     })();
@@ -175,7 +223,7 @@ export function buildRoads(data, g, valetZones = []) {
             const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 20));
             for(let k = 0; k <= n; k++){
                 const x = a[0] + (b[0] - a[0]) * k / n, z = a[1] + (b[1] - a[1]) * k / n;
-                const key = `${Math.floor(x / 40)},${Math.floor(z / 40)}`;
+                const key = cellKey(Math.floor(x / 40), Math.floor(z / 40));
                 let list = medGrid.get(key);
                 if (!list) medGrid.set(key, list = []);
                 if (!list.length || list[list.length - 1][0] !== m || list[list.length - 1][1] !== i) list.push([
@@ -189,7 +237,7 @@ export function buildRoads(data, g, valetZones = []) {
         const lx = hz, lz = -hx;
         let bestT = 34, bestM = null, bestHd = 0, bestDir;
         const cx = Math.floor(x / 40), cz = Math.floor(z / 40);
-        for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [m, seg] of medGrid.get(`${cx + a},${cz + b}`) ?? []){
+        for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [m, seg] of medGrid.get(cellKey(cx + a, cz + b)) ?? []){
             if (m.id === e.id || m.way.id === e.way.id || m.twin === e.id || m.id === e.prev || m.id === e.next) continue;
             const u = m.ref.pts[seg], v = m.ref.pts[seg + 1];
             const dx = v[0] - u[0], dz = v[1] - u[1], L = Math.hypot(dx, dz);
@@ -286,7 +334,12 @@ export function buildRoads(data, g, valetZones = []) {
             cur = cur.next !== undefined ? g.edges[cur.next] : undefined;
         }
     }
+    let sliceStart = performance.now();
     for (const e of g.edges){
+        if (pause && performance.now() - sliceStart > 28) {
+            await pause();
+            sliceStart = performance.now();
+        }
         const [l0, l1] = extents(e);
         const air = isAir(e.ref);
         const flamingoApproach = !air && isFlamingoApproach(e);

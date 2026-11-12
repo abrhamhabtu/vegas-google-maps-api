@@ -8,40 +8,102 @@ window.setupMapChrome = function({ getMap, getLayer }) {
   let currentTheme = 'day';
   const hash = new URLSearchParams(location.hash.slice(1));
 
+  const sheet = byId('sheet'), search = byId('place-search-input');
+  const phone = matchMedia('(max-width: 720px)');
+
+  // ── places: a dropdown list on desktop, the body of a draggable bottom sheet on phones ──
+  function setSheet(state) {
+    sheet.dataset.state = state;
+    sheet.style.removeProperty('--sheet-height');
+    const open = state !== 'peek';
+    places.classList.toggle('hidden', !open);
+    placesButton.setAttribute('aria-expanded', String(open));
+    byId('sheet-grabber').setAttribute('aria-label', open ? 'Collapse places' : 'Expand places');
+  }
   function closePanels(restore = false) {
     const hadPlaces = !places.classList.contains('hidden');
     const hadLayers = !layers.classList.contains('hidden');
-    places.classList.add('hidden'); layers.classList.add('hidden');
-    placesButton.setAttribute('aria-expanded', 'false');
+    if (hadPlaces) setSheet('peek');
+    layers.classList.add('hidden');
     layersButton.setAttribute('aria-expanded', 'false');
-    if (restore && (hadPlaces || hadLayers)) (hadPlaces ? placesButton : layersButton).focus();
+    if (restore && (hadPlaces || hadLayers) && !phone.matches) (hadPlaces ? placesButton : layersButton).focus();
   }
   function togglePanel(panel, button) {
     const wasOpen = !panel.classList.contains('hidden');
     closePanels();
-    if (!wasOpen) {
-      panel.classList.remove('hidden');
-      button.setAttribute('aria-expanded', 'true');
-      if (panel === places) byId('places-filter').focus();
-    }
+    if (wasOpen) return;
+    if (panel === places) setSheet(phone.matches ? 'half' : 'open');
+    else { panel.classList.remove('hidden'); button.setAttribute('aria-expanded', 'true'); }
   }
   placesButton.addEventListener('click', () => togglePanel(places, placesButton));
   layersButton.addEventListener('click', () => togglePanel(layers, layersButton));
   byId('places-close').addEventListener('click', () => closePanels(true));
   byId('layers-close').addEventListener('click', () => closePanels(true));
   document.addEventListener('pointerdown', event => {
-    if (!places.contains(event.target) && !layers.contains(event.target) && !placesButton.contains(event.target) && !layersButton.contains(event.target)) closePanels();
+    const inside = [sheet, layers, layersButton].some(element => element.contains(event.target));
+    if (!inside && event.target.closest?.('.map-stage, #labels')) closePanels();
+    else if (!inside && !layers.classList.contains('hidden') && !event.target.closest?.('.top-controls')) closePanels();
   });
-  byId('places-filter').addEventListener('input', event => {
-    const query = event.target.value.toLowerCase().trim();
+  // typing filters the list; Enter still flies to the best match (app.js)
+  const filterPlaces = query => {
+    query = query.toLowerCase().trim();
     let count = 0;
     document.querySelectorAll('#landmark-chips .chip').forEach(chip => {
       const matches = chip.textContent.toLowerCase().includes(query);
       chip.hidden = !matches;
       if (matches) count++;
     });
+    document.querySelectorAll('#landmark-chips .list-heading').forEach(heading => {
+      let next = heading.nextElementSibling, any = false;
+      while (next && !next.classList.contains('list-heading')) { if (!next.hidden) any = true; next = next.nextElementSibling; }
+      heading.hidden = !any;
+    });
     byId('places-empty').classList.toggle('hidden', count > 0);
+  };
+  search.addEventListener('input', () => {
+    filterPlaces(search.value);
+    if (places.classList.contains('hidden')) setSheet(phone.matches ? 'full' : 'open');
   });
+  search.addEventListener('focus', () => { if (phone.matches) setSheet('full'); });
+  byId('places-filter').addEventListener('input', event => filterPlaces(event.target.value));
+
+  // bottom sheet: tap the grabber to cycle, or drag it like Apple Maps
+  {
+    const order = ['peek', 'half', 'full'];
+    const grabber = byId('sheet-grabber');
+    let drag = null;
+    grabber.addEventListener('click', () => {
+      if (drag?.moved) return;
+      setSheet(order[(order.indexOf(sheet.dataset.state) + 1) % order.length] ?? 'half');
+    });
+    const start = event => {
+      if (!phone.matches || event.target.closest('input, .corridor-chips, button:not(#sheet-grabber)')) return;
+      drag = { y: event.clientY, h: sheet.getBoundingClientRect().height, moved: false, id: event.pointerId };
+      sheet.setPointerCapture?.(event.pointerId);
+    };
+    sheet.addEventListener('pointerdown', start);
+    sheet.addEventListener('pointermove', event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      const dy = drag.y - event.clientY;
+      if (Math.abs(dy) > 4) drag.moved = true;
+      if (!drag.moved) return;
+      sheet.classList.add('dragging');
+      if (places.classList.contains('hidden')) places.classList.remove('hidden');
+      sheet.style.setProperty('--sheet-height', `${Math.max(120, Math.min(innerHeight - 60, drag.h + dy))}px`);
+    });
+    const end = event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      sheet.classList.remove('dragging');
+      if (drag.moved) {
+        const h = sheet.getBoundingClientRect().height, vh = innerHeight;
+        const next = h < vh * 0.32 ? 'peek' : h < vh * 0.72 ? 'half' : 'full';
+        setSheet(next);
+        setTimeout(() => { drag = null; }, 0);
+      } else drag = null;
+    };
+    sheet.addEventListener('pointerup', end);
+    sheet.addEventListener('pointercancel', end);
+  }
   document.querySelectorAll('#landmark-chips .chip').forEach(chip => {
     chip.addEventListener('click', () => {
       byId('view-title').textContent = chip.querySelector('span').textContent;
@@ -49,6 +111,8 @@ window.setupMapChrome = function({ getMap, getLayer }) {
       params.set('view', chip.dataset.view);
       history.replaceState(null, '', '#' + params.toString());
       announce(`Viewing ${byId('view-title').textContent}`);
+      search.value = ''; filterPlaces('');
+      search.blur();
       closePanels(true);
     });
   });
@@ -88,12 +152,17 @@ window.setupMapChrome = function({ getMap, getLayer }) {
     });
     getLayer()?.setTheme(name);
     applyRasterTheme();
+    const icon = document.querySelector(`.theme-control .theme-btn[data-theme="${name}"] svg`);
+    if (icon) byId('theme-cycle').innerHTML = icon.outerHTML;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', name === 'night' ? '#0e1320' : name === 'golden' ? '#f2d2ae' : '#e9eef2');
     const params = new URLSearchParams(location.hash.slice(1));
     params.set('theme', name);
     history.replaceState(null, '', '#' + params.toString());
     announce(`${name === 'golden' ? 'Sunset' : name} lighting`);
   }
   document.querySelectorAll('.theme-btn').forEach(button => button.addEventListener('click', () => setTheme(button.dataset.theme)));
+  const nextTheme = () => ['day', 'golden', 'night'][(['day', 'golden', 'night'].indexOf(currentTheme) + 1) % 3];
+  byId('theme-cycle').addEventListener('click', () => setTheme(nextTheme()));
   for (const [id, method] of [['toggle-streets-btn', 'setStreetsVisible'], ['toggle-labels-btn', 'setLabelsVisible']]) {
     byId(id).addEventListener('click', () => {
       const button = byId(id), selected = !button.classList.contains('active');
@@ -151,7 +220,7 @@ window.setupMapChrome = function({ getMap, getLayer }) {
     if (window.vegasFleet?.selected.phase === 'manual') return;
     if (event.altKey || event.ctrlKey || event.metaKey || /INPUT|SELECT|TEXTAREA/.test(event.target.tagName) || event.target.isContentEditable) return;
     switch (event.key.toLowerCase()) {
-      case 't': setTheme(['day', 'golden', 'night'][(['day', 'golden', 'night'].indexOf(currentTheme) + 1) % 3]); break;
+      case 't': setTheme(nextTheme()); break;
       case 'n': byId('cam-north').click(); break;
       case 'd': byId(getMap()?.getPitch() > 10 ? 'mode-lanes-btn' : 'mode-3d-btn').click(); break;
       case 'p': placesButton.click(); break;
@@ -193,6 +262,58 @@ window.setupMapChrome = function({ getMap, getLayer }) {
   }
   getMap().once('load', onMapReady);
   syncPressed();
+
+  // ── robotaxi panel: shown by default on desktop, tucked away on phones ──
+  const fleetButton = byId('fleet-toggle');
+  const syncFleet = () => {
+    const shown = phone.matches ? document.body.classList.contains('fleet-open') : !document.body.classList.contains('fleet-hidden');
+    fleetButton.setAttribute('aria-pressed', String(shown));
+  };
+  fleetButton.addEventListener('click', () => {
+    if (phone.matches) document.body.classList.toggle('fleet-open');
+    else document.body.classList.toggle('fleet-hidden');
+    if (phone.matches && document.body.classList.contains('fleet-open')) closePanels();
+    syncFleet();
+  });
+  phone.addEventListener('change', () => { syncFleet(); if (!phone.matches) setSheet('peek'); });
+  syncFleet();
+
+  // ── loading screen: real progress, lifted the moment the skyline exists ──
+  const bootText = byId('boot-text'), bootFill = byId('boot-fill');
+  addEventListener('vegas-progress', ({ detail }) => {
+    if (detail.state === 'error') {
+      bootText.textContent = 'The city could not load. Reload to try again.';
+      return;
+    }
+    bootText.textContent = detail.text;
+    if (detail.fraction != null) bootFill.style.width = `${Math.round(detail.fraction * 100)}%`;
+  });
+  addEventListener('vegas-city-reveal', ({ detail }) => {
+    if (detail.phase !== 'skyline') return;
+    bootFill.style.width = '100%';
+    requestAnimationFrame(() => setTimeout(() => {
+      document.body.classList.remove('booting');
+      showHint();
+    }, 120));
+  });
+  addEventListener('vegas-landmarks-ready', () => document.body.classList.remove('booting'));
+
+  // ── one-time gesture tip, worded for the device in hand ──
+  const hint = byId('map-hint');
+  function showHint() {
+    try { if (localStorage.getItem('vegas-hint-seen')) return; } catch { /* storage blocked */ }
+    const touch = matchMedia('(pointer: coarse)').matches;
+    byId('map-hint-text').textContent = touch
+      ? 'Pinch to zoom · twist to rotate · drag two fingers up to tilt'
+      : 'Drag to move · right-drag or ⌃-drag to orbit · scroll to zoom';
+    hint.hidden = false;
+    setTimeout(dismissHint, 9000);
+  }
+  function dismissHint() {
+    hint.hidden = true;
+    try { localStorage.setItem('vegas-hint-seen', '1'); } catch { /* storage blocked */ }
+  }
+  byId('map-hint-close').addEventListener('click', dismissHint);
 
   // Interactive `?` Hover Tooltip Inspector for controls, landmarks, storefronts & vehicles
   let tipEl = document.getElementById('vegas-hover-tip');
