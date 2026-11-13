@@ -76,9 +76,9 @@ export function mountFleetPanel(fleet, engine, { onFollowingChange } = {}) {
     button.setAttribute('aria-label', `Select ${cname}`);
     button.querySelector('i')?.setAttribute('aria-hidden', 'true');
     const carSpecs = {
-      Zoox: 'Bi-directional purpose-built robotaxi (3.63m) with 4-wheel steering and 360° LiDAR/radar dome architecture.',
-      Waymo: 'Waymo 5th-Gen Driver with rooftop 360° LiDAR dome, perimeter short-range sensors, and high-visibility compute suite.',
-      Tesla: 'Vision-first FSD Robotaxi with sleek aerodynamic profile, wraparound LED lightbar, and assertive lane planner.'
+      Zoox: '3.63 m bidirectional robotaxi with sliding glass doors, four corner sensor pods, and four-wheel steering.',
+      Waymo: 'Silver Ojai with the sixth-generation Waymo Driver, a wide roof sensor bar, and fender and rear sensors.',
+      Tesla: 'Gold two-seat Cybercab with butterfly doors, flush exterior cameras, and front and rear lightbars.'
     };
     button.dataset.tipTitle = `${cname} Autonomous Vehicle`;
     button.dataset.tipSub = 'Click to select & follow on the Las Vegas Strip';

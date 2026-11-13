@@ -6,6 +6,7 @@ import { buildLaneGraph, roadMask } from '../landmarks/vendor/map/lanegraph.js';
 import { mainValetStops } from '../landmarks/vendor/map/valetstops.js';
 import { Driver, planPath, PROFILES, routeIndex } from '../landmarks/vendor/sim/driver.js';
 import { arrivesAt, ridePlaces, stopOn } from '../landmarks/vendor/sim/places.js';
+import { ROBOTAXI_DIMENSIONS } from '../world/robotaxi-dimensions.mjs';
 const data = decode(JSON.parse(readFileSync('landmarks/footprints.json', 'utf8')));
 const graph = buildLaneGraph(data);
 planIntersections(data, graph);
@@ -19,24 +20,9 @@ const by = (n)=>{
     return p;
 };
 const CARS = {
-    Zoox: {
-        wheelbase: 2.72,
-        nose: 3.17,
-        length: 3.63,
-        width: 1.94
-    },
-    Waymo: {
-        wheelbase: 3.0,
-        nose: 3.85,
-        length: 4.69,
-        width: 1.99
-    },
-    Tesla: {
-        wheelbase: 2.78,
-        nose: 3.6,
-        length: 4.42,
-        width: 1.88
-    }
+    Zoox: ROBOTAXI_DIMENSIONS.zoox,
+    Waymo: ROBOTAXI_DIMENSIONS.waymo,
+    Tesla: ROBOTAXI_DIMENSIONS.tesla
 };
 const carNames = Object.keys(CARS);
 const lanesAt = (p)=>{

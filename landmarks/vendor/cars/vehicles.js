@@ -1,7 +1,8 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
 const THREE = window.THREE;
 import { sheen } from '../landmarks/sheen.js';
-import { buildCar, buildRobotaxi, buildTaxi, buildWaymo, buildZoox, compactCar } from './models.js';
+import { buildCar, buildTaxi, compactCar } from './models.js';
+import { buildRobotaxiModel } from '../../../world/robotaxis.js';
 const PAINTS = [
     '#e9e9e6',
     '#17181b',
@@ -20,7 +21,7 @@ export const CAR_NAMES = {
 export const CAR_DOT = {
     zoox: '#7fd8c0',
     waymo: '#27b6d6',
-    tesla: '#c9ced6'
+    tesla: '#cdaa73'
 };
 const translated = new Map();
 function dressed(m) {
@@ -96,7 +97,7 @@ export const beamMaterial = ()=>{
 };
 export function buildVehicle(kind, tint = 0) {
     const paint = PAINTS[tint % PAINTS.length];
-    const car = kind === 'zoox' ? buildZoox() : kind === 'waymo' ? buildWaymo() : kind === 'tesla' ? compactCar(buildRobotaxi()) : kind === 'taxi' ? compactCar(buildTaxi()) : compactCar(buildCar(kind, kind === 'van' ? '#e6e6e2' : paint));
+    const car = buildRobotaxiModel(kind) ?? compactCar(kind === 'taxi' ? buildTaxi() : buildCar(kind, kind === 'van' ? '#e6e6e2' : paint));
     car.traverse((o)=>{
         const m = o;
         if (!m.isMesh) return;
@@ -122,18 +123,21 @@ export function buildVehicle(kind, tint = 0) {
     shadow.position.set(-rear + (box.max.x + box.min.x) / 2, -0.012, 0);
     shadow.renderOrder = 54;
     root.add(shadow);
-    const brake = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, (box.max.z - box.min.z) * 0.72), new THREE.MeshBasicMaterial({
-        color: new THREE.Color(3.2, 0.12, 0.08),
-        toneMapped: false
-    }));
-    brake.position.set(-rear + box.min.x - 0.02, kind === 'waymo' ? 1.5 : 0.95, 0);
-    brake.visible = false;
-    root.add(brake);
+    let brake = car.userData.brake;
+    if (!brake) {
+        brake = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, (box.max.z - box.min.z) * 0.72), new THREE.MeshBasicMaterial({
+            color: new THREE.Color(3.2, 0.12, 0.08),
+            toneMapped: false
+        }));
+        brake.position.set(-rear + box.min.x - 0.02, 0.95, 0);
+        brake.visible = false;
+        root.add(brake);
+    }
     const beams = new THREE.Mesh(new THREE.PlaneGeometry(5.5, 20).rotateX(-Math.PI / 2).rotateY(-Math.PI / 2), beamMaterial());
     beams.position.set(-rear + box.max.x + 10, 0.08, 0);
     beams.renderOrder = 55;
     root.add(beams);
-    let spin = 0, pitch = 0, roll = 0;
+    let wheelTravel = 0, pitch = 0, roll = 0;
     const body = car.userData.body;
     return {
         root,
@@ -144,13 +148,14 @@ export function buildVehicle(kind, tint = 0) {
             wheelbase,
             width: box.max.z - box.min.z,
             nose: -rear + box.max.x,
+            ...car.userData.size,
             radius
         },
         animate: (dist, steer, accel, side)=>{
-            spin -= dist / radius;
+            wheelTravel += dist;
             for (const w of wheels){
                 const u = w.userData;
-                u.spin.rotation.z = spin * (u.side < 0 ? -1 : 1);
+                u.spin.rotation.z = -wheelTravel / (u.radius ?? radius) * u.side;
                 if (u.front) w.rotation.y = steer;
                 else if (kind === 'zoox') w.rotation.y = -steer;
             }
