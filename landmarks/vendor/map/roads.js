@@ -7,6 +7,7 @@ import { flatMaterial, litMaterial, ORDER, surfaceMaterial } from './materials.j
 import { arrowMarking, dashRuns, offsetStation, widestClearSpan, zebraBars } from '../../../world/road-visuals.mjs';
 import { CROSSWALK_HALF, CROSSWALK_OFFSET, guideClearsCrossing, paintSpans, planCrossingPaint } from '../../../world/road-crossings.mjs';
 import { BRIDGE_SLAB_DEPTH } from '../../../world/road-surface.mjs';
+import { planBridgeDecks } from '../../../world/bridge-decks.mjs';
 import { STRIP_PAVEMENT, hasPavedStripMedian, planStripStreets } from '../../../world/strip-streets.mjs';
 const ELEV = 0.4;
 const WALK_HEIGHT = 0.11;
@@ -24,41 +25,10 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
     const C = 1400;
     const sidewalk = new Chunked(C), curb = new Chunked(C), curbFaces = new Chunked(C), medians = new Chunked(C), medianPaving = new Chunked(C);
     const concreteMedians = new Chunked(C), medianPlanting = new Chunked(C), slipPavement = new Chunked(C);
-    const deckWalk = new Chunked(C), deckCurb = new Chunked(C), deckCurbFaces = new Chunked(C), deckMedian = new Chunked(C), deckMedianPaving = new Chunked(C);
-    const oppGrid = new Map();
-    for (const e of g.edges){
-        if (!e.oneway || e.cls !== 'arterial' && e.cls !== 'collector') continue;
-        for (const p of e.ref.pts){
-            const k = cellKey(Math.floor(p[0] / 50), Math.floor(p[1] / 50));
-            const l = oppGrid.get(k);
-            if (!l) oppGrid.set(k, [
-                e
-            ]);
-            else if (l[l.length - 1] !== e) l.push(e);
-        }
-    }
-    const medianGap = (e)=>{
-        const mid = sample(e.ref, e.ref.length / 2), nx = -mid.hz, nz = mid.hx;
-        let best = Infinity;
-        const cx = Math.floor(mid.x / 50), cz = Math.floor(mid.z / 50);
-        for(let i = -1; i <= 1; i++)for(let j = -1; j <= 1; j++)for (const o of oppGrid.get(cellKey(cx + i, cz + j)) ?? []){
-            if (o === e || o.way.name !== e.way.name || o.cls !== e.cls) continue;
-            for (let k = 0; k < o.ref.pts.length; k++){
-                const p = o.ref.pts[k];
-                if (Math.abs(o.ref.y[k] - mid.y) > 1.2) continue;
-                const dx = p[0] - mid.x, dz = p[1] - mid.z, side = dx * nx + dz * nz, along = dx * mid.hx + dz * mid.hz;
-                if (side >= 0 || Math.abs(along) > 60) continue;
-                const q = o.ref.pts[Math.min(k + 1, o.ref.pts.length - 1)], r = o.ref.pts[Math.max(k - 1, 0)];
-                const hd = (q[0] - r[0]) * mid.hx + (q[1] - r[1]) * mid.hz;
-                if (hd >= 0) continue;
-                best = Math.min(best, -side);
-            }
-        }
-        return best;
-    };
+    const deckWalk = new Chunked(C), deckCurb = new Chunked(C), deckCurbFaces = new Chunked(C), deckMedianPaving = new Chunked(C);
     const asphalt = new Chunked(C), major = new Chunked(C), freeway = new Chunked(C), service = new Chunked(C), aisle = new Chunked(C);
     const paint = new Chunked(C), paintDim = new Chunked(C), paintYellow = new Chunked(C);
-    const deckTop = new Chunked(C), deckPaint = new Chunked(C), deckPaintYellow = new Chunked(C);
+    const deckTop = new Chunked(C), freewayDeckTop = new Chunked(C), deckPaint = new Chunked(C), deckPaintYellow = new Chunked(C);
     const deckSide = new Soup(), deckCoping = new Soup();
     const pillars = new Soup();
     const surfaceFor = (e)=>e.cls === 'motorway' || e.cls === 'ramp' ? freeway : e.cls === 'arterial' || e.way.hw === 'primary_link' || e.way.hw === 'trunk_link' ? major : e.cls === 'service' ? e.way.svc === 'parking_aisle' ? aisle : service : asphalt;
@@ -75,13 +45,45 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             W + 0.15
         ];
     };
-    const sidewalkPiece = (piece, from, to, walkWidth, air = false)=>{
+    const deckRims = new Map();
+    const bridgePlan = planBridgeDecks(g.edges, e=>{
+        const rim = edgeLine(e, d=>boundaryAt(e, 0, d) + extents(e)[0]);
+        deckRims.set(e.id, rim);
+        return rim;
+    });
+    for (const { a, left, right } of bridgePlan.spans) {
+        const [x, z] = left.pts[0];
+        ribbonSplit(surfaceFor(a).at(x, z), deckTop.at(x, z), left, right);
+        deckUnderside(deckSide, left, right);
+    }
+    const sidewalkPiece = (piece, from, to, walkWidth, air = false, taper)=>{
         if (piece.pts.length < 2) return;
         const [x, z] = piece.pts[0];
         const heights = piece.y.map((y)=>air ? roadHeight(y) : 0);
         if (walkWidth > 0) {
-            const [lo, hi] = to > from ? [from, from + walkWidth] : [from - walkWidth, from];
-            (air ? deckWalk : sidewalk).at(x, z).ribbon(piece.pts, lo, hi, heights.map((y)=>y + WALK_HEIGHT));
+            const walk = (air ? deckWalk : sidewalk).at(x, z);
+            if (taper?.some(Boolean)) {
+                const line = makeLine(piece.pts, heights);
+                const [start, end] = taper.map(m=>Math.min(m, line.length * 0.4));
+                const stations = new Set(line.cum);
+                for (let d = 1; d < start; d++) stations.add(d);
+                for (let d = 1; d < end; d++) stations.add(line.length - d);
+                if (start) stations.add(start);
+                if (end) stations.add(line.length - end);
+                const ds = [...stations].sort((a, b)=>a - b).filter((d, i, all)=>!i || d - all[i - 1] > 1e-5);
+                const samples = ds.map(d=>sample(line, d)), pts = samples.map(q=>[q.x, q.z]), y = samples.map(q=>q.y);
+                const ns = normals(pts), sign = Math.sign(to - from);
+                const outer = pts.map(([px, pz], i)=>{
+                    const d = ds[i];
+                    const t = Math.min(1, start ? d / start : 1, end ? (line.length - d) / end : 1);
+                    const w = sign * walkWidth * t * t * (3 - 2 * t);
+                    return [px + ns[i][0] * w, pz + ns[i][1] * w];
+                });
+                ribbonY(walk, { pts, y }, { pts: outer, y }, WALK_HEIGHT);
+            } else {
+                const [lo, hi] = to > from ? [from, from + walkWidth] : [from - walkWidth, from];
+                walk.ribbon(piece.pts, lo, hi, heights.map((y)=>y + WALK_HEIGHT));
+            }
         }
         addCurb((air ? deckCurb : curb).at(x, z), (air ? deckCurbFaces : curbFaces).at(x, z), piece.pts, heights, from, to);
     };
@@ -179,7 +181,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
     const onMainCarriageway = buildCarriagewayTest((m)=>!m.internal && m.cls !== 'service' && m.cls !== 'ramp' && !/_link$/.test(m.way.hw));
     const onLinkOrSvcCarriageway = buildCarriagewayTest((m)=>!m.internal && (/_link$/.test(m.way.hw) || m.cls === 'ramp' || m.cls === 'service' && m.way.svc !== 'parking_aisle'));
     const onAnyNonServiceRoad = buildCarriagewayTest((m)=>m.cls !== 'service');
-    const onElevatedDeck = buildCarriagewayTest((m)=>!m.internal && isAir(m.ref), 0.45);
+    const onElevatedDeck = buildCarriagewayTest((m)=>isAir(m.ref), 0.45);
     const onConnector = (()=>{
         const cell = 25, grid = new Map(), fine = new Map();
         for (const k of g.lanes){
@@ -383,44 +385,51 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         const W = e.lanes.length * e.laneWidth;
         const isLink = /_link$/.test(e.way.hw);
         const isLinkOrRamp = isLink || e.cls === 'ramp';
+        const surface = surfaceFor(e);
+        const leftRoad = deckRims.get(e.id) ?? edgeLine(e, (at)=>boundaryAt(e, 0, at) + l0);
+        const rightRoad = edgeLine(e, (at)=>boundaryAt(e, e.lanes.length, at) + l1 - W);
         if (air) {
             const sp = e.ref.pts;
             const bridgeSw = !e.internal && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local') && !isLink ? sidewalkWidth(e) : 0;
-            const medGap = !e.internal && e.oneway && (e.cls === 'arterial' || e.cls === 'collector') && !isLink ? medianGap(e) : Infinity;
-            const medHalf = medGap > 0.4 && medGap < 30 ? medGap * 0.5 + 0.35 : 0;
             const elevTaper = (at)=>{
                 const y = sample(e.ref, at).y;
                 return Math.min(1, Math.max(0, (y - 0.08) / 2.2));
             };
-            const leftDeck = edgeLine(e, (at)=>boundaryAt(e, 0, at) + l0 - medHalf * elevTaper(at));
-            const rightDeck = edgeLine(e, (at)=>boundaryAt(e, e.lanes.length, at) + l1 - W + bridgeSw * elevTaper(at));
-            const s = deckTop.at(sp[0][0], sp[0][1]);
-            const sg = surfaceFor(e).at(sp[0][0], sp[0][1]);
-            ribbonSplit(sg, s, leftDeck, rightDeck);
-            deckSides(deckSide, deckCoping, leftDeck, rightDeck, e, onElevatedDeck, blocksSupport, medHalf > 0 || e.twin !== undefined);
+            const rightDeck = bridgeSw ? edgeLine(e, (at)=>boundaryAt(e, e.lanes.length, at) + l1 - W + bridgeSw * elevTaper(at)) : rightRoad;
+            const s = (surface === freeway ? freewayDeckTop : deckTop).at(sp[0][0], sp[0][1]);
+            ribbonSplit(surface.at(sp[0][0], sp[0][1]), s, leftRoad, rightDeck);
+            deckUnderside(deckSide, leftRoad, rightDeck);
+            if (e.twin === undefined) {
+                for (const [from, to] of paintSpans(0, leftRoad.length, bridgePlan.joined.get(e.id) ?? [])) {
+                    deckWall(deckSide, deckCoping, slice(leftRoad.pts, from, to, leftRoad.y), -1, e, onElevatedDeck, blocksSupport);
+                }
+            }
+            deckWall(deckSide, deckCoping, rightDeck, 1, e, onElevatedDeck, blocksSupport);
             if (e.oneway || e.twin === undefined || e.id < e.twin) {
-                pillarsAlong(pillars, e, leftDeck, rightDeck, blocksSupport);
+                pillarsAlong(pillars, e, leftRoad, rightDeck, blocksSupport);
             }
         } else {
-            const s = surfaceFor(e).at(e.ref.pts[0][0], e.ref.pts[0][1]);
-            ribbonY(s, edgeLine(e, (at)=>boundaryAt(e, 0, at) + l0), edgeLine(e, (at)=>boundaryAt(e, e.lanes.length, at) + l1 - W), null);
+            ribbonY(surface.at(e.ref.pts[0][0], e.ref.pts[0][1]), leftRoad, rightRoad, null);
         }
         if (!e.internal && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local')) {
             const sw = sidewalkWidth(e);
             const cut0 = edgeCut(e, true), cut1 = e.ref.length - edgeCut(e, false);
-            const outer = edgeLine(e, (d)=>boundaryAt(e, e.lanes.length, d) + l1 - W);
+            const outer = rightRoad;
+            const byRamp = e.rampJoin || g.edges[e.prev]?.joinAcross || g.edges[e.next]?.joinAcross;
             const oSpans = clearSpans(cut0, cut1, 1.35, (d)=>{
                 const q = atStation(e, outer, d), nx = -q.hz, nz = q.hx;
                 if (onAnyNonServiceRoad(q.x + nx * 0.42, q.z + nz * 0.42, q.y, 0.10, e.way.id, e.id)) return false;
                 if (onLinkOrSvcCarriageway(q.x + nx * 1.1, q.z + nz * 1.1, q.y, 0.10, e.way.id, e.id)) return false;
+                if (byRamp && !isLink && onLinkOrSvcCarriageway(q.x + nx * sw, q.z + nz * sw, q.y, 0.25, e.way.id, e.id)) return false;
                 return q.y > 1.5 || !onConnector(q.x + nx * 0.65, q.z + nz * 0.65, 0.08);
             });
             for (const [s0, s1] of oSpans){
                 const piece = sliceStations(e, outer, s0, s1);
-                sidewalkPiece(piece, 0, 0.25, isLink ? 0 : sw, air);
+                const taper = byRamp && !isLink && s1 - s0 >= 4 ? [s0 > cut0 + 0.15 ? 6 : 0, s1 < cut1 - 0.15 ? 6 : 0] : undefined;
+                sidewalkPiece(piece, 0, 0.25, isLink ? 0 : sw, air, taper);
             }
             if (e.oneway && isLink) {
-                const left = edgeLine(e, (d)=>boundaryAt(e, 0, d) + l0);
+                const left = leftRoad;
                 const lSpans = clearSpans(cut0, cut1, 1.35, (d)=>{
                     const q = atStation(e, left, d), nx = -q.hz, nz = q.hx;
                     return !onAnyNonServiceRoad(q.x - nx * 0.42, q.z - nz * 0.42, q.y, 0.1, e.way.id, e.id) && (q.y > 1.5 || !onConnector(q.x - nx * 0.6, q.z - nz * 0.6, 0.08));
@@ -437,12 +446,16 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             const startMouth = mouthStart.get(e.id), endMouth = mouthEnd.get(e.id);
             const cut0 = Math.min((stripApproach ? startMouth?.band?.[0] : undefined) ?? startMouth?.clear ?? edgeCut(e, true), e.ref.length / 2);
             const cut1 = Math.min((stripApproach ? endMouth?.band?.[0] : undefined) ?? endMouth?.stop ?? edgeCut(e, false), e.ref.length / 2);
-            const left = edgeLine(e, (d)=>boundaryAt(e, 0, d) + l0);
+            const left = leftRoad;
             const profiles = new Map();
             const profileAt = (d)=>{
                 if (!profiles.has(d)) {
                     const q = atStation(e, left, d);
-                    profiles.set(d, medianProfileAt(e, q.x, q.z, q.hx, q.hz, q.y, stripApproach));
+                    const joined = !air || q.y < 0.03 || bridgePlan.joined.get(e.id)?.some(([a, b])=>{
+                        const s = offsetStation(e.ref, left, d);
+                        return a <= s && s <= b;
+                    });
+                    profiles.set(d, joined ? medianProfileAt(e, q.x, q.z, q.hx, q.hz, q.y, stripApproach || e.rampJoin) : undefined);
                 }
                 return profiles.get(d);
             };
@@ -468,8 +481,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 const across = (i, w)=>[pts[i][0] - ns[i][0] * w, pts[i][1] - ns[i][1] * w];
                 const opposite = widths.map((w, i)=>across(i, w));
                 // Pavement spans the matched gap, including any opening used by a turn.
-                const pavement = air ? deckTop : surfaceFor(e);
-                ribbonY(pavement.at(x, z), {pts: opposite, y: heights}, {pts, y: heights}, air ? 0 : null);
+                if (!air) ribbonY(surface.at(x, z), {pts: opposite, y: heights}, {pts, y: heights}, null);
                 for (let start = 0; start < pts.length - 1; start++){
                     if (!crowns[start]) continue;
                     let end = start + 1;
@@ -491,7 +503,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                         }
                         const y = heights.slice(start, end);
                         const planted = len >= 7 && maxWidth >= 1.7;
-                        const target = stripApproach ? concreteMedians : planted ? (air ? deckMedian : medians) : (air ? deckMedianPaving : medianPaving);
+                        const target = air ? deckMedianPaving : stripApproach ? concreteMedians : planted ? medians : medianPaving;
                         ribbonY(target.at(x, z), {pts: far, y}, {pts: near, y}, WALK_HEIGHT);
                         if (stripApproach && len >= 5 && maxWidth >= 2.8 && !hasPavedStripMedian(e)) {
                             const inner = [[], []];
@@ -789,8 +801,9 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             ...corners(pa, la, ra + 0.15),
             ...corners(pb, lb, rb + 0.15)
         ]);
-        if (pa.y > ELEV || pb.y > ELEV) {
-            if (hull.length >= 3) deckTop.at(pa.x, pa.z).polygon(hull, Math.max(0.06, 0.5 * (pa.y + pb.y)));
+        if (pa.y > 0.03 || pb.y > 0.03) {
+            const target = surfaceFor(A) === freeway && surfaceFor(B) === freeway ? freewayDeckTop : deckTop;
+            if (hull.length >= 3) target.at(pa.x, pa.z).polygon(hull, 0.5 * (pa.y + pb.y));
             continue;
         }
         if (hull.length >= 3) surfaceFor(A.cls === 'motorway' ? A : B).at(pa.x, pa.z).polygon(hull, 0);
@@ -805,9 +818,10 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
     }
     for (const [id, r] of setback){
         const node = g.nodes.get(id);
-        const pts = [];
+        const pts = [], rims = [];
         let air = false;
         let surf = asphalt;
+        let freewayOnly = true;
         for (const ei of [
             ...node.inEdges,
             ...node.outEdges
@@ -826,6 +840,11 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 p.z + nz * l1
             ]);
             const q = sample(e.ref, atStart ? 0 : e.ref.length);
+            const [qx, qz] = (atStart ? e.mitreStart : e.mitreEnd) ?? [-q.hz, q.hx];
+            const end = atStart ? 0 : e.ref.length;
+            const lo = boundaryAt(e, 0, end) + l0;
+            const hi = boundaryAt(e, e.lanes.length, end) + l1 - e.lanes.length * e.laneWidth;
+            rims.push([q.x + qx * lo, q.z + qz * lo], [q.x + qx * hi, q.z + qz * hi]);
             pts.push([
                 q.x + nx * l0,
                 q.z + nz * l0
@@ -835,12 +854,16 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             ]);
             if (p.y > ELEV) air = true;
             if (e.cls === 'arterial') surf = major;
+            if (surfaceFor(e) !== freeway) freewayOnly = false;
         }
-        const hull = convexHull(pts);
+        // The raised approach ribbons already cover the approach grade. A flat
+        // pad at node.y can cut across a rising carriageway many metres early.
+        const raised = air || node.y > ELEV;
+        const hull = convexHull(raised ? rims : pts);
         if (hull.length < 3) continue;
         const span = Math.max(...hull.map((p)=>Math.hypot(p[0] - node.x, p[1] - node.z)));
         if (span > r * 3 + 25) continue;
-        if (air) deckTop.at(node.x, node.z).polygon(hull, node.y + 0.01);
+        if (raised) (freewayOnly ? freewayDeckTop : deckTop).at(node.x, node.z).polygon(hull, Math.max(0, node.y - 0.015));
         else surf.at(node.x, node.z).polygon(hull, 0);
     }
     for (const hull of cornerFillets(g))service.at(hull[0][0], hull[0][1]).polygon(hull, 0);
@@ -1105,9 +1128,12 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         depthWrite: true,
         polygonOffset: -1
     });
-    const bridgeDecks = deckTop.meshes(deckMat, 'deck', ORDER.solid);
+    const freewayDeckMat = surfaceMaterial('freeway', {
+        grain: 0.13, weathering: 0.08, deckTint: 'bridgeRoad', depthWrite: true, polygonOffset: -1
+    });
+    const bridgeDecks = [...deckTop.meshes(deckMat, 'deck', ORDER.solid),
+        ...freewayDeckTop.meshes(freewayDeckMat, 'freeway-deck', ORDER.solid)];
     add(bridgeDecks);
-    add(deckMedian.meshes(medianMat, 'deck-median', ORDER.solid + 0.1));
     add(deckMedianPaving.meshes(walkMat, 'deck-median-paving', ORDER.solid + 0.1));
     add(deckWalk.meshes(walkMat, 'deck-sidewalk', ORDER.solid + 0.2));
     add(deckCurbFaces.meshes(faceMat, 'deck-curb-faces', ORDER.solid + 0.3));
@@ -1158,36 +1184,44 @@ function ribbonSplit(ground, deck, left, right) {
         target.idx.push(v0, v2, v1, v1, v2, v3);
     }
 }
-function deckSides(s, coping, left, right, e, onElevDeck, blocksSupport, skipLeftWall) {
-    // Keep the underside continuous even when adjacent deck edges merge.
+function deckUnderside(s, left, right) {
     const underside = (line, k)=>s.vert(line.pts[k][0], Math.max(0, line.y[k] - BRIDGE_SLAB_DEPTH), line.pts[k][1], [0, -1, 0]);
     for (let i = 0; i < left.pts.length - 1; i++){
         if (Math.max(left.y[i], left.y[i + 1], right.y[i], right.y[i + 1]) < 2.5) continue;
         s.quad(underside(left, i), underside(right, i), underside(right, i + 1), underside(left, i + 1));
     }
-    for (const [line, sign] of [[left, -1], [right, 1]]){
-        if (sign < 0 && skipLeftWall) continue;
-        const n = normals(line.pts);
-        const top = (p, y, k, inset)=>coping.vert(
-            p[0] - n[k][0] * sign * inset, y + 0.005, p[1] - n[k][1] * sign * inset, [0, 1, 0]);
-        for (let i = 0; i < line.pts.length - 1; i++){
-            const a = line.pts[i], b = line.pts[i + 1], ya = line.y[i], yb = line.y[i + 1];
-            if (Math.max(ya, yb) <= 0.12) continue;
-            const yMin = Math.min(ya, yb), yMid = (ya + yb) * 0.5;
-            const mx = (a[0] + b[0]) * 0.5, mz = (a[1] + b[1]) * 0.5;
-            const nx = n[i][0] * sign, nz = n[i][1] * sign;
-            if (onElevDeck(mx + nx * 1.35, mz + nz * 1.35, yMid, 0.9, undefined, e.id)) continue;
-            const openSpan = yMin >= 4.2 || blocksSupport(mx + nx * 0.8, mz + nz * 0.8, 0, Math.max(0, yMin - 0.5), 1.6, e);
-            const ba = openSpan ? Math.max(0, ya - BRIDGE_SLAB_DEPTH) : 0;
-            const bb = openSpan ? Math.max(0, yb - BRIDGE_SLAB_DEPTH) : 0;
-            const ta = ya + Math.min(0.85, Math.max(0, (ya - 0.12) * 0.42));
-            const tb = yb + Math.min(0.85, Math.max(0, (yb - 0.12) * 0.42));
-            const nn = [nx, 0, nz];
-            const v0 = s.vert(a[0], ba, a[1], nn), v1 = s.vert(b[0], bb, b[1], nn);
-            const v2 = s.vert(b[0], tb, b[1], nn), v3 = s.vert(a[0], ta, a[1], nn);
+}
+function deckWall(s, coping, line, sign, e, onElevDeck, blocksSupport) {
+    const n = normals(line.pts);
+    const parapetHeight = y=>y + Math.min(0.85, Math.max(0, (y - 0.12) * 0.42));
+    for (let i = 0; i < line.pts.length - 1; i++) {
+        const a = line.pts[i], b = line.pts[i + 1], ya = line.y[i], yb = line.y[i + 1];
+        if (Math.max(ya, yb) <= 0.12) continue;
+        const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (length < 1e-4) continue;
+        const nx = (a[1] - b[1]) * sign / length, nz = (b[0] - a[0]) * sign / length;
+        const nn = [nx, 0, nz];
+        const count = Math.max(1, Math.ceil(length / 4));
+        const at = (t)=>({
+            x: a[0] + (b[0] - a[0]) * t, z: a[1] + (b[1] - a[1]) * t, y: ya + (yb - ya) * t,
+            nx: (n[i][0] + (n[i + 1][0] - n[i][0]) * t) * sign,
+            nz: (n[i][1] + (n[i + 1][1] - n[i][1]) * t) * sign
+        });
+        const top = (p, y, inset)=>coping.vert(p.x - p.nx * inset, y + 0.005, p.z - p.nz * inset, [0, 1, 0]);
+        for (let j = 0; j < count; j++) {
+            const p = at(j / count), q = at((j + 1) / count), m = at((j + 0.5) / count);
+            if (onElevDeck(m.x + nx * 1.35, m.z + nz * 1.35, m.y, 0.9, undefined, e.id)) continue;
+            const bottom = (v)=>{
+                const overRoad = blocksSupport(v.x + nx * 0.8, v.z + nz * 0.8, 0, Math.max(0, v.y - 0.5), 1.6, e);
+                const open = overRoad ? 1 : Math.max(0, Math.min(1, (v.y - 2.8) / 1.4));
+                return Math.max(0, v.y - BRIDGE_SLAB_DEPTH) * open;
+            };
+            const ta = parapetHeight(p.y), tb = parapetHeight(q.y);
+            const v0 = s.vert(p.x, bottom(p), p.z, nn), v1 = s.vert(q.x, bottom(q), q.z, nn);
+            const v2 = s.vert(q.x, tb, q.z, nn), v3 = s.vert(p.x, ta, p.z, nn);
             if (sign > 0) s.quad(v0, v1, v2, v3);
             else s.quad(v1, v0, v3, v2);
-            coping.quad(top(a, ta, i, 0), top(b, tb, i + 1, 0), top(b, tb, i + 1, 0.18), top(a, ta, i, 0.18));
+            coping.quad(top(p, ta, 0), top(q, tb, 0), top(q, tb, 0.18), top(p, ta, 0.18));
         }
     }
 }

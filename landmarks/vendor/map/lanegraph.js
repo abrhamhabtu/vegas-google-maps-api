@@ -46,6 +46,10 @@ export function makeLine(pts, y) {
     };
 }
 export function boundaryAt(e, i, at) {
+    if (e.joinAcross) {
+        const t = Math.max(0, Math.min(1, at / e.ref.length));
+        return e.jointStart[i] + (e.jointEnd[i] - e.jointStart[i]) * t;
+    }
     const base = i * e.laneWidth;
     let d = 0;
     const ease = (t)=>{
@@ -116,6 +120,87 @@ function densify(line, a, b, step) {
     pts.push(line.pts[line.pts.length - 1]);
     y.push(line.y[line.y.length - 1]);
     return makeLine(pts, y);
+}
+
+// Some link ways meet at the mapped centreline even though they feed an outside lane.
+// Use the added lane's cross-section when the lane counts and through alignment agree.
+function alignRampBranches(edges, nodes) {
+    const byRoad = new Map();
+    for (const node of nodes.values()) {
+        const split = node.inEdges.length === 1 && node.outEdges.length === 2;
+        const merge = node.inEdges.length === 2 && node.outEdges.length === 1;
+        if ((!split && !merge) || node.id < 0) continue;
+        const road = edges[(split ? node.inEdges : node.outEdges)[0]];
+        const pair = (split ? node.outEdges : node.inEdges).map(id=>edges[id]);
+        const through = pair.find(e=>split ? road.next === e.id : e.next === road.id);
+        if (!through || !road.oneway || !through.oneway || !road.way.name || road.way.name !== through.way.name) continue;
+        const branch = pair.find(e=>e !== through);
+        const added = road.lanes.length - through.lanes.length;
+        if (!branch.oneway || !branch.way.hw.endsWith('_link') || added !== branch.lanes.length) continue;
+        const roadAt = split ? road.ref.length : 0, throughAt = split ? 0 : through.ref.length;
+        const p = sample(road.ref, roadAt), q = sample(through.ref, throughAt);
+        const b = sample(branch.ref, split ? 0 : branch.ref.length);
+        const m = split ? road.mitreEnd : road.mitreStart;
+        const turn = p.hx * b.hz - p.hz * b.hx;
+        if (!m || Math.abs(p.y - b.y) > 0.03 || p.hx * b.hx + p.hz * b.hz < 0.82 || Math.abs(turn) < 0.035) continue;
+        const left = split ? turn < 0 : turn > 0;
+        const first = left ? 0 : through.lanes.length;
+        const throughFirst = left ? added : 0;
+        const roadLeft = boundaryAt(road, throughFirst, roadAt);
+        const roadRight = boundaryAt(road, throughFirst + through.lanes.length, roadAt);
+        const throughLeft = boundaryAt(through, 0, throughAt);
+        const throughRight = boundaryAt(through, through.lanes.length, throughAt);
+        const endpointGap = (a, c)=>Math.hypot(p.x - q.x + m[0] * (a - c), p.z - q.z + m[1] * (a - c));
+        if (Math.max(endpointGap(roadLeft, throughLeft), endpointGap(roadRight, throughRight)) > 0.4) continue;
+        const lo = boundaryAt(road, first, roadAt), hi = boundaryAt(road, first + added, roadAt);
+        if (Math.abs(hi - lo - added * branch.laneWidth) > 0.75) continue;
+        const dx = p.x + lo * m[0] - b.x, dz = p.z + lo * m[1] - b.z;
+        const reach = Math.min(44, branch.ref.length * 0.72,
+            branch.ref.length - (split ? branch.taperEnd ?? 0 : branch.taperStart ?? 0));
+        if (reach < Math.max(10, Math.hypot(dx, dz) * 3)) continue;
+        if (!byRoad.has(road)) byRoad.set(road, []);
+        byRoad.get(road).push({ branch, split, left, m, dx, dz, reach, width: hi - lo,
+            tx: (p.hx - b.hx) * 0.72, tz: (p.hz - b.hz) * 0.72 });
+    }
+    for (const [road, joins] of byRoad) {
+        const [a, b] = joins;
+        // The same auxiliary lane can run from a merge straight to the next exit.
+        // Keep that cross-section continuous through the intervening way.
+        road.joinAcross = !!(b && a.left === b.left && road.jointStart && road.jointEnd &&
+            road.jointStart.every((v, i)=>Math.abs(v - road.jointEnd[i]) < 0.4));
+        if (road.joinAcross) road.rampJoin = true;
+        for (const { branch, split, m, dx, dz, reach, width, tx, tz } of joins) {
+            if (!road.joinAcross && !road.elevated && !branch.elevated) continue;
+            const { ref } = branch, end = split ? reach : ref.length - reach;
+            const stations = [...ref.cum, end];
+            const steps = Math.ceil(reach / 2);
+            for (let i = 1; i < steps; i++) stations.push(split ? reach * i / steps : ref.length - reach * i / steps);
+            stations.sort((a, b)=>a - b);
+            const pts = [], y = [];
+            let previous = -Infinity;
+            for (const station of stations) {
+                if (station - previous < 1e-5) continue;
+                previous = station;
+                const p = sample(ref, station), d = split ? station : ref.length - station;
+                const t = Math.min(1, d / reach), u = 1 - t;
+                const shift = u * u * (1 + 2 * t), tangent = u * u * d * (split ? 1 : -1);
+                pts.push([p.x + dx * shift + tx * tangent, p.z + dz * shift + tz * tangent]);
+                y.push(p.y);
+            }
+            branch.ref = makeLine(pts, y);
+            const join = Array.from({ length: branch.lanes.length + 1 }, (_, i)=>i * width / branch.lanes.length);
+            if (split) {
+                branch.mitreStart = m;
+                branch.jointStart = join;
+                branch.taperStart = reach;
+            } else {
+                branch.mitreEnd = m;
+                branch.jointEnd = join;
+                branch.taperEnd = reach;
+            }
+            branch.rampJoin = road.rampJoin = true;
+        }
+    }
 }
 export function offset(line, d) {
     const n = line.pts.length;
@@ -722,8 +807,9 @@ export function buildLaneGraph(data) {
         }
         e.ref = densify(e.ref, e.taperStart ?? 0, L - (e.taperEnd ?? 0), 3);
     }
+    alignRampBranches(edges, nodes);
     for (const e of edges){
-        if (e.next === undefined && e.prev === undefined) continue;
+        if (!e.rampJoin && e.next === undefined && e.prev === undefined) continue;
         e.lanes.forEach((id, i)=>{
             lanes[id].line = edgeLine(e, (at)=>(boundaryAt(e, i, at) + boundaryAt(e, i + 1, at)) / 2);
         });
