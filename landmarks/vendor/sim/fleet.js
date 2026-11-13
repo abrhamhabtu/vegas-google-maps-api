@@ -1,5 +1,6 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
 import { sameRoadLevel } from '../../../world/road-surface.mjs';
+import { toLocal } from '../../georeference.mjs';
 const THREE = window.THREE;
 import { theme } from '../core/theme.js';
 import { beamMaterial, buildPedestrian, buildVehicle, CAR_NAMES } from '../cars/vehicles.js';
@@ -23,6 +24,11 @@ const ROBOTAXIS = [
     'waymo',
     'zoox',
     'tesla'
+];
+const ROBOVAN_STARTS = [
+    toLocal(36.1001, -115.1730), // Tropicana
+    toLocal(36.1143, -115.1730), // Flamingo
+    toLocal(36.1329, -115.1658) // Resorts World
 ];
 const DWELL = 5;
 export class FleetCar {
@@ -155,6 +161,11 @@ export class Fleet {
         this.places = ridePlaces(g, data);
         roadMask(g, true);
         for (const k of ROBOTAXIS)this.cars.push(this.make(k, 'robotaxi'));
+        for (const start of ROBOVAN_STARTS) {
+            const car = this.make('robovan', 'robotaxi');
+            car.stripStart = start;
+            this.cars.push(car);
+        }
         this.selected = this.cars[2];
         this.indexBuildings(data);
         for (const e of g.edges)if ((e.cls === 'arterial' || e.cls === 'collector') && !e.internal && !e.elevated && e.oneway && e.ref.length > 60) for (const l of e.lanes)this.spawnLanes.push(l);
@@ -240,15 +251,30 @@ export class Fleet {
     start() {
         this.engine.schedule(()=>{
             this.idx = routeIndex(this.g);
-            this.cars.forEach((car, i)=>this.engine.schedule(()=>this.seed(car, i), 80 + i * 280));
+            this.cars.filter(car=>car.role === 'robotaxi').forEach((car, i)=>{
+                this.engine.schedule(()=>{
+                    if (!car.vehicle.root.visible) this.seed(car, i);
+                }, 80 + i * 280);
+            });
             this.engine.schedule(()=>this.setDensity(this.density), 2200);
         }, 150);
     }
     seed(car, i) {
         const strip = this.g.edges.filter((e)=>/^South Las Vegas Boulevard$/.test(e.way.name ?? '') && !e.internal && !e.elevated && e.oneway && e.ref.length > 70 && e.lanes.length >= 2);
-        const e = strip[Math.floor((i + 0.5) / ROBOTAXIS.length * strip.length)];
-        const lane = e?.lanes[Math.floor(e.lanes.length / 2)];
-        if (!e || lane === undefined) return;
+        if (!strip.length) return;
+        const start = car.stripStart;
+        const middleLane = e=>e.lanes[Math.floor(e.lanes.length / 2)];
+        // Preserve the spread of the original fleet, which used a single Robovan slot.
+        let edge = strip[Math.floor((i + 0.5) / (ROBOTAXIS.length + 1) * strip.length)];
+        if (start) {
+            const distance = e=>{
+                const [x, z] = this.g.lanes[middleLane(e)].line.pts[0];
+                return Math.hypot(x - start[0], z - start[1]);
+            };
+            edge = strip.reduce((closest, e)=>distance(e) < distance(closest) ? e : closest);
+        }
+        if (!edge) return;
+        const lane = middleLane(edge);
         const q = this.g.lanes[lane].line, a = q.pts[0], b = q.pts[1] ?? a;
         car.place(a[0], a[1], Math.atan2(b[0] - a[0], b[1] - a[1]));
         this.cruise(car);
@@ -283,7 +309,8 @@ export class Fleet {
             return d > 500 && d < 5000;
         });
         for(let tries = 0; tries < 4 && near.length; tries++){
-            const to = near[Math.floor(Math.random() * near.length)], path = this.route(car, to);
+            const [to] = near.splice(Math.floor(this.rng() * near.length), 1);
+            const path = this.route(car, to);
             if (path) {
                 this.take(car, path);
                 car.phase = 'cruising';
@@ -315,12 +342,14 @@ export class Fleet {
         this.onChange();
     }
     select(kind) {
+        const car = this.cars.find((c)=>c.kind === kind && c.role === 'robotaxi');
+        if (!car) return;
+        if (!car.vehicle.root.visible) this.seed(car, this.cars.indexOf(car));
         const driving = this.controls.driving;
         if (driving) {
             this.selected.phase = 'cruising';
             this.cruise(this.selected);
         }
-        const car = this.cars.find((c)=>c.kind === kind && c.role === 'robotaxi');
         this.selected = car;
         this.telemetry = blankTelemetry();
         if (driving) {
@@ -364,7 +393,7 @@ export class Fleet {
         this.controls.minDist = 9;
         this.controls.maxPitch = 1.42;
         const view = this.cameraMode === 'chase' ? {
-            dist: 15,
+            dist: Math.max(15, car.dims.length * 2.7),
             pitch: 1.33
         } : this.cameraMode === 'high' ? {
             dist: 42,

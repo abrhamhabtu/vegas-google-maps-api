@@ -1,6 +1,7 @@
 import { compactCar } from '../landmarks/vendor/cars/models.js';
 import { ROBOTAXI_DIMENSIONS } from './robotaxi-dimensions.mjs';
 import { badge, canopy, endGlazing, lamp, lowerBody, paint, part, roofPanel, rounded, sidePanel, trace, wheelDisc, wheelPair } from './robotaxi-geometry.js';
+import { buildRobovan } from './robovan.js';
 
 const THREE = window.THREE;
 const SIDES = [-1, 1];
@@ -410,4 +411,9 @@ export function buildRobotaxiModel(kind) {
   if (kind === 'tesla') return cybercab();
   if (kind === 'zoox') return zoox();
   if (kind === 'waymo') return ojai();
+  if (kind === 'robovan') {
+    const van = vehicle(kind);
+    const { radius, wheels, brake } = buildRobovan(van, materials().brakeLamp);
+    return finish(van, kind, radius, wheels, brake);
+  }
 }

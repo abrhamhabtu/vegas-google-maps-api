@@ -16,11 +16,8 @@ export function buildRideCard(fleet, ui) {
     const head = el('div', 'ride-head');
     const cars = el('div', 'seg');
     const pills = new Map();
-    for (const k of [
-        'zoox',
-        'waymo',
-        'tesla'
-    ]){
+    const kinds = new Set(fleet.cars.filter(car=>car.role === 'robotaxi').map(car=>car.kind));
+    for (const k of kinds){
         const b = el('button');
         b.innerHTML = `<i style="background:${CAR_DOT[k]}"></i>${CAR_NAMES[k]}`;
         b.onclick = ()=>fleet.select(k);

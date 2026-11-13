@@ -143,7 +143,7 @@ window.createVegasThreeLayer = function() {
       }
       theme.apply(themeName);
       ready = true;
-      status('Live city · Zoox, Waymo & Tesla', 'ready');
+      status('Live city', 'ready');
       requestFrame();
       tick();
       window.dispatchEvent(new CustomEvent('vegas-landmarks-ready', { detail: { footprints: data.buildings.length } }));

@@ -78,7 +78,8 @@ export function mountFleetPanel(fleet, engine, { onFollowingChange } = {}) {
     const carSpecs = {
       Zoox: '3.63 m bidirectional robotaxi with sliding glass doors, four corner sensor pods, and four-wheel steering.',
       Waymo: 'Silver Ojai with the sixth-generation Waymo Driver, a wide roof sensor bar, and fender and rear sensors.',
-      Tesla: 'Gold two-seat Cybercab with butterfly doors, flush exterior cameras, and front and rear lightbars.'
+      Tesla: 'Gold two-seat Cybercab with butterfly doors, flush exterior cameras, and front and rear lightbars.',
+      Robovan: 'Tesla’s gold microtransit concept with sliding glass doors and wraparound lighting.'
     };
     button.dataset.tipTitle = `${cname} Autonomous Vehicle`;
     button.dataset.tipSub = 'Click to select & follow on the Las Vegas Strip';
@@ -141,8 +142,7 @@ export function mountFleetPanel(fleet, engine, { onFollowingChange } = {}) {
       ['MGM → Venetian', 'MGM Grand', 'The Venetian', 'Full mid-Strip autonomous run across Tropicana, Harmon & Flamingo intersections.'],
       ['NYNY → ARIA', 'New York-New York', 'ARIA', 'Pass Showcase Mall, Park MGM, BLVD (In-N-Out & Adidas) into ARIA valet.']
     ];
-    const fromSel = bookBox.querySelector('.ride-from');
-    const toSel = bookBox.querySelector('.ride-to');
+    const [fromSel, toSel] = bookBox.querySelectorAll('.ride-row select');
     for (const [label, fromName, toName, desc] of presets) {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -155,10 +155,8 @@ export function mountFleetPanel(fleet, engine, { onFollowingChange } = {}) {
         const fi = fleet.places.findIndex(p => p.name === fromName);
         const ti = fleet.places.findIndex(p => p.name === toName);
         if (fi >= 0 && ti >= 0 && fromSel && toSel) {
-          fromSel.value = String(fi);
-          toSel.value = String(ti);
-          fromSel.dispatchEvent(new Event('change'));
-          toSel.dispatchEvent(new Event('change'));
+          fromSel.selectedIndex = fi;
+          toSel.selectedIndex = ti;
           go.click();
         }
       });

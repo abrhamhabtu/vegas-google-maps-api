@@ -8,7 +8,7 @@ const even = (n, from = 0, to = 1) => Array.from({ length: n + 1 }, (_, i) => le
 
 // A monotone cubic through measured/profile stations keeps a nose or roof from
 // bulging past its outer dimensions between control points.
-function profile(rows) {
+export function profile(rows) {
   const slopes = rows.slice(1).map((b, i) => rows[i].slice(1).map((a, j) => (b[j + 1] - a) / (b[0] - rows[i][0])));
   const tangents = rows.map((_, i) => {
     if (i === 0 || i === rows.length - 1) return slopes[i === 0 ? 0 : i - 1];
@@ -42,9 +42,12 @@ function roundEnds(xs, radius, blend = Math.max(0.13, radius * 3), rake = () => 
   };
 }
 
-function surface(parent, material, xs, across, point) {
-  const pos = [], index = [], n = across.length;
-  for (const x of xs) for (const t of across) pos.push(...point(x, t));
+export function surface(parent, material, xs, across, point, normal) {
+  const pos = [], normals = [], index = [], n = across.length;
+  for (const x of xs) for (const t of across) {
+    pos.push(...point(x, t));
+    if (normal) normals.push(...normal(x, t));
+  }
   for (let i = 1; i < xs.length; i++) for (let j = 1; j < n; j++) {
     const a = (i - 1) * n + j - 1, b = a + 1, c = a + n, d = c + 1;
     index.push(a, c, b, b, c, d);
@@ -52,7 +55,8 @@ function surface(parent, material, xs, across, point) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geometry.setIndex(index);
-  geometry.computeVertexNormals();
+  if (normal) geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  else geometry.computeVertexNormals();
   const mesh = new THREE.Mesh(geometry, material);
   parent.add(mesh);
   return mesh;

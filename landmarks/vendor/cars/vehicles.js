@@ -16,12 +16,14 @@ const PAINTS = [
 export const CAR_NAMES = {
     zoox: 'Zoox',
     waymo: 'Waymo',
-    tesla: 'Tesla'
+    tesla: 'Tesla',
+    robovan: 'Robovan'
 };
 export const CAR_DOT = {
     zoox: '#7fd8c0',
     waymo: '#27b6d6',
-    tesla: '#cdaa73'
+    tesla: '#cdaa73',
+    robovan: '#b58a54'
 };
 const translated = new Map();
 function dressed(m) {

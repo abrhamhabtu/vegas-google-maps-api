@@ -22,9 +22,10 @@ const by = (n)=>{
 const CARS = {
     Zoox: ROBOTAXI_DIMENSIONS.zoox,
     Waymo: ROBOTAXI_DIMENSIONS.waymo,
-    Tesla: ROBOTAXI_DIMENSIONS.tesla
+    Tesla: ROBOTAXI_DIMENSIONS.tesla,
+    Robovan: ROBOTAXI_DIMENSIONS.robovan
 };
-const carNames = Object.keys(CARS);
+const carNames = ['Zoox', 'Waymo', 'Tesla'];
 const lanesAt = (p)=>{
     const g = arrivesAt(graph, p);
     return graph.lanes.filter((l)=>g(l) && l.line.length > 0).map((l)=>l.id);
@@ -44,8 +45,8 @@ const STYLES = [
     'hurry',
     'madmax'
 ];
-function ride(a, b, n, only) {
-    const car = carNames[n % carNames.length], dims = CARS[car], style = PROFILES[only ?? STYLES[n % STYLES.length]];
+function ride(a, b, n, only, car = carNames[n % carNames.length]) {
+    const dims = CARS[car], style = PROFILES[only ?? STYLES[n % STYLES.length]];
     const name = `${a.name} → ${b.name} (${car}, ${style.label})`;
     const goal = arrivesAt(graph, b);
     const path = planPath(graph, idx, {
@@ -221,6 +222,9 @@ for (const key of STYLES){
     const v = perStyle[key];
     sameRoute.push(`  ${key.padEnd(7)} ${(v.sec / 60).toFixed(1)} min for ${v.km.toFixed(1)} km · ${(v.km / v.sec * 2237).toFixed(1)} mph average · red lights ${v.red} · nose over line ${v.over} · worst off line ${v.err.toFixed(2)} m`);
 }
+ride(by('ARIA'), by('Bellagio'), 0, 'normal', 'Robovan');
+ride(by('MGM Grand'), by('The Venetian'), 1, 'normal', 'Robovan');
+ride(by('Mandalay Bay'), by('Resorts World'), 2, 'normal', 'Robovan');
 for (const r of rows)console.log(`${r.ok ? 'ok  ' : 'FAIL'}  ${r.name.padEnd(62)} ${r.km.toFixed(2).padStart(5)} km ${r.mins.toFixed(1).padStart(4)} min  signals ${String(r.signals).padStart(2)} stopped ${String(r.stops).padStart(2)}  off line ${r.err.toFixed(2)} m  lane changes ${r.changes}  tightest ${r.R.toFixed(1)} m${r.note ? `   ${r.note}` : ''}`);
 const sum = (f)=>rows.reduce((t, r)=>t + f(r), 0);
 const bad = rows.filter((r)=>!r.ok);
