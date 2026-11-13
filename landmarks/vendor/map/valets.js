@@ -147,13 +147,13 @@ export function planValets(data) {
         if (r.y && r.y.some((v)=>v > 2.5)) continue;
         if (!isDrivable(r) && !isDrive(r)) continue;
         const lanes = r.lanes ?? (r.ow ? r.hw === 'service' || r.hw.endsWith('_link') ? 1 : 2 : /primary|trunk/.test(r.hw) ? 4 : 2);
-        const w = Math.max(8, lanes * 3.7 + 4.5);
+        const w = Math.max(9.5, lanes * 3.7 + 6.0);
         if (r.cov || r.tn) {
             stroke(r.pts, w, '#ff0000');
         } else if (r.hw !== 'service') {
             stroke(r.pts, w, '#0000ff');
         } else if (r.svc !== 'parking_aisle') {
-            stroke(r.pts, 9.5, '#ff0000');
+            stroke(r.pts, 10.5, '#ff0000');
         }
     }
     const mask = new THREE.CanvasTexture(cv);
@@ -285,7 +285,41 @@ export function buildValets(data, plan, graph) {
     const list = [
         ...plan.canopies
     ];
-    for (const b of list){
+    const pubGrid = [];
+    for (const e of graph.edges) {
+        if (e.cls === 'service' || e.elevated || e.lanes.length < 3) continue;
+        const hw = e.lanes.reduce((a, id)=>a + graph.lanes[id].width, 0) * 0.5;
+        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (const p of e.ref.pts) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); }
+        pubGrid.push({ pts: e.ref.pts, hw: hw + 0.6, x0: x0 - hw - 2, x1: x1 + hw + 2, z0: z0 - hw - 2, z1: z1 + hw + 2 });
+    }
+    const onPublicMultiLane = (x, z)=>{
+        for (const r of pubGrid) {
+            if (x < r.x0 || x > r.x1 || z < r.z0 || z > r.z1) continue;
+            for (let k = 0; k + 1 < r.pts.length; k++) {
+                const a = r.pts[k], b = r.pts[k + 1], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1;
+                const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / L2));
+                if (Math.hypot(x - (a[0] + dx * t), z - (a[1] + dz * t)) < r.hw) return true;
+            }
+        }
+        return false;
+    };
+    for (const rawB of list){
+        const rawClear = rawB.pts.filter((p)=>!onPublicMultiLane(p[0], p[1]));
+        let b = rawB;
+        if (rawClear.length >= Math.ceil(rawB.pts.length * 0.5) && rawClear.length < rawB.pts.length) {
+            const safe = centroid(rawClear);
+            b = { ...rawB, pts: rawB.pts.map((p)=>{
+                if (!onPublicMultiLane(p[0], p[1])) return p;
+                let lo = 0, hi = 1;
+                for (let step = 0; step < 8; step++) {
+                    const m = (lo + hi) * 0.5;
+                    if (onPublicMultiLane(p[0] + (safe[0] - p[0]) * m, p[1] + (safe[1] - p[1]) * m)) lo = m;
+                    else hi = m;
+                }
+                return [p[0] + (safe[0] - p[0]) * hi, p[1] + (safe[1] - p[1]) * hi];
+            }) };
+        }
         const c = centroid(b.pts), area = Math.abs(ringArea(b.pts));
         let under = 0;
         for (const o of list){

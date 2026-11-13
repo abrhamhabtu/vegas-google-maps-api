@@ -126,41 +126,144 @@ function densify(line, a, b, step) {
 // Use the added lane's cross-section when the lane counts and through alignment agree.
 function alignRampBranches(edges, nodes) {
     const byRoad = new Map();
+    const isMinor = (e)=>e.cls === 'service' || e.cls === 'local';
+    const fitBranch = (road, branch, split, m, lo, hi, reachScale = 0.72)=>{
+        const bAt = split ? 0 : branch.ref.length;
+        const p = sample(road.ref, split ? road.ref.length : 0);
+        const b = sample(branch.ref, bAt);
+        const width = hi - lo;
+        const dx = p.x + lo * m[0] - b.x, dz = p.z + lo * m[1] - b.z;
+        const reach = Math.min(44, branch.ref.length * reachScale,
+            branch.ref.length - (split ? branch.taperEnd ?? 0 : branch.taperStart ?? 0));
+        const minorJoin = isMinor(road) || isMinor(branch);
+        if (reach < Math.max(minorJoin ? 8 : 10, Math.hypot(dx, dz) * (minorJoin ? 2.2 : 3))) return null;
+        return { branch, split, m, dx, dz, reach, width, tx: (p.hx - b.hx) * 0.72, tz: (p.hz - b.hz) * 0.72 };
+    };
+    const applyJoin = ({ branch, split, m, dx, dz, reach, width, tx, tz })=>{
+        const { ref } = branch, end = split ? reach : ref.length - reach;
+        const stations = [...ref.cum, end];
+        const steps = Math.ceil(reach / 2);
+        for (let i = 1; i < steps; i++) stations.push(split ? reach * i / steps : ref.length - reach * i / steps);
+        stations.sort((a, b)=>a - b);
+        const pts = [], y = [];
+        let previous = -Infinity;
+        for (const station of stations) {
+            if (station - previous < 1e-5) continue;
+            previous = station;
+            const p = sample(ref, station), d = split ? station : ref.length - station;
+            const t = Math.min(1, d / reach), u = 1 - t;
+            const shift = u * u * (1 + 2 * t), tangent = u * u * d * (split ? 1 : -1);
+            pts.push([p.x + dx * shift + tx * tangent, p.z + dz * shift + tz * tangent]);
+            y.push(p.y);
+        }
+        branch.ref = makeLine(pts, y);
+        const join = Array.from({ length: branch.lanes.length + 1 }, (_, i)=>i * width / branch.lanes.length);
+        if (split) {
+            branch.mitreStart = m;
+            branch.jointStart = join;
+            branch.taperStart = reach;
+        } else {
+            branch.mitreEnd = m;
+            branch.jointEnd = join;
+            branch.taperEnd = reach;
+        }
+        branch.rampJoin = true;
+    };
     for (const node of nodes.values()) {
+        if (node.id < 0) continue;
+        // Handle elevated multi-branch fans (e.g., 3 incoming valet lanes merging into a 3-lane viaduct)
+        for (const split of [true, false]) {
+            const singles = split ? node.inEdges : node.outEdges;
+            const multis = split ? node.outEdges : node.inEdges;
+            if (singles.length !== 1 || multis.length < 2) continue;
+            const road = edges[singles[0]];
+            const branches = multis.map(id=>edges[id]);
+            if (!road.oneway || branches.some(b=>!b.oneway)) continue;
+            const totalBranchLanes = branches.reduce((s, b)=>s + b.lanes.length, 0);
+            if (totalBranchLanes !== road.lanes.length || !(road.elevated || branches.some(b=>b.elevated))) continue;
+            if (!isMinor(road) && !branches.some(isMinor)) continue;
+            const roadAt = split ? road.ref.length : 0;
+            const p = sample(road.ref, roadAt);
+            const m = (split ? road.mitreEnd : road.mitreStart) ?? [-p.hz, p.hx];
+            const ok = branches.every(b=>{
+                const q = sample(b.ref, split ? 0 : b.ref.length);
+                return Math.abs(p.y - q.y) <= 0.25 && p.hx * q.hx + p.hz * q.hz > 0.55;
+            });
+            if (!ok) continue;
+            const mLen2 = m[0] * m[0] + m[1] * m[1] || 1;
+            const ordered = branches.map(b=>{
+                const dAway = Math.min(18, b.ref.length * 0.65);
+                const s = sample(b.ref, split ? dAway : b.ref.length - dAway);
+                const lat = ((s.x - p.x) * m[0] + (s.z - p.z) * m[1]) / mLen2;
+                return { b, lat };
+            }).sort((a, b)=>a.lat - b.lat);
+            let slot = 0;
+            const plans = [];
+            let allFit = true;
+            for (const { b } of ordered) {
+                const lo = boundaryAt(road, slot, roadAt);
+                const hi = boundaryAt(road, slot + b.lanes.length, roadAt);
+                slot += b.lanes.length;
+                const plan = fitBranch(road, b, split, m, lo, hi, 0.85);
+                if (!plan) { allFit = false; break; }
+                plans.push(plan);
+            }
+            if (allFit && plans.length) {
+                road.rampJoin = true;
+                for (const plan of plans) applyJoin(plan);
+            }
+        }
         const split = node.inEdges.length === 1 && node.outEdges.length === 2;
         const merge = node.inEdges.length === 2 && node.outEdges.length === 1;
-        if ((!split && !merge) || node.id < 0) continue;
+        if (!split && !merge) continue;
         const road = edges[(split ? node.inEdges : node.outEdges)[0]];
         const pair = (split ? node.outEdges : node.inEdges).map(id=>edges[id]);
-        const through = pair.find(e=>split ? road.next === e.id : e.next === road.id);
-        if (!through || !road.oneway || !through.oneway || !road.way.name || road.way.name !== through.way.name) continue;
+        const minorNode = isMinor(road) || pair.some(isMinor);
+        const through = pair.find(e=>split ? road.next === e.id : e.next === road.id) ??
+            (minorNode ? pair.find(e=>road.way.name && e.way.name === road.way.name && e.lanes.length >= road.lanes.length - 1) : undefined);
+        if (!through || !road.oneway || !through.oneway) continue;
         const branch = pair.find(e=>e !== through);
+        const raised = minorNode && (road.elevated || branch.elevated || through.elevated);
+        if (!raised && (!road.way.name || road.way.name !== through.way.name || !branch.way.hw.endsWith('_link'))) continue;
         const added = road.lanes.length - through.lanes.length;
-        if (!branch.oneway || !branch.way.hw.endsWith('_link') || added !== branch.lanes.length) continue;
         const roadAt = split ? road.ref.length : 0, throughAt = split ? 0 : through.ref.length;
         const p = sample(road.ref, roadAt), q = sample(through.ref, throughAt);
         const b = sample(branch.ref, split ? 0 : branch.ref.length);
-        const m = split ? road.mitreEnd : road.mitreStart;
+        const m = (split ? road.mitreEnd : road.mitreStart) ?? (raised ? [-p.hz, p.hx] : null);
+        if (!m) continue;
         const turn = p.hx * b.hz - p.hz * b.hx;
-        if (!m || Math.abs(p.y - b.y) > 0.03 || p.hx * b.hx + p.hz * b.hz < 0.82 || Math.abs(turn) < 0.035) continue;
+        if (Math.abs(p.y - b.y) > 0.25 || p.hx * b.hx + p.hz * b.hz < 0.72 || Math.abs(turn) < 0.035) continue;
         const left = split ? turn < 0 : turn > 0;
-        const first = left ? 0 : through.lanes.length;
-        const throughFirst = left ? added : 0;
-        const roadLeft = boundaryAt(road, throughFirst, roadAt);
-        const roadRight = boundaryAt(road, throughFirst + through.lanes.length, roadAt);
-        const throughLeft = boundaryAt(through, 0, throughAt);
-        const throughRight = boundaryAt(through, through.lanes.length, throughAt);
-        const endpointGap = (a, c)=>Math.hypot(p.x - q.x + m[0] * (a - c), p.z - q.z + m[1] * (a - c));
-        if (Math.max(endpointGap(roadLeft, throughLeft), endpointGap(roadRight, throughRight)) > 0.4) continue;
-        const lo = boundaryAt(road, first, roadAt), hi = boundaryAt(road, first + added, roadAt);
-        if (Math.abs(hi - lo - added * branch.laneWidth) > 0.75) continue;
-        const dx = p.x + lo * m[0] - b.x, dz = p.z + lo * m[1] - b.z;
-        const reach = Math.min(44, branch.ref.length * 0.72,
-            branch.ref.length - (split ? branch.taperEnd ?? 0 : branch.taperStart ?? 0));
-        if (reach < Math.max(10, Math.hypot(dx, dz) * 3)) continue;
+        let lo, hi;
+        if (added === branch.lanes.length && added > 0) {
+            const first = left ? 0 : through.lanes.length;
+            const throughFirst = left ? added : 0;
+            const roadLeft = boundaryAt(road, throughFirst, roadAt);
+            const roadRight = boundaryAt(road, throughFirst + through.lanes.length, roadAt);
+            const throughLeft = boundaryAt(through, 0, throughAt);
+            const throughRight = boundaryAt(through, through.lanes.length, throughAt);
+            const endpointGap = (a, c)=>Math.hypot(p.x - q.x + m[0] * (a - c), p.z - q.z + m[1] * (a - c));
+            if (Math.max(endpointGap(roadLeft, throughLeft), endpointGap(roadRight, throughRight)) > 0.4) continue;
+            lo = boundaryAt(road, first, roadAt);
+            hi = boundaryAt(road, first + added, roadAt);
+            if (Math.abs(hi - lo - added * branch.laneWidth) > 0.75) continue;
+        } else if (raised && added === 0 && road.lanes.length === through.lanes.length) {
+            // Side exit/entry branch peeling off the outer edge of an elevated road (e.g., Bellagio valet ramp)
+            const bw = branch.lanes.length * branch.laneWidth;
+            if (left) {
+                lo = boundaryAt(road, 0, roadAt);
+                hi = lo + bw;
+            } else {
+                hi = boundaryAt(road, road.lanes.length, roadAt);
+                lo = hi - bw;
+            }
+        } else {
+            continue;
+        }
+        const plan = fitBranch(road, branch, split, m, lo, hi, 0.72);
+        if (!plan) continue;
         if (!byRoad.has(road)) byRoad.set(road, []);
-        byRoad.get(road).push({ branch, split, left, m, dx, dz, reach, width: hi - lo,
-            tx: (p.hx - b.hx) * 0.72, tz: (p.hz - b.hz) * 0.72 });
+        byRoad.get(road).push({ ...plan, left });
     }
     for (const [road, joins] of byRoad) {
         const [a, b] = joins;
@@ -169,36 +272,10 @@ function alignRampBranches(edges, nodes) {
         road.joinAcross = !!(b && a.left === b.left && road.jointStart && road.jointEnd &&
             road.jointStart.every((v, i)=>Math.abs(v - road.jointEnd[i]) < 0.4));
         if (road.joinAcross) road.rampJoin = true;
-        for (const { branch, split, m, dx, dz, reach, width, tx, tz } of joins) {
-            if (!road.joinAcross && !road.elevated && !branch.elevated) continue;
-            const { ref } = branch, end = split ? reach : ref.length - reach;
-            const stations = [...ref.cum, end];
-            const steps = Math.ceil(reach / 2);
-            for (let i = 1; i < steps; i++) stations.push(split ? reach * i / steps : ref.length - reach * i / steps);
-            stations.sort((a, b)=>a - b);
-            const pts = [], y = [];
-            let previous = -Infinity;
-            for (const station of stations) {
-                if (station - previous < 1e-5) continue;
-                previous = station;
-                const p = sample(ref, station), d = split ? station : ref.length - station;
-                const t = Math.min(1, d / reach), u = 1 - t;
-                const shift = u * u * (1 + 2 * t), tangent = u * u * d * (split ? 1 : -1);
-                pts.push([p.x + dx * shift + tx * tangent, p.z + dz * shift + tz * tangent]);
-                y.push(p.y);
-            }
-            branch.ref = makeLine(pts, y);
-            const join = Array.from({ length: branch.lanes.length + 1 }, (_, i)=>i * width / branch.lanes.length);
-            if (split) {
-                branch.mitreStart = m;
-                branch.jointStart = join;
-                branch.taperStart = reach;
-            } else {
-                branch.mitreEnd = m;
-                branch.jointEnd = join;
-                branch.taperEnd = reach;
-            }
-            branch.rampJoin = road.rampJoin = true;
+        for (const join of joins) {
+            if (!road.joinAcross && !road.elevated && !join.branch.elevated) continue;
+            applyJoin(join);
+            road.rampJoin = true;
         }
     }
 }
@@ -328,6 +405,7 @@ function joinDanglingEnds(ways) {
     const tryEnd = (w, atStart)=>{
         const i = atStart ? 0 : w.n.length - 1, node = w.n[i];
         if (!stranded(w, atStart, node)) return;
+        if (w.y && w.y[i] > 1.2) return;
         const p = w.pts[i];
         let best = w.hw === 'service' || w.hw.endsWith('_link') ? 34 : 16;
         let hit = null;
@@ -560,6 +638,69 @@ export function buildLaneGraph(data) {
             }
         }
     }
+    // Reconcile elevation mismatches across shared nodes (e.g. covered/tunnel continuations or ramps)
+    // so vehicles and bridge decks transition smoothly instead of hitting vertical cliffs.
+    {
+        const yChanged = new Set();
+        const adjustEnd = (e, atStart, targetY, maxBlend = 60)=>{
+            const y = e.ref.y.slice(), last = y.length - 1;
+            const oldY = atStart ? y[0] : y[last];
+            const delta = targetY - oldY;
+            if (Math.abs(delta) < 0.05) return;
+            const len = Math.max(e.ref.length, 0.1);
+            const blend = Math.min(len, maxBlend);
+            for (let k = 0; k < y.length; k++) {
+                const dist = atStart ? e.ref.cum[k] : len - e.ref.cum[k];
+                if (dist >= blend) continue;
+                const t = 1 - dist / blend;
+                const smooth = t * t * (3 - 2 * t);
+                y[k] = Math.max(0, y[k] + delta * smooth);
+            }
+            if (atStart) y[0] = targetY;
+            else y[last] = targetY;
+            e.ref = makeLine(e.ref.pts, y);
+            e.elevated = y.some((v)=>v > 0.4);
+            yChanged.add(e.id);
+        };
+        for (const [id, node] of nodes) {
+            if (id < 0) continue;
+            const ends = [];
+            for (const ei of node.inEdges) ends.push({ e: edges[ei], atStart: false, y: edges[ei].ref.y.at(-1) });
+            for (const ei of node.outEdges) ends.push({ e: edges[ei], atStart: true, y: edges[ei].ref.y[0] });
+            if (ends.length < 2) continue;
+            const min = Math.min(...ends.map(o=>o.y)), max = Math.max(...ends.map(o=>o.y));
+            if (max - min <= 0.12) continue;
+            const groundCount = ends.filter(o=>o.y <= 0.08).length;
+            const raisedCount = ends.filter(o=>o.y > 0.2).length;
+            let targetY;
+            if (groundCount >= 2 && raisedCount === 1) {
+                // Single ramp meeting a ground-level grid intersection (e.g. Bellagio edge 6594): anchor to ground
+                targetY = 0;
+            } else if (groundCount >= 1 && raisedCount >= 1 && ends.every(o=>o.y <= 0.08 || o.y > 0.2) && ends.length === 2) {
+                // 1-to-1 continuation where one piece was tagged tunnel/ground (e.g. Bellagio 5960 -> 5963)
+                targetY = max;
+            } else if (groundCount >= 2 && raisedCount >= 2 && max - min > 1.2) {
+                // Unrelated elevated bridge sharing an OSM node? Only adjust small mismatches cleanly
+                continue;
+            } else {
+                const primary = ends.reduce((a, b)=>(b.e.lanes.length > a.e.lanes.length || b.y > a.y && b.e.lanes.length === a.e.lanes.length) ? b : a);
+                targetY = primary.y;
+            }
+            for (const o of ends) {
+                if (Math.abs(o.y - targetY) > 0.05) {
+                    const maxB = targetY === 0 || o.y <= 0.08 ? Math.max(25, Math.min(70, o.e.ref.length)) : Math.min(28, o.e.ref.length * 0.85);
+                    adjustEnd(o.e, o.atStart, targetY, maxB);
+                }
+            }
+            node.y = targetY;
+        }
+        for (const eid of yChanged) {
+            const e = edges[eid];
+            e.lanes.forEach((lid, i)=>{
+                lanes[lid].line = offset(e.ref, (i + 0.5) * e.laneWidth);
+            });
+        }
+    }
     for(let pass = 0; pass < 2; pass++)for (const e of edges){
         if (e.ref.length > 45 || (e.way.turn ?? e.way.tf)) continue;
         const preds = (nodes.get(e.fromNode)?.inEdges ?? []).map((i)=>edges[i]).filter((p)=>(p.way.turn || p.way.tf) && p.lanes.length === e.lanes.length && p.twin !== e.id);
@@ -785,12 +926,14 @@ export function buildLaneGraph(data) {
     }
     for (const e of tapered){
         const L = e.ref.length, both = e.taperStart && e.taperEnd;
+        const maxSlope = (e.cls === 'arterial' || e.cls === 'collector') && e.jointStart ? 0.25 : 0.125;
         if (e.taperStart) {
             e.taperStart = Math.min(e.taperStart, both ? L * 0.48 : L * 0.9);
             if ((e.cls === 'arterial' || e.cls === 'collector') && e.jointStart) {
                 const mv = Math.max(...e.jointStart.map((v, i)=>Math.abs(v - i * e.laneWidth)));
-                if (mv > e.taperStart * 0.125) {
-                    const sc = e.taperStart * 0.125 / mv;
+                const lim = Math.min(4.0, Math.max(e.taperStart * 0.125, mv <= 3.8 ? e.taperStart * maxSlope : e.taperStart * 0.125));
+                if (mv > lim) {
+                    const sc = lim / mv;
                     e.jointStart = e.jointStart.map((v, i)=>i * e.laneWidth + (v - i * e.laneWidth) * sc);
                 }
             }
@@ -799,8 +942,9 @@ export function buildLaneGraph(data) {
             e.taperEnd = Math.min(e.taperEnd, both ? L * 0.48 : L * 0.9);
             if ((e.cls === 'arterial' || e.cls === 'collector') && e.jointEnd) {
                 const mv = Math.max(...e.jointEnd.map((v, i)=>Math.abs(v - i * e.laneWidth)));
-                if (mv > e.taperEnd * 0.125) {
-                    const sc = e.taperEnd * 0.125 / mv;
+                const lim = Math.min(4.0, Math.max(e.taperEnd * 0.125, mv <= 3.8 ? e.taperEnd * 0.25 : e.taperEnd * 0.125));
+                if (mv > lim) {
+                    const sc = lim / mv;
                     e.jointEnd = e.jointEnd.map((v, i)=>i * e.laneWidth + (v - i * e.laneWidth) * sc);
                 }
             }

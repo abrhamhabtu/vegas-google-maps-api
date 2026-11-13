@@ -516,7 +516,7 @@ function assemble(g, idx, edges, startLane, endEdgeS) {
     }
     return raw;
 }
-function finish(g, idx, raw, edges, lanes) {
+function finish(g, idx, raw, edges, lanes, onRoad) {
     const total = raw.cum[raw.cum.length - 1] ?? 0, n = Math.max(2, Math.ceil(total));
     let xs = new Float64Array(n + 1), zs = new Float64Array(n + 1);
     const mps = new Float64Array(n + 1), raised = new Uint8Array(n + 1), heights = new Float64Array(n + 1), laneOf = new Int32Array(n + 1);
@@ -546,8 +546,11 @@ function finish(g, idx, raw, edges, lanes) {
         const ax = xs.slice(), az = zs.slice();
         for(let i = 1; i < n; i++){
             if (hot && !hot[i]) continue;
-            ax[i] = 0.25 * xs[i - 1] + 0.5 * xs[i] + 0.25 * xs[i + 1];
-            az[i] = 0.25 * zs[i - 1] + 0.5 * zs[i] + 0.25 * zs[i + 1];
+            const nx = 0.25 * xs[i - 1] + 0.5 * xs[i] + 0.25 * xs[i + 1];
+            const nz = 0.25 * zs[i - 1] + 0.5 * zs[i] + 0.25 * zs[i + 1];
+            if (hot && onRoad && !raised[i] && onRoad(xs[i], zs[i], 0.45) && !onRoad(nx, nz, 0.45)) continue;
+            ax[i] = nx;
+            az[i] = nz;
         }
         xs = ax;
         zs = az;
@@ -689,7 +692,7 @@ export function planPath(g, idx, req) {
         const stopS = req.stopS ? req.stopS(last) : null;
         const raw = (edges.length ? assemble(g, idx, edges, firstRealLane(g, lanes), stopS) : null) ?? literal(g, idx, lanes, stopS);
         if (raw.cum.length < 2) break;
-        const path = finish(g, idx, raw, edges, lanes);
+        const path = finish(g, idx, raw, edges, lanes, onRoad);
         const spots = [];
         if (path.tightest.r < 4.5) spots.push([
             path.tightest.x,

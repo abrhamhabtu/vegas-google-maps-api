@@ -123,7 +123,7 @@ export function buildSkybridges(data, g) {
             for(let s = 0; s <= steps; s++){
                 const t = s / steps;
                 const x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t, y = ya + (yb - ya) * t;
-                if (y < 6.0 && onAnyGroundRoad(x, z, 2.2, true)) return true;
+                if (y < 6.0 && (onAnyGroundRoad(x, z, 2.5, true) || onRoad(x, z, 1.4))) return true;
             }
         }
         return false;
@@ -259,7 +259,9 @@ export function buildSkybridges(data, g) {
                 ]
             ]){
                 const tx = p[0] + ux * along + nx * side, tz = p[1] + uz * along + nz * side;
-                if (!onAnyGroundRoad(tx, tz, 4.2, true)) {
+                const clear = !onAnyGroundRoad(tx, tz, 4.4, true) &&
+                    [[0, 0], [2.4, 2.4], [2.4, -2.4], [-2.4, 2.4], [-2.4, -2.4]].every(([ox, oz])=>!onRoad(tx + ox, tz + oz, 0.8));
+                if (clear) {
                     placed = [
                         tx,
                         tz

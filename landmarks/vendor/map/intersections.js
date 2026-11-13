@@ -261,7 +261,8 @@ export function planIntersections(data, g) {
                     for(let i = -1; i <= 1; i++)for(let j = -1; j <= 1; j++){
                         for (const c of crossGrid.get(`${Math.floor(mx / 60) + i},${Math.floor(mz / 60) + j}`) ?? []){
                             const along = (c.x - mx) * leg.a[0] + (c.z - mz) * leg.a[1], across = (c.x - mx) * leg.perp[0] + (c.z - mz) * leg.perp[1];
-                            if (along > -14 && along < 34 && Math.abs(across) < 34) {
+                            const hitBand = real ? along > -14 && along < 34 && Math.abs(across) < 34 : along > -8 && along < 12 && Math.hypot(c.x - mx, c.z - mz) < 12;
+                            if (hitBand) {
                                 usedCrossings.add(c.id);
                                 if (stripJunction && c.m && c.m !== 'no' && c.m !== 'unmarked') {
                                     for (const { e } of leg.entries) if (e.way.n.includes(c.id)) {

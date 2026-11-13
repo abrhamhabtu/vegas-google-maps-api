@@ -1,7 +1,81 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
 const THREE = window.THREE;
 import { Chunked, Soup, cellKey, convexHull, hash, normals, offsetLine, slice } from './geom.js';
-import { boundaryAt, boundaryLine, cornerFillets, edgeLine, makeLine, offset, roadMask, sample } from './lanegraph.js';
+import { boundaryAt, boundaryLine as rawBoundaryLine, edgeLine as rawEdgeLine, makeLine, offset, offsetBy, roadMask, sample } from './lanegraph.js';
+
+const visRefCache = new WeakMap();
+function smoothVisRef(e) {
+    let cached = visRefCache.get(e);
+    if (cached) return cached;
+    const ref = e.ref, pts = ref.pts, ys = ref.y, n = pts.length;
+    if (n < 3 || e.joinAcross || e.rampJoin) {
+        visRefCache.set(e, ref);
+        return ref;
+    }
+    const tangents = new Array(n);
+    for (let i = 1; i < n - 1; i++) {
+        const ax = pts[i][0] - pts[i - 1][0], az = pts[i][1] - pts[i - 1][1], la = Math.hypot(ax, az) || 1;
+        const bx = pts[i + 1][0] - pts[i][0], bz = pts[i + 1][1] - pts[i][1], lb = Math.hypot(bx, bz) || 1;
+        if ((ax * bx + az * bz) / (la * lb) < 0.25) { tangents[i] = null; continue; }
+        const ux = ax / la + bx / lb, uz = az / la + bz / lb, lu = Math.hypot(ux, uz) || 1;
+        tangents[i] = [ux / lu, uz / lu];
+    }
+    const chordDir = (i, j)=>{
+        const dx = pts[j][0] - pts[i][0], dz = pts[j][1] - pts[i][1], l = Math.hypot(dx, dz) || 1;
+        return [dx / l, dz / l];
+    };
+    const d0 = chordDir(0, 1), d1 = chordDir(n - 2, n - 1);
+    const reflect = (d, t)=>{
+        if (!t) return d;
+        const k = 2 * (d[0] * t[0] + d[1] * t[1]);
+        const rx = k * d[0] - t[0], rz = k * d[1] - t[1], rl = Math.hypot(rx, rz) || 1;
+        return (rx * d[0] + rz * d[1]) / rl > 0.4 ? [rx / rl, rz / rl] : d;
+    };
+    tangents[0] = reflect(d0, tangents[1]);
+    tangents[n - 1] = reflect(d1, tangents[n - 2]);
+    const outPts = [], outY = [];
+    for (let i = 0; i < n - 1; i++) {
+        const p0 = pts[i], p1 = pts[i + 1], y0 = ys[i], y1 = ys[i + 1];
+        const dx = p1[0] - p0[0], dz = p1[1] - p0[1], L = Math.hypot(dx, dz);
+        outPts.push(p0);
+        outY.push(y0);
+        if (L > 2.2) {
+            const ux = dx / L, uz = dz / L;
+            const ta = tangents[i] ?? [ux, uz], tb = tangents[i + 1] ?? [ux, uz];
+            if (ta[0] * ux + ta[1] * uz < 0.9965 || tb[0] * ux + tb[1] * uz < 0.9965) {
+                const steps = Math.max(2, Math.min(8, Math.ceil(L / 2.2)));
+                const s = L * 0.36;
+                for (let k = 1; k < steps; k++) {
+                    const u = k / steps, u2 = u * u, u3 = u2 * u;
+                    const h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
+                    outPts.push([
+                        h00 * p0[0] + h10 * ta[0] * s + h01 * p1[0] + h11 * tb[0] * s,
+                        h00 * p0[1] + h10 * ta[1] * s + h01 * p1[1] + h11 * tb[1] * s
+                    ]);
+                    outY.push(y0 + (y1 - y0) * u);
+                }
+            }
+        }
+    }
+    outPts.push(pts[n - 1]);
+    outY.push(ys[n - 1]);
+    const vis = makeLine(outPts, outY);
+    if (vis.length > 1e-6 && ref.length > 0) {
+        const scale = ref.length / vis.length;
+        for (let i = 0; i < vis.cum.length; i++) vis.cum[i] *= scale;
+        vis.length = ref.length;
+    }
+    visRefCache.set(e, vis);
+    return vis;
+}
+function edgeLine(e, f) {
+    const ref = smoothVisRef(e);
+    return ref === e.ref ? rawEdgeLine(e, f) : offsetBy(ref, f, e.mitreStart, e.mitreEnd);
+}
+function boundaryLine(e, i) {
+    const ref = smoothVisRef(e);
+    return ref === e.ref ? rawBoundaryLine(e, i) : edgeLine(e, (at)=>boundaryAt(e, i, at));
+}
 import { planIntersections } from './intersections.js';
 import { flatMaterial, litMaterial, ORDER, surfaceMaterial } from './materials.js';
 import { arrowMarking, dashRuns, offsetStation, widestClearSpan, zebraBars } from '../../../world/road-visuals.mjs';
@@ -56,13 +130,22 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         ribbonSplit(surfaceFor(a).at(x, z), deckTop.at(x, z), left, right);
         deckUnderside(deckSide, left, right);
     }
-    const sidewalkPiece = (piece, from, to, walkWidth, air = false, taper)=>{
+    const sidewalkPiece = (piece, from, to, walkWidth, air = false, taper, widths)=>{
         if (piece.pts.length < 2) return;
         const [x, z] = piece.pts[0];
         const heights = piece.y.map((y)=>air ? roadHeight(y) : 0);
-        if (walkWidth > 0) {
+        if (widths || walkWidth > 0) {
             const walk = (air ? deckWalk : sidewalk).at(x, z);
-            if (taper?.some(Boolean)) {
+            if (widths) {
+                const ns = normals(piece.pts), sign = to > from ? 1 : -1;
+                const innerPts = from === 0 ? piece.pts : piece.pts.map(([px, pz], i)=>[px + ns[i][0] * from, pz + ns[i][1] * from]);
+                const outerPts = piece.pts.map(([px, pz], i)=>{
+                    const w = sign * Math.max(0, widths[i] ?? walkWidth);
+                    return [px + ns[i][0] * (from + w), pz + ns[i][1] * (from + w)];
+                });
+                const [leftPts, rightPts] = sign > 0 ? [innerPts, outerPts] : [outerPts, innerPts];
+                ribbonY(walk, { pts: leftPts, y: heights }, { pts: rightPts, y: heights }, WALK_HEIGHT);
+            } else if (taper?.some(Boolean)) {
                 const line = makeLine(piece.pts, heights);
                 const [start, end] = taper.map(m=>Math.min(m, line.length * 0.4));
                 const stations = new Set(line.cum);
@@ -181,7 +264,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
     const onMainCarriageway = buildCarriagewayTest((m)=>!m.internal && m.cls !== 'service' && m.cls !== 'ramp' && !/_link$/.test(m.way.hw));
     const onLinkOrSvcCarriageway = buildCarriagewayTest((m)=>!m.internal && (/_link$/.test(m.way.hw) || m.cls === 'ramp' || m.cls === 'service' && m.way.svc !== 'parking_aisle'));
     const onAnyNonServiceRoad = buildCarriagewayTest((m)=>m.cls !== 'service');
-    const onElevatedDeck = buildCarriagewayTest((m)=>isAir(m.ref), 0.45);
+    const onElevatedDeck = buildCarriagewayTest((m)=>isAir(m.ref), 0.95);
     const onConnector = (()=>{
         const cell = 25, grid = new Map(), fine = new Map();
         for (const k of g.lanes){
@@ -283,27 +366,13 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         const [ux, uz] = bestDir;
         const dx = hx - ux, dz = hz - uz;
         if ((Math.abs(dx) >= Math.abs(dz) ? dx : dz) <= 0) return;
-        if (refined) {
-            const [from, to] = widestClearSpan(bestT, (d)=>{
-                if (d < 0.13 || d > bestT - 0.13) return true;
-                const px = x + lx * d, pz = z + lz * d;
-                return onAnyNonServiceRoad(px, pz, y, 0.14, e.way.id, e.id) ||
-                    onLinkOrSvcCarriageway(px, pz, y, 0.14, e.way.id, e.id) ||
-                    onConnector(px, pz, 0.2);
-            });
-            return { width: bestT + 0.08, from, to };
-        }
-        let from = 0, to = 0, start = 0;
-        const count = Math.ceil(bestT / 1.05), step = bestT / count;
-        for(let i = 0; i < count; i++){
-            const d = (i + 0.5) * step, px = x + lx * d, pz = z + lz * d;
-            if (onAnyNonServiceRoad(px, pz, y, step * 0.5, e.way.id, e.id) || y < 1.5 && onConnector(px, pz, step * 0.5)) {
-                start = (i + 1) * step;
-            } else if ((i + 1) * step - start > to - from) {
-                from = start;
-                to = (i + 1) * step;
-            }
-        }
+        const [from, to] = widestClearSpan(bestT, (d)=>{
+            if (d < 0.13 || d > bestT - 0.13) return true;
+            const px = x + lx * d, pz = z + lz * d;
+            return onAnyNonServiceRoad(px, pz, y, 0.14, e.way.id, e.id) ||
+                onLinkOrSvcCarriageway(px, pz, y, 0.14, e.way.id, e.id) ||
+                (y < 1.5 && onConnector(px, pz, 0.2));
+        });
         return { width: bestT + 0.08, from, to };
     };
     const boundaryCache = new Map();
@@ -416,25 +485,71 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             const cut0 = edgeCut(e, true), cut1 = e.ref.length - edgeCut(e, false);
             const outer = rightRoad;
             const byRamp = e.rampJoin || g.edges[e.prev]?.joinAcross || g.edges[e.next]?.joinAcross;
-            const oSpans = clearSpans(cut0, cut1, 1.35, (d)=>{
+            const outerClear = (d)=>{
                 const q = atStation(e, outer, d), nx = -q.hz, nz = q.hx;
-                if (onAnyNonServiceRoad(q.x + nx * 0.42, q.z + nz * 0.42, q.y, 0.10, e.way.id, e.id)) return false;
-                if (onLinkOrSvcCarriageway(q.x + nx * 1.1, q.z + nz * 1.1, q.y, 0.10, e.way.id, e.id)) return false;
-                if (byRamp && !isLink && onLinkOrSvcCarriageway(q.x + nx * sw, q.z + nz * sw, q.y, 0.25, e.way.id, e.id)) return false;
-                return q.y > 1.5 || !onConnector(q.x + nx * 0.65, q.z + nz * 0.65, 0.08);
-            });
+                if (onAnyNonServiceRoad(q.x + nx * 0.42, q.z + nz * 0.42, q.y, 0.10, e.way.id, e.id)) return 0;
+                if (onLinkOrSvcCarriageway(q.x + nx * 0.85, q.z + nz * 0.85, q.y, 0.10, e.way.id, e.id)) return 0;
+                if (q.y <= 1.5 && onConnector(q.x + nx * 0.65, q.z + nz * 0.65, 0.08)) return 0;
+                if (air) return sw;
+                // Trim sidewalk width smoothly so slabs never jut over angled driveways, plazas or ramps
+                for (let w = 0.5; w <= sw + 0.15; w += 0.35) {
+                    const px = q.x + nx * w, pz = q.z + nz * w;
+                    if (onAnyNonServiceRoad(px, pz, q.y, 0.18, e.way.id, e.id) ||
+                        onLinkOrSvcCarriageway(px, pz, q.y, 0.22, e.way.id, e.id) ||
+                        onConnector(px, pz, 0.18)) {
+                        return Math.max(0.25, w - 0.35);
+                    }
+                }
+                return sw;
+            };
+            const oSpans = clearSpans(cut0, cut1, 0.9, (d)=>outerClear(d) > 0.2);
             for (const [s0, s1] of oSpans){
                 const piece = sliceStations(e, outer, s0, s1);
-                const taper = byRamp && !isLink && s1 - s0 >= 4 ? [s0 > cut0 + 0.15 ? 6 : 0, s1 < cut1 - 0.15 ? 6 : 0] : undefined;
-                sidewalkPiece(piece, 0, 0.25, isLink ? 0 : sw, air, taper);
+                if (isLink) {
+                    sidewalkPiece(piece, 0, 0.25, 0, air);
+                } else {
+                    const taperStart = s0 > cut0 + 0.15 ? (byRamp ? 6 : 3.2) : 0;
+                    const taperEnd = s1 < cut1 - 0.15 ? (byRamp ? 6 : 3.2) : 0;
+                    if (air) {
+                        const taper = taperStart || taperEnd ? [taperStart, taperEnd] : undefined;
+                        sidewalkPiece(piece, 0, 0.25, sw, air, taper);
+                    } else {
+                        const line = makeLine(piece.pts, piece.y);
+                        const rawW = line.cum.map((d)=>{
+                            const t = Math.min(1, taperStart ? d / taperStart : 1, taperEnd ? (line.length - d) / taperEnd : 1);
+                            const ease = t * t * (3 - 2 * t);
+                            const qD = s0 + (s1 - s0) * (d / (line.length || 1));
+                            return Math.max(0.25, outerClear(qD) * ease);
+                        });
+                        // Smooth outer sidewalk transitions to prevent faceted curb steps
+                        const smW = rawW.slice();
+                        for (let pass = 0; pass < 2; pass++) {
+                            const prev = smW.slice();
+                            for (let k = 1; k < prev.length - 1; k++) smW[k] = 0.25 * prev[k - 1] + 0.5 * prev[k] + 0.25 * prev[k + 1];
+                        }
+                        sidewalkPiece(piece, 0, 0.25, sw, air, undefined, smW);
+                    }
+                }
             }
             if (e.oneway && isLink) {
                 const left = leftRoad;
-                const lSpans = clearSpans(cut0, cut1, 1.35, (d)=>{
+                const lSpans = clearSpans(cut0, cut1, 1.1, (d)=>{
                     const q = atStation(e, left, d), nx = -q.hz, nz = q.hx;
                     return !onAnyNonServiceRoad(q.x - nx * 0.42, q.z - nz * 0.42, q.y, 0.1, e.way.id, e.id) && (q.y > 1.5 || !onConnector(q.x - nx * 0.6, q.z - nz * 0.6, 0.08));
                 });
                 for (const [s0, s1] of lSpans) sidewalkPiece(sliceStations(e, left, s0, s1), 0, -0.25, 0, air);
+            }
+        }
+        if (!e.internal && !air && e.cls === 'service' && e.way.svc !== 'parking_aisle' && e.ref.length > 4) {
+            const cut0 = edgeCut(e, true), cut1 = e.ref.length - edgeCut(e, false);
+            for (const [line, sign] of [[rightRoad, 1], ...(e.oneway ? [[leftRoad, -1]] : [])]) {
+                const cSpans = clearSpans(cut0, cut1, 0.9, (d)=>{
+                    const q = atStation(e, line, d), nx = -q.hz * sign, nz = q.hx * sign;
+                    return !onAnyNonServiceRoad(q.x + nx * 0.35, q.z + nz * 0.35, q.y, 0.08, e.way.id, e.id) &&
+                        !onLinkOrSvcCarriageway(q.x + nx * 0.55, q.z + nz * 0.55, q.y, 0.08, e.way.id, e.id) &&
+                        !onConnector(q.x + nx * 0.5, q.z + nz * 0.5, 0.08);
+                });
+                for (const [s0, s1] of cSpans) sidewalkPiece(sliceStations(e, line, s0, s1), 0, sign * 0.18, 0, false);
             }
         }
         if (!air && !e.internal) for (const id of e.lanes){
@@ -459,9 +574,9 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 }
                 return profiles.get(d);
             };
-            const mSpans = clearSpans(cut0, e.ref.length - cut1, 1.6, (d)=>!!profileAt(d));
+            const mSpans = clearSpans(cut0, e.ref.length - cut1, 1.2, (d)=>!!profileAt(d));
             for (const [s0, s1] of mSpans){
-                const length = s1 - s0, steps = Math.max(2, Math.ceil(length / (stripApproach ? 0.75 : 1.5)));
+                const length = s1 - s0, steps = Math.max(2, Math.ceil(length / 0.65));
                 const stations = Array.from({ length: steps + 1 }, (_, i)=>i === steps ? s1 : s0 + length * i / steps);
                 for (const d of e.ref.cum) if (d > s0 + 0.01 && d < s1 - 0.01) stations.push(d);
                 stations.sort((a,b)=>a-b);
@@ -472,7 +587,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                     const profile = profileAt(d);
                     pts.push([q.x, q.z]);
                     widths.push(profile?.width ?? 0);
-                    crowns.push(profile && profile.to - profile.from >= (stripApproach ? 0.52 : 0.85) ? profile : null);
+                    crowns.push(profile && profile.to - profile.from >= (stripApproach ? 0.52 : 0.85) ? { ...profile } : null);
                     heights.push(air ? roadHeight(q.y) : 0);
                     dists.push(d);
                 }
@@ -489,6 +604,16 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                         Math.min(crowns[end - 1].to, crowns[end].to) - Math.max(crowns[end - 1].from, crowns[end].from) > 0.25) end++;
                     const last = end - 1, len = dists[last] - dists[start];
                     if (len >= 2){
+                        // Smooth minor local sampling jitter along continuous median runs without blurring nose tapers.
+                        for (let pass = 0; pass < 2; pass++) {
+                            const orig = crowns.slice(start, end).map(c=>({ ...c }));
+                            for (let k = 1; k < orig.length - 1; k++) {
+                                const df = Math.max(Math.abs(orig[k].from - orig[k - 1].from), Math.abs(orig[k].from - orig[k + 1].from));
+                                const dt = Math.max(Math.abs(orig[k].to - orig[k - 1].to), Math.abs(orig[k].to - orig[k + 1].to));
+                                if (df < 0.7) crowns[start + k].from = 0.25 * orig[k - 1].from + 0.5 * orig[k].from + 0.25 * orig[k + 1].from;
+                                if (dt < 0.7) crowns[start + k].to = 0.25 * orig[k - 1].to + 0.5 * orig[k].to + 0.25 * orig[k + 1].to;
+                            }
+                        }
                         const maxWidth = Math.max(...crowns.slice(start, end).map(({from, to})=>to - from));
                         const radius = Math.min(len * 0.4, Math.max(2.2, maxWidth * 0.58));
                         const taperStart = dists[start] > 0.1 || e.prev === undefined;
@@ -594,12 +719,24 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         for(let i = 1; i < e.lanes.length; i++){
             const line = laneBoundary(e, i);
             if (stripApproach) {
-                // The four-metre pattern shares the existing twelve-metre phase across splits.
-                for (const [d0, d1] of dashRuns(a0, a1, 1.15, 2.85, dashStart.get(e.id) ?? 0)){
+                const only = (t, m)=>!!t && t.length === 1 && t[0] === m;
+                const turnDiv = only(e.turns[i - 1], 'left') && !only(e.turns[i], 'left') || only(e.turns[i], 'right') && !only(e.turns[i - 1], 'right');
+                const stripTail = !isLinkOrRamp && intersectionAt(e.toNode)?.control === 'signal' && e.cls === 'arterial' ? Math.min(18, Math.max(0, (a1 - a0) * 0.42)) : 0;
+                const dashEnd = turnDiv ? a0 : Math.max(a0, a1 - stripTail);
+                // Crisp Apple Maps dashes along Strip approaches, transitioning to solid pocket/stop-bar channelization.
+                for (const [d0, d1] of dashRuns(a0, dashEnd, 2.4, 4.6, dashStart.get(e.id) ?? 0)){
                     const d = (d0 + d1) * 0.5, mid = boundaryAt(e, i, d);
                     if (Math.min(mid - boundaryAt(e, i - 1, d), boundaryAt(e, i + 1, d) - mid) < 1.15) continue;
                     if (isLinkOrRamp && !crossSectionClear(d)) continue;
-                    strip(line, d0, d1, 0.063, P);
+                    strip(line, d0, d1, 0.072, P);
+                }
+                if (dashEnd < a1 - 0.5) {
+                    const keepStrip = isLinkOrRamp ? (d)=>crossSectionClear(d, 0.25) : undefined;
+                    stripFiltered(line, dashEnd, a1, turnDiv ? 0.085 : 0.072, P, (d)=>{
+                        const mid = boundaryAt(e, i, d);
+                        if (Math.min(mid - boundaryAt(e, i - 1, d), boundaryAt(e, i + 1, d) - mid) < 1.15) return false;
+                        return !keepStrip || keepStrip(d);
+                    });
                 }
                 continue;
             }
@@ -656,12 +793,14 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             });
         }
         const ix = intersectionAt(e.toNode);
-        const controlled = setback.has(e.toNode) && !!ix && (ix.control === 'signal' || (e.cls === 'local' || e.cls === 'collector') && ix.legs.length >= 3);
-        if (e.oneway && isLink && !controlled) {
+        const controlled = setback.has(e.toNode) && !!ix && (ix.control === 'signal' || (e.cls === 'collector' || e.cls === 'local' && e.explicitTurns) && ix.legs.length >= 3);
+        const nxtLink = e.next !== undefined ? g.edges[e.next] : null;
+        const downstreamControlled = !!nxtLink && /_link$/.test(nxtLink.way.hw) && nxtLink.ref.length < 26 && setback.has(nxtLink.toNode) && !!intersectionAt(nxtLink.toNode);
+        if (e.oneway && isLink && !controlled && !downstreamControlled) {
             const cSpans = clearSpans(a0, a1, 1.0, d=>crossSectionClear(d, 0.35) && markFits(e, d, 1.95));
             for (const [c0, c1] of cSpans){
                 const span = c1 - c0;
-                if (span < 9) continue;
+                if (span < 11) continue;
                 const d = (c0 + c1) * 0.5;
                 e.lanes.forEach((_, i)=>{
                     const q = laneSample(e, i, d);
@@ -719,12 +858,20 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                     if (!mv || !mv.length) return;
                     const q = chainLaneSample(i, a1 - 7.5, stripApproach ? 1.5 : 1.95);
                     if (!q) return;
-                    arrow(at(P, q.x, q.z), q, mv, yOff, stripApproach ? 0.77 : 1);
-                    if (mv.length === 1 && (mv[0] === 'left' || mv[0] === 'right')) {
-                        const q2 = chainLaneSample(i, a1 - 16.5, stripApproach ? 1.5 : 0.9);
-                        if (q2 && q2.width >= 2.4) {
-                            if (stripApproach) arrow(at(P, q2.x, q2.z), q2, mv, yOff, 0.77);
-                            else onlyText(at(P, q2.x, q2.z), q2, yOff);
+                    const arrowS = a1 - 7.5;
+                    const qPrev = chainLaneSample(i, arrowS - 3.5, 0.5), qNext = chainLaneSample(i, arrowS + 3.5, 0.5);
+                    const flatCurve = !qPrev || !qNext || qPrev.hx * qNext.hx + qPrev.hz * qNext.hz > 0.94;
+                    const showArrow = flatCurve && e.ref.length >= 13 && (ix.control === 'signal' || e.cls !== 'local' || e.explicitTurns);
+                    if (showArrow) {
+                        arrow(at(P, q.x, q.z), q, mv, yOff, stripApproach ? 0.88 : 1);
+                        if (mv.length === 1 && (mv[0] === 'left' || mv[0] === 'right') && e.cls !== 'local') {
+                            const q2 = chainLaneSample(i, a1 - 16.5, stripApproach ? 1.5 : 0.9);
+                            if (q2 && q2.width >= 2.55) {
+                                const straight = q.hx * q2.hx + q.hz * q2.hz > 0.93;
+                                if (straight && (ix.control === 'signal' || e.explicitTurns || e.cls === 'arterial' || e.cls === 'collector')) {
+                                    onlyText(at(P, q2.x, q2.z), q2, yOff);
+                                }
+                            }
                         }
                     }
                 });
@@ -744,26 +891,39 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         const across = (q, d)=>[q.x + q.hz * d, q.z - q.hx * d];
         const widthAt = (s)=>{
             const q = sample(line, s);
-            for (let d = shoulder; d <= 17; d += 0.32){
+            for (let d = shoulder; d <= 17; d += 0.25) {
                 const [x, z] = across(q, d);
                 if (!onAnyNonServiceRoad(x, z, 0, 0.17) && !onConnector(x, z, 0.22)) continue;
+                let lo = Math.max(shoulder, d - 0.25), hi = d;
+                for (let k = 0; k < 5; k++) {
+                    const mid = (lo + hi) * 0.5;
+                    const [mx2, mz2] = across(q, mid);
+                    if (!onAnyNonServiceRoad(mx2, mz2, 0, 0.17) && !onConnector(mx2, mz2, 0.22)) lo = mid;
+                    else hi = mid;
+                }
                 const bounded = [0, 2, 4].some(delta=>{
-                    const [mx, mz] = across(q, d + delta);
+                    const [mx, mz] = across(q, lo + delta);
                     return onMainCarriageway(mx, mz, 0, 0.17);
                 });
-                return bounded ? Math.max(0, d - shoulder - 0.22) : 0;
+                return bounded ? Math.max(0, lo - shoulder - 0.22) : 0;
             }
             return 0;
         };
         const islandOutlines = [];
-        for (const [s0, s1] of clearSpans(1, line.length - 1, 0.8, s=>widthAt(s) > 0.9)){
+        for (const [s0, s1] of clearSpans(1, line.length - 1, 0.65, s=>widthAt(s) > 1.05)){
             const length = s1 - s0;
-            if (length < 4) continue;
-            const sections = Math.ceil(length / 0.8), near = [], far = [], y = [];
+            if (length < 4.5) continue;
+            const sections = Math.max(3, Math.ceil(length / 0.65)), near = [], far = [], y = [];
+            const rawWidths = Array.from({ length: sections + 1 }, (_, i)=>widthAt(s0 + length * i / sections));
+            const smoothWidths = rawWidths.slice();
+            for (let pass = 0; pass < 2; pass++) {
+                const prev = smoothWidths.slice();
+                for (let k = 1; k < prev.length - 1; k++) smoothWidths[k] = 0.25 * prev[k - 1] + 0.5 * prev[k] + 0.25 * prev[k + 1];
+            }
             for (let i = 0; i <= sections; i++){
                 const d = length * i / sections, s = s0 + d;
-                const q = sample(line, s), width = widthAt(s);
-                const t = Math.max(0, Math.min(1, Math.min(d, length - d) / 2.1));
+                const q = sample(line, s), width = smoothWidths[i];
+                const t = Math.max(0, Math.min(1, Math.min(d, length - d) / 2.2));
                 const inset = width * (1 - Math.sqrt(t * (2 - t))) / 2;
                 near.push(across(q, shoulder + inset));
                 far.push(across(q, shoulder + width - inset));
@@ -813,7 +973,14 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 ...corners(pa, ra + 0.15, ra + 0.15 + swA),
                 ...corners(pb, rb + 0.15, rb + 0.15 + swB)
             ]);
-            if (walk.length >= 3) sidewalk.at(pa.x, pa.z).polygon(walk, WALK_HEIGHT);
+            const blocked = (px, pz)=>onAnyNonServiceRoad(px, pz, pa.y, 0.25, A.way.id, A.id) ||
+                onLinkOrSvcCarriageway(px, pz, pa.y, 0.35, A.way.id, A.id) ||
+                onConnector(px, pz, 0.25);
+            const walkClear = walk.length >= 3 && !walk.some(([wx, wz], idx)=>{
+                const nx = walk[(idx + 1) % walk.length];
+                return blocked(wx, wz) || blocked((wx + nx[0]) * 0.5, (wz + nx[1]) * 0.5);
+            });
+            if (walkClear) sidewalk.at(pa.x, pa.z).polygon(walk, WALK_HEIGHT);
         }
     }
     for (const [id, r] of setback){
@@ -822,10 +989,12 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         let air = false;
         let surf = asphalt;
         let freewayOnly = true;
-        for (const ei of [
+        let minEdgeY = Infinity, maxEdgeY = -Infinity, hasNonService = false;
+        const connected = [
             ...node.inEdges,
             ...node.outEdges
-        ]){
+        ];
+        for (const ei of connected){
             const e = g.edges[ei];
             const [l0, l1] = extents(e);
             const atStart = e.fromNode === id;
@@ -852,21 +1021,25 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 q.x + nx * l1,
                 q.z + nz * l1
             ]);
+            minEdgeY = Math.min(minEdgeY, p.y, q.y);
+            maxEdgeY = Math.max(maxEdgeY, p.y, q.y);
             if (p.y > ELEV) air = true;
             if (e.cls === 'arterial') surf = major;
+            if (e.cls !== 'service') hasNonService = true;
             if (surfaceFor(e) !== freeway) freewayOnly = false;
         }
-        // The raised approach ribbons already cover the approach grade. A flat
-        // pad at node.y can cut across a rising carriageway many metres early.
+        // The raised approach ribbons already cover sloped decks. Never emit a flat horizontal pad
+        // across an inclined viaduct split (causes slicing cliff steps).
         const raised = air || node.y > ELEV;
+        if (raised && maxEdgeY - minEdgeY > 0.28) continue;
         const hull = convexHull(raised ? rims : pts);
         if (hull.length < 3) continue;
         const span = Math.max(...hull.map((p)=>Math.hypot(p[0] - node.x, p[1] - node.z)));
-        if (span > r * 3 + 25) continue;
+        const maxSpan = hasNonService ? r * 2.4 + 14 : r * 1.85 + 8;
+        if (span > maxSpan) continue;
         if (raised) (freewayOnly ? freewayDeckTop : deckTop).at(node.x, node.z).polygon(hull, Math.max(0, node.y - 0.015));
         else surf.at(node.x, node.z).polygon(hull, 0);
     }
-    for (const hull of cornerFillets(g))service.at(hull[0][0], hull[0][1]).polygon(hull, 0);
     {
         const byCtr = new Map();
         for (const leg of legs){
@@ -973,7 +1146,84 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                     X,
                     ...curve
                 ], 0);
-                sidewalkPiece({pts: curve, y: curve.map(()=>0)}, 0, away * 0.25, big ? 3.2 : 2.6);
+                const curveBlocked = curve.some((p, k)=>k > 0 && k < curve.length - 1 && (
+                    onMainCarriageway(p[0], p[1], 0, 0.25) ||
+                    onLinkOrSvcCarriageway(p[0], p[1], 0, 0.25) ||
+                    onConnector(p[0], p[1], 0.25) ||
+                    onAnyNonServiceRoad(p[0] + nC[k][0] * away * 0.9, p[1] + nC[k][1] * away * 0.9, 0, 0.25)
+                ));
+                if (!curveBlocked) sidewalkPiece({pts: curve, y: curve.map(()=>0)}, 0, away * 0.25, big ? 3.2 : 2.6);
+            }
+        }
+    }
+    // Smooth tangent-arc corner fillets at ALL minor / valet / T-junction nodes (replaces jagged convexHull cornerFillets)
+    {
+        const legCoveredNodes = new Set(legs.flatMap(l=>l.entries.map(en=>en.node)));
+        for (const [id, node] of g.nodes) {
+            if (legCoveredNodes.has(id) || node.y > ELEV) continue;
+            const rays = [];
+            for (const ei of [...node.inEdges, ...node.outEdges]) {
+                const e = g.edges[ei];
+                if (e.internal || e.cls === 'motorway' || e.cls === 'ramp' || e.way.svc === 'parking_aisle') continue;
+                const atStart = e.fromNode === id;
+                if (e.twin !== undefined && e.twin < e.id && !e.oneway) continue;
+                const d = Math.min(8, e.ref.length * 0.6);
+                if (d < 1.5) continue;
+                const q = sample(e.ref, atStart ? 0 : e.ref.length);
+                if (q.y > ELEV) continue;
+                const pEnd = sample(e.ref, atStart ? d : e.ref.length - d);
+                let ax = pEnd.x - q.x, az = pEnd.z - q.z;
+                const L = Math.hypot(ax, az) || 1;
+                ax /= L; az /= L;
+                const nx = -az, nz = ax;
+                const [l0, l1] = extents(e), W = e.lanes.length * e.laneWidth;
+                const latRight = atStart ? boundaryAt(e, e.lanes.length, 0) + l1 - W : -(boundaryAt(e, 0, e.ref.length) + l0);
+                const latLeft = atStart ? -(boundaryAt(e, 0, 0) + l0) : boundaryAt(e, e.lanes.length, e.ref.length) + l1 - W;
+                rays.push({ e, ax, az, nx, nz, q, latRight: Math.max(0.8, latRight), latLeft: Math.max(0.8, latLeft), ang: Math.atan2(az, ax) });
+            }
+            if (rays.length < 2) continue;
+            rays.sort((a, b)=>a.ang - b.ang);
+            for (let i = 0; i < rays.length; i++) {
+                const A = rays[i], B = rays[(i + 1) % rays.length];
+                const cross = A.ax * B.az - A.az * B.ax, dot = A.ax * B.ax + A.az * B.az;
+                if (cross < 0.28 || dot > 0.78) continue;
+                // Curb edge of A facing toward B (+A.nx), and curb edge of B facing toward A (-B.nx)
+                const pa = [A.q.x + A.nx * A.latRight, A.q.z + A.nz * A.latRight];
+                const pb = [B.q.x - B.nx * B.latLeft, B.q.z - B.nz * B.latLeft];
+                const t = ((pb[0] - pa[0]) * B.az - (pb[1] - pa[1]) * B.ax) / cross;
+                const u = ((pb[0] - pa[0]) * A.az - (pb[1] - pa[1]) * A.ax) / cross;
+                if (t < 0.2 || u < 0.2 || t > 32 || u > 32) continue;
+                const X = [pa[0] + A.ax * t, pa[1] + A.az * t];
+                const maxR = Math.min(A.e.ref.length, B.e.ref.length) * 0.45;
+                const hasArt = A.e.cls === 'arterial' || B.e.cls === 'arterial';
+                const hasLoc = A.e.cls === 'collector' || B.e.cls === 'local' || /_link$/.test(A.e.way.hw) || /_link$/.test(B.e.way.hw);
+                const R = Math.min(maxR, hasArt ? 10.5 : hasLoc ? 6.5 : 4.2);
+                if (R < 1.8) continue;
+                const p0 = [X[0] + A.ax * R, X[1] + A.az * R];
+                const p2 = [X[0] + B.ax * R, X[1] + B.az * R];
+                const curve = [];
+                for (let k = 0; k <= 10; k++) {
+                    const s = k / 10, w = 1 - s;
+                    curve.push([w * w * p0[0] + 2 * w * s * X[0] + s * s * p2[0], w * w * p0[1] + 2 * w * s * X[1] + s * s * p2[1]]);
+                }
+                const mid = curve[5];
+                if (curve.some((p, k)=>k > 0 && k < curve.length - 1 && (onMainCarriageway(p[0], p[1], 0, 0.2) || onLinkOrSvcCarriageway(p[0], p[1], 0, 0.2) || onConnector(p[0], p[1], 0.2)))) continue;
+                const surf = hasArt ? major : (A.e.cls === 'service' && B.e.cls === 'service' ? service : asphalt);
+                surf.at(X[0], X[1]).polygon([X, ...curve], 0);
+                const nC = normals(curve);
+                const away = (mid[0] - X[0]) * nC[5][0] + (mid[1] - X[1]) * nC[5][1] > 0 ? 1 : -1;
+                const bothWalk = dot < 0.40 && A.e.ref.length >= 15 && B.e.ref.length >= 15 &&
+                    A.e.cls !== 'service' && B.e.cls !== 'service' && !/_link$/.test(A.e.way.hw) && !/_link$/.test(B.e.way.hw);
+                if (bothWalk) {
+                    const walkOutOk = !curve.some((p, k)=>{
+                        for (const d of [0.35, 1.35, 2.1]) {
+                            const wx = p[0] + nC[k][0] * away * d, wz = p[1] + nC[k][1] * away * d;
+                            if (onAnyNonServiceRoad(wx, wz, 0, 0.2) || onLinkOrSvcCarriageway(wx, wz, 0, 0.2) || onConnector(wx, wz, 0.2)) return true;
+                        }
+                        return false;
+                    });
+                    if (walkOutOk) sidewalkPiece({pts: curve, y: curve.map(()=>0)}, 0, away * 0.20, 2.1);
+                }
             }
         }
     }
@@ -1059,8 +1309,9 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         const bow = Math.abs((mid[0] - pa[0]) * (pb[1] - pa[1]) - (mid[1] - pa[1]) * (pb[0] - pa[0])) / (Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) || 1);
         if (k.line.length < 5 || bow < reach * 0.5) continue;
         const surface = from.cls === 'arterial' || to.cls === 'arterial' ? major : from.cls === 'service' && to.cls === 'service' ? service : asphalt;
-        const pts = k.line.pts.filter((_, i)=>i % 2 === 0 || i === k.line.pts.length - 1);
-        surface.at(pts[0][0], pts[0][1]).ribbon(pts, -k.width / 2 - 0.4, k.width / 2 + 0.4, 0);
+        const pts = k.line.pts;
+        const pad = from.cls === 'service' || to.cls === 'service' ? 0.16 : 0.22;
+        surface.at(pts[0][0], pts[0][1]).ribbon(pts, -k.width / 2 - pad, k.width / 2 + pad, 0);
     }
     {
         const drawnGuides = new Set();
@@ -1185,15 +1436,19 @@ function ribbonSplit(ground, deck, left, right) {
     }
 }
 function deckUnderside(s, left, right) {
-    const underside = (line, k)=>s.vert(line.pts[k][0], Math.max(0, line.y[k] - BRIDGE_SLAB_DEPTH), line.pts[k][1], [0, -1, 0]);
+    const underside = (line, k)=>{
+        const slab = Math.min(BRIDGE_SLAB_DEPTH, Math.max(0.32, line.y[k] * 0.48));
+        return s.vert(line.pts[k][0], Math.max(0, line.y[k] - slab), line.pts[k][1], [0, -1, 0]);
+    };
     for (let i = 0; i < left.pts.length - 1; i++){
-        if (Math.max(left.y[i], left.y[i + 1], right.y[i], right.y[i + 1]) < 2.5) continue;
+        if (Math.max(left.y[i], left.y[i + 1], right.y[i], right.y[i + 1]) < 0.65) continue;
         s.quad(underside(left, i), underside(right, i), underside(right, i + 1), underside(left, i + 1));
     }
 }
 function deckWall(s, coping, line, sign, e, onElevDeck, blocksSupport) {
     const n = normals(line.pts);
     const parapetHeight = y=>y + Math.min(0.85, Math.max(0, (y - 0.12) * 0.42));
+    const isValetRamp = e.cls === 'service' || e.cls === 'local';
     for (let i = 0; i < line.pts.length - 1; i++) {
         const a = line.pts[i], b = line.pts[i + 1], ya = line.y[i], yb = line.y[i + 1];
         if (Math.max(ya, yb) <= 0.12) continue;
@@ -1210,11 +1465,12 @@ function deckWall(s, coping, line, sign, e, onElevDeck, blocksSupport) {
         const top = (p, y, inset)=>coping.vert(p.x - p.nx * inset, y + 0.005, p.z - p.nz * inset, [0, 1, 0]);
         for (let j = 0; j < count; j++) {
             const p = at(j / count), q = at((j + 1) / count), m = at((j + 0.5) / count);
-            if (onElevDeck(m.x + nx * 1.35, m.z + nz * 1.35, m.y, 0.9, undefined, e.id)) continue;
+            if ([0.75, 1.35, 2.0].some(d=>onElevDeck(m.x + nx * d, m.z + nz * d, m.y, 0.9, undefined, e.id))) continue;
             const bottom = (v)=>{
-                const overRoad = blocksSupport(v.x + nx * 0.8, v.z + nz * 0.8, 0, Math.max(0, v.y - 0.5), 1.6, e);
-                const open = overRoad ? 1 : Math.max(0, Math.min(1, (v.y - 2.8) / 1.4));
-                return Math.max(0, v.y - BRIDGE_SLAB_DEPTH) * open;
+                const slab = Math.min(BRIDGE_SLAB_DEPTH, Math.max(0.32, v.y * 0.48));
+                const overRoad = blocksSupport(v.x + nx * 0.8, v.z + nz * 0.8, 0, Math.max(0, v.y - 0.5), 2.2, e);
+                const open = overRoad ? 1 : isValetRamp ? Math.max(0, Math.min(1, (v.y - 0.65) / 0.85)) : Math.max(0, Math.min(1, (v.y - 2.8) / 1.4));
+                return Math.max(0, v.y - slab) * open;
             };
             const ta = parapetHeight(p.y), tb = parapetHeight(q.y);
             const v0 = s.vert(p.x, bottom(p), p.z, nn), v1 = s.vert(q.x, bottom(q), q.z, nn);
@@ -1307,13 +1563,15 @@ const ONLY_GLYPHS = [
 ];
 function onlyText(s, p, yOff) {
     const nx = -p.hz, nz = p.hx, y = paintHeight(p.y, yOff);
+    const sc = Math.min(0.84, Math.max(0.45, ((p.width ?? 3.2) - 0.65) / 2.15));
+    const sw = 0.068 * Math.max(0.75, sc);
     for (let i = 0; i < ONLY_GLYPHS.length; i++){
-        const x = -1.07 + Math.min(i, 3) * 0.57;
+        const x = (-1.07 + Math.min(i, 3) * 0.57) * sc;
         const points = ONLY_GLYPHS[i].map(([u, v])=>[
-            p.x + nx * (x + u) + p.hx * (v - 0.8),
-            p.z + nz * (x + u) + p.hz * (v - 0.8)
+            p.x + nx * (x + u * sc) + p.hx * (v - 0.8) * sc,
+            p.z + nz * (x + u * sc) + p.hz * (v - 0.8) * sc
         ]);
-        s.ribbon(points, -0.058, 0.058, y);
+        s.ribbon(points, -sw, sw, y);
     }
 }
 function addCurb(top, sides, points, heights, from, to) {

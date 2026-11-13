@@ -2267,14 +2267,14 @@ function buildStripResorts(data, engine) {
             baseGlow: 0.3
         });
 
-        // 1. 63 Las Vegas (SE corner of Harmon & Strip, x=186..234, z=882..946)
+        // 1. 63 Las Vegas (SE corner of Harmon & Strip, compacted clear of East Harmon / primary_link / service drive)
         {
             const s63 = new THREE.Group();
-            s63.position.set(208, 0, 914);
-            const base63 = new THREE.Mesh(new THREE.BoxGeometry(42, 21, 58), travertine);
+            s63.position.set(193, 0, 931.5);
+            const base63 = new THREE.Mesh(new THREE.BoxGeometry(34, 21, 14.5), travertine);
             base63.position.y = 10.5;
             s63.add(base63);
-            const glass63 = new THREE.Mesh(new THREE.BoxGeometry(42.8, 8.5, 58.8), sheen('#2c445e', {
+            const glass63 = new THREE.Mesh(new THREE.BoxGeometry(34.6, 8.5, 15.1), sheen('#2c445e', {
                 windows: 0.45,
                 refl: 0.72,
                 spec: 1.4,
@@ -2288,7 +2288,7 @@ function buildStripResorts(data, engine) {
                 16.8,
                 21.1
             ]){
-                const ledge = new THREE.Mesh(new THREE.BoxGeometry(44.2, 0.75, 60.2), sheen('#d4b075', {
+                const ledge = new THREE.Mesh(new THREE.BoxGeometry(35.8, 0.75, 16.2), sheen('#d4b075', {
                     refl: 0.45,
                     spec: 1.1,
                     glow: '#ffd896',
@@ -2298,22 +2298,22 @@ function buildStripResorts(data, engine) {
                 ledge.position.y = y;
                 s63.add(ledge);
             }
-            const sign63 = textPanel('63 LAS VEGAS · OCEAN PRIME', 32, 3.8, {
+            const sign63 = textPanel('63 LAS VEGAS · OCEAN PRIME', 24, 3.2, {
                 font: sans(88, 800),
                 color: '#fff4d4',
                 background: '#16202e'
             });
             sign63.userData.keep = true;
-            sign63.position.set(-21.8, 18.8, 0);
+            sign63.position.set(-17.7, 18.8, 0);
             sign63.rotation.y = -Math.PI * 0.5;
             s63.add(sign63);
             eastRetail.add(s63);
         }
 
-        // 2. Netflix House / Netflix Experience at BLVD (x=185..232, z=962..1032)
+        // 2. Netflix House / Netflix Experience at BLVD (tucked cleanly between Strip East sidewalk and frontage drive)
         {
             const nf = new THREE.Group();
-            nf.position.set(206, 0, 997);
+            nf.position.set(174.0, 0, 978.5);
             const nfBlack = sheen('#101116', {
                 refl: 0.42,
                 spec: 1.15
@@ -2325,37 +2325,37 @@ function buildStripResorts(data, engine) {
                 glowK: 1.45,
                 baseGlow: 0.35
             });
-            const nfBox = new THREE.Mesh(new THREE.BoxGeometry(40, 20, 62), nfBlack);
+            const nfBox = new THREE.Mesh(new THREE.BoxGeometry(10.5, 20, 21), nfBlack);
             nfBox.position.y = 10;
             nf.add(nfBox);
             // Iconic vertical red Netflix N-ribbon bars along the Strip facade
-            for(let z = -26; z <= 26; z += 5.2){
+            for(let z = -8; z <= 8; z += 4){
                 const bar = new THREE.Mesh(new THREE.BoxGeometry(0.65, 13.5, 0.85), nfRed);
-                bar.position.set(-20.3, 11.8, z);
+                bar.position.set(-5.5, 11.8, z);
                 nf.add(bar);
             }
-            const nfPortal = new THREE.Mesh(new THREE.BoxGeometry(1.2, 5.2, 46), warmStorefront);
-            nfPortal.position.set(-20.1, 2.7, 0);
+            const nfPortal = new THREE.Mesh(new THREE.BoxGeometry(0.9, 5.2, 16), warmStorefront);
+            nfPortal.position.set(-5.35, 2.7, 0);
             nf.add(nfPortal);
-            const nfCanopy = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.7, 52), nfRed);
-            nfCanopy.position.set(-21.4, 5.6, 0);
+            const nfCanopy = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.7, 18), nfRed);
+            nfCanopy.position.set(-5.45, 5.6, 0);
             nf.add(nfCanopy);
-            const nfSign = textPanel('NETFLIX', 28, 6.2, {
+            const nfSign = textPanel('NETFLIX', 16, 4.2, {
                 font: sans(138, 900),
                 color: '#e50914',
                 background: '#08080b'
             });
             nfSign.userData.keep = true;
-            nfSign.position.set(-20.8, 15.2, 0);
+            nfSign.position.set(-5.75, 15.2, 0);
             nfSign.rotation.y = -Math.PI * 0.5;
             nf.add(nfSign);
             eastRetail.add(nf);
         }
 
-        // 3. Lululemon Flagship at BLVD (x=185..224, z=1036..1061)
+        // 3. Lululemon Flagship at BLVD (x=185..219, z=1044..1060)
         {
             const lulu = new THREE.Group();
-            lulu.position.set(202, 0, 1048.5);
+            lulu.position.set(202, 0, 1052);
             const luluWhite = sheen('#f5f2ec', {
                 refl: 0.25,
                 spec: 0.9,
@@ -2368,31 +2368,31 @@ function buildStripResorts(data, engine) {
                 glowK: 1.25,
                 baseGlow: 0.3
             });
-            const luluBody = new THREE.Mesh(new THREE.BoxGeometry(34, 15.5, 23), luluWhite);
+            const luluBody = new THREE.Mesh(new THREE.BoxGeometry(34, 15.5, 16), luluWhite);
             luluBody.position.y = 7.75;
             lulu.add(luluBody);
-            const luluGlass = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.4, 19.5), warmStorefront);
+            const luluGlass = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.4, 13.5), warmStorefront);
             luluGlass.position.set(-17.1, 2.8, 0);
             lulu.add(luluGlass);
-            const omegaBadge = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.1, 0.45, 24).rotateZ(Math.PI * 0.5), luluRed);
-            omegaBadge.position.set(-17.3, 11.6, -6.5);
+            const omegaBadge = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 0.45, 24).rotateZ(Math.PI * 0.5), luluRed);
+            omegaBadge.position.set(-17.3, 11.6, -5.6);
             lulu.add(omegaBadge);
-            const luluSign = textPanel('lululemon', 15.5, 3.2, {
+            const luluSign = textPanel('lululemon', 11.5, 2.8, {
                 font: sans(104, 700),
                 color: '#ffffff',
                 background: '#d31334'
             });
             luluSign.userData.keep = true;
-            luluSign.position.set(-17.35, 11.6, 2.6);
+            luluSign.position.set(-17.35, 11.6, 1.5);
             luluSign.rotation.y = -Math.PI * 0.5;
             lulu.add(luluSign);
             eastRetail.add(lulu);
         }
 
-        // 4. JD Sports Flagship (x=185..224, z=1063..1083)
+        // 4. JD Sports Flagship (x=185..219, z=1063..1081)
         {
             const jd = new THREE.Group();
-            jd.position.set(202, 0, 1073);
+            jd.position.set(202, 0, 1072);
             const jdBody = new THREE.Mesh(new THREE.BoxGeometry(34, 15.0, 18), darkMetal);
             jdBody.position.y = 7.5;
             jd.add(jdBody);
@@ -2408,10 +2408,10 @@ function buildStripResorts(data, engine) {
             eastRetail.add(jd);
         }
 
-        // 5. New In-N-Out Burger Flagship across from ARIA (x=184.5, z=1094.7, span z=1085..1125)
+        // 5. New In-N-Out Burger Flagship across from ARIA (x=185..217, z=1086..1110)
         {
             const ino = new THREE.Group();
-            ino.position.set(201, 0, 1104);
+            ino.position.set(201, 0, 1098);
             const inoWhite = sheen('#fbf8f1', {
                 refl: 0.2,
                 spec: 0.85,
@@ -2433,23 +2433,23 @@ function buildStripResorts(data, engine) {
                 glowK: 1.5,
                 baseGlow: 0.38
             });
-            const inoBody = new THREE.Mesh(new THREE.BoxGeometry(33, 13.5, 34), inoWhite);
+            const inoBody = new THREE.Mesh(new THREE.BoxGeometry(32, 13.5, 24), inoWhite);
             inoBody.position.y = 6.75;
             ino.add(inoBody);
             // Signature red parapet fascia + awning
-            const inoRoofTrim = new THREE.Mesh(new THREE.BoxGeometry(34.2, 1.35, 35.2), inoRed);
+            const inoRoofTrim = new THREE.Mesh(new THREE.BoxGeometry(33.2, 1.35, 25.2), inoRed);
             inoRoofTrim.position.y = 13.5;
-            const inoAwning = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.65, 28), inoRed);
-            inoAwning.position.set(-17.6, 5.2, 0);
-            const inoWindows = new THREE.Mesh(new THREE.BoxGeometry(0.8, 4.4, 26), warmStorefront);
-            inoWindows.position.set(-16.6, 2.4, 0);
+            const inoAwning = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.65, 20), inoRed);
+            inoAwning.position.set(-16.9, 5.2, 0);
+            const inoWindows = new THREE.Mesh(new THREE.BoxGeometry(0.8, 4.4, 19), warmStorefront);
+            inoWindows.position.set(-16.1, 2.4, 0);
             ino.add(inoRoofTrim, inoAwning, inoWindows);
             // Iconic In-N-Out yellow bent-arrow boomerang tower + red marquee sign on the Strip corner
             const pylon = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 21, 12), inoWhite);
-            pylon.position.set(-16.2, 10.5, -13.5);
+            pylon.position.set(-15.7, 10.5, -9.5);
             ino.add(pylon);
             const arrowBoomerang = new THREE.Group();
-            arrowBoomerang.position.set(-16.8, 17.5, -13.5);
+            arrowBoomerang.position.set(-16.3, 17.5, -9.5);
             const seg1 = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.1, 9.5), inoYellow);
             seg1.position.set(0, 1.8, 2.2);
             seg1.rotation.x = 0.42;
@@ -2461,13 +2461,13 @@ function buildStripResorts(data, engine) {
             arrowTip.rotation.x = -Math.PI * 0.5 - 0.55;
             arrowBoomerang.add(seg1, seg2, arrowTip);
             ino.add(arrowBoomerang);
-            const inoSign = textPanel('IN-N-OUT BURGER', 22, 4.2, {
+            const inoSign = textPanel('IN-N-OUT BURGER', 18, 3.8, {
                 font: sans(104, 900),
                 color: '#ffffff',
                 background: '#c8161d'
             });
             inoSign.userData.keep = true;
-            inoSign.position.set(-16.9, 10.2, 1.5);
+            inoSign.position.set(-16.4, 10.2, 1.5);
             inoSign.rotation.y = -Math.PI * 0.5;
             ino.add(inoSign);
             eastRetail.add(ino);
