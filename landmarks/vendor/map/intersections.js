@@ -1,7 +1,9 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
-import { sample } from './lanegraph.js';
+import { boundaryLine, sample } from './lanegraph.js';
 import { rebuildMovements } from './movements.js';
 import { isStripEdge } from '../../../world/strip-streets.mjs';
+import { alignSouthStripCrossing, isMandalayLaneFan } from '../../../world/south-strip-roads.mjs';
+import { CROSSWALK_OFFSET, crossingStation } from '../../../world/road-crossings.mjs';
 export function planIntersections(data, g) {
     const waysAt = new Map();
     for (const e of g.edges)for (const n of [
@@ -128,6 +130,7 @@ export function planIntersections(data, g) {
             ]
         ]);
         const crossPts = data.crossings.filter((c)=>c.k !== 'unmarked' && c.k !== 'no');
+        const crossingsById = new Map(crossPts.map(c=>[c.id, c]));
         const cellOf = (x, z)=>`${Math.floor(x / 60)},${Math.floor(z / 60)}`;
         const crossGrid = new Map();
         for (const c of crossPts){
@@ -204,6 +207,7 @@ export function planIntersections(data, g) {
                     gz / group.length
                 ];
                 const inGroup = new Set(group), mine = [], real = crossesRoad(group);
+                const mandalayLaneFan = isMandalayLaneFan(group);
                 groupsOut.push({
                     nodes: group,
                     ctr,
@@ -258,7 +262,8 @@ export function planIntersections(data, g) {
                     }
                     leg.d = Math.min(d, 80);
                     const mx = ctr[0] + leg.a[0] * leg.d, mz = ctr[1] + leg.a[1] * leg.d;
-                    for(let i = -1; i <= 1; i++)for(let j = -1; j <= 1; j++){
+                    // The Mandalay Bay Road lane fan has no crossing at the split.
+                    for(let i = -1; !mandalayLaneFan && i <= 1; i++)for(let j = -1; j <= 1; j++){
                         for (const c of crossGrid.get(`${Math.floor(mx / 60) + i},${Math.floor(mz / 60) + j}`) ?? []){
                             const along = (c.x - mx) * leg.a[0] + (c.z - mz) * leg.a[1], across = (c.x - mx) * leg.perp[0] + (c.z - mz) * leg.perp[1];
                             const hitBand = real ? along > -14 && along < 34 && Math.abs(across) < 34 : along > -8 && along < 12 && Math.hypot(c.x - mx, c.z - mz) < 12;
@@ -273,11 +278,17 @@ export function planIntersections(data, g) {
                             }
                         }
                     }
-                    if (leg.entries.some(({ e })=>e.cls === 'arterial' || e.cls === 'collector') && real && nearSignal(mx, mz, 45)) leg.cross = true;
+                    if (!mandalayLaneFan && leg.entries.some(({ e })=>e.cls === 'arterial' || e.cls === 'collector') && real && nearSignal(mx, mz, 45)) leg.cross = true;
                     if (leg.cross && leg.entries.some(({ e })=>e.cls === 'arterial') && !nearSignal(ctr[0], ctr[1], 40) && !nearSignal(mx, mz, 35) && !pedSignalAt(ctr[0], ctr[1], 25)) leg.cross = false;
                     if (leg.cross && spans.some((sp)=>Math.hypot(sp.x - mx, sp.z - mz) < 42 && Math.abs(sp.hx * leg.a[0] + sp.hz * leg.a[1]) < 0.45)) leg.cross = false;
                     if (leg.cross && leg.entries.some(({ e })=>e.cls === 'arterial') && spans.filter((sp)=>Math.hypot(sp.x - ctr[0], sp.z - ctr[1]) < 95).length >= 2) leg.cross = false;
+                    if (leg.cross && alignSouthStripCrossing(leg, group, crossingsById, CROSSWALK_OFFSET)) leg.mapped = true;
                     const target = (t, e, atStart, max = e.ref.length * 0.5)=>{
+                        if (leg.mapped) {
+                            const mid = (crossingStation(e, boundaryLine(e, 0), leg, t, atStart, max) +
+                                crossingStation(e, boundaryLine(e, e.lanes.length), leg, t, atStart, max)) / 2;
+                            return mid;
+                        }
                         for(let dd = 0; dd < max; dd += 0.5){
                             const q = sample(e.ref, atStart ? dd : e.ref.length - dd);
                             if ((q.x - ctr[0]) * leg.a[0] + (q.z - ctr[1]) * leg.a[1] >= t) return dd;

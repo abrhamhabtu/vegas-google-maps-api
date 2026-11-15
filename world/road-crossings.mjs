@@ -1,9 +1,22 @@
 import { sample } from '../landmarks/vendor/map/lanegraph.js';
+import { offsetStation } from './road-visuals.mjs';
 
 export const CROSSWALK_HALF = 1.35;
 export const CROSSWALK_OFFSET = 2.2;
 const CLEARANCE = 0.55;
 const GROUND = 0.4;
+
+export function crossingStation(edge, line, leg, distance, atStart, max = edge.ref.length) {
+  let low = 0, high = max;
+  for (let i = 0; i < 15; i++) {
+    const middle = (low + high) / 2;
+    const at = atStart ? middle : edge.ref.length - middle;
+    const p = sample(line, offsetStation(edge.ref, line, at));
+    if (along(leg, [p.x, p.z]) < distance) low = middle;
+    else high = middle;
+  }
+  return high;
+}
 
 function along(leg, [x, z]) {
   return (x - leg.ctr[0]) * leg.a[0] + (z - leg.ctr[1]) * leg.a[1];

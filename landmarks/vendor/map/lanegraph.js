@@ -1,5 +1,6 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
 import { convexHull } from './geom.js';
+import { isSouthStripRoad, roundSouthStripRoad, southStripLaneCount } from '../../../world/south-strip-roads.mjs';
 export const CLASS = {
     motorway: 'motorway',
     motorway_link: 'ramp',
@@ -524,6 +525,7 @@ export function buildLaneGraph(data) {
         return n;
     };
     for (const w of ways){
+        const southStrip = isSouthStripRoad(w);
         const cuts = [
             0
         ];
@@ -538,7 +540,7 @@ export function buildLaneGraph(data) {
             if (pts.length < 2) continue;
             const rawTurn = w.ow === 1 ? w.turn ?? w.tf : w.ow === -1 ? w.turn ?? w.tb : undefined;
             const turnCount = rawTurn ? rawTurn.split('|').length : undefined;
-            const known = w.lanes ?? inheritedLanes.get(w.id);
+            const known = (southStrip ? southStripLaneCount(w) : undefined) ?? w.lanes ?? inheritedLanes.get(w.id);
             const turnInflatedByEmptyPipe = !!(rawTurn && w.lanes !== undefined && rawTurn.endsWith('||'));
             const total = (turnCount && known && turnCount > known && !turnInflatedByEmptyPipe ? turnCount : known) ?? turnCount ?? (w.ow ? cls === 'service' ? 1 : cls === 'ramp' ? 1 : 2 : cls === 'arterial' ? 4 : 2);
             let laneW = LANE_W[cls];
@@ -591,7 +593,8 @@ export function buildLaneGraph(data) {
             const centre = !w.ow && total % 2 === 1 && total >= 3 && !w.lf ? laneW / 2 : 0;
             for (const d of dirs){
                 const oneway = !!w.ow;
-                const base = makeLine(d.pts, d.y);
+                const shape = southStrip ? roundSouthStripRoad(d.pts, d.y) : d;
+                const base = makeLine(shape.pts, shape.y);
                 const ref = oneway ? offset(base, -(d.n * laneW) / 2) : centre ? offset(base, centre) : base;
                 const e = {
                     id: edges.length,
@@ -605,6 +608,7 @@ export function buildLaneGraph(data) {
                     mph,
                     turns: parseTurns(d.turn, d.n),
                     explicitTurns: !!d.turn,
+                    southStrip,
                     oneway,
                     elevated: d.y.some((v)=>v > 0.4)
                 };
@@ -911,7 +915,7 @@ export function buildLaneGraph(data) {
         const want = Math.max(36, Math.min(move * (W.cls === 'motorway' || W.cls === 'ramp' ? 28 : 16), W.cls === 'motorway' || W.cls === 'ramp' ? 400 : 110));
         const hasOtherTaper = wideIsA ? !!A.taperStart : !!B.taperEnd;
         const maxLen = W.ref.length * (hasOtherTaper ? 0.48 : 0.9);
-        if ((W.cls === 'arterial' || W.cls === 'collector') && move > maxLen * 0.125) {
+        if (!W.southStrip && (W.cls === 'arterial' || W.cls === 'collector') && move > maxLen * 0.125) {
             const scale = maxLen * 0.125 / move;
             for(let i = 0; i <= nW; i++)joint[i] = i * W.laneWidth + (joint[i] - i * W.laneWidth) * scale;
         }
@@ -929,7 +933,7 @@ export function buildLaneGraph(data) {
         const maxSlope = (e.cls === 'arterial' || e.cls === 'collector') && e.jointStart ? 0.25 : 0.125;
         if (e.taperStart) {
             e.taperStart = Math.min(e.taperStart, both ? L * 0.48 : L * 0.9);
-            if ((e.cls === 'arterial' || e.cls === 'collector') && e.jointStart) {
+            if (!e.southStrip && (e.cls === 'arterial' || e.cls === 'collector') && e.jointStart) {
                 const mv = Math.max(...e.jointStart.map((v, i)=>Math.abs(v - i * e.laneWidth)));
                 const lim = Math.min(4.0, Math.max(e.taperStart * 0.125, mv <= 3.8 ? e.taperStart * maxSlope : e.taperStart * 0.125));
                 if (mv > lim) {
@@ -940,7 +944,7 @@ export function buildLaneGraph(data) {
         }
         if (e.taperEnd) {
             e.taperEnd = Math.min(e.taperEnd, both ? L * 0.48 : L * 0.9);
-            if ((e.cls === 'arterial' || e.cls === 'collector') && e.jointEnd) {
+            if (!e.southStrip && (e.cls === 'arterial' || e.cls === 'collector') && e.jointEnd) {
                 const mv = Math.max(...e.jointEnd.map((v, i)=>Math.abs(v - i * e.laneWidth)));
                 const lim = Math.min(4.0, Math.max(e.taperEnd * 0.125, mv <= 3.8 ? e.taperEnd * 0.25 : e.taperEnd * 0.125));
                 if (mv > lim) {
@@ -953,7 +957,7 @@ export function buildLaneGraph(data) {
     }
     alignRampBranches(edges, nodes);
     for (const e of edges){
-        if (!e.rampJoin && e.next === undefined && e.prev === undefined) continue;
+        if (!e.southStrip && !e.rampJoin && e.next === undefined && e.prev === undefined) continue;
         e.lanes.forEach((id, i)=>{
             lanes[id].line = edgeLine(e, (at)=>(boundaryAt(e, i, at) + boundaryAt(e, i + 1, at)) / 2);
         });

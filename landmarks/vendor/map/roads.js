@@ -8,7 +8,7 @@ function smoothVisRef(e) {
     let cached = visRefCache.get(e);
     if (cached) return cached;
     const ref = e.ref, pts = ref.pts, ys = ref.y, n = pts.length;
-    if (n < 3 || e.joinAcross || e.rampJoin) {
+    if (n < 3 || e.southStrip || e.joinAcross || e.rampJoin) {
         visRefCache.set(e, ref);
         return ref;
     }
@@ -79,10 +79,13 @@ function boundaryLine(e, i) {
 import { planIntersections } from './intersections.js';
 import { flatMaterial, litMaterial, ORDER, surfaceMaterial } from './materials.js';
 import { arrowMarking, dashRuns, offsetStation, widestClearSpan, zebraBars } from '../../../world/road-visuals.mjs';
-import { CROSSWALK_HALF, CROSSWALK_OFFSET, guideClearsCrossing, paintSpans, planCrossingPaint } from '../../../world/road-crossings.mjs';
+import { CROSSWALK_HALF, CROSSWALK_OFFSET, crossingStation, guideClearsCrossing, paintSpans, planCrossingPaint } from '../../../world/road-crossings.mjs';
 import { BRIDGE_SLAB_DEPTH } from '../../../world/road-surface.mjs';
 import { planBridgeDecks } from '../../../world/bridge-decks.mjs';
 import { STRIP_PAVEMENT, hasPavedStripMedian, planStripStreets } from '../../../world/strip-streets.mjs';
+import { inSouthStrip, isSouthStripMedian, isSouthStripMedianOpening, isSouthStripMedianOpeningLane, isSouthStripTurn, junctionOutline,
+    roundSouthStripRoad } from '../../../world/south-strip-roads.mjs';
+import { finishSouthStripPavement } from '../../../world/south-strip-pavement.mjs';
 const ELEV = 0.4;
 const WALK_HEIGHT = 0.11;
 const CURB_HEIGHT = 0.17;
@@ -99,8 +102,10 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
     const C = 1400;
     const sidewalk = new Chunked(C), curb = new Chunked(C), curbFaces = new Chunked(C), medians = new Chunked(C), medianPaving = new Chunked(C);
     const concreteMedians = new Chunked(C), medianPlanting = new Chunked(C), slipPavement = new Chunked(C);
+    const frontagePlanting = new Chunked(C), parkingBase = new Chunked(C);
     const deckWalk = new Chunked(C), deckCurb = new Chunked(C), deckCurbFaces = new Chunked(C), deckMedianPaving = new Chunked(C);
     const asphalt = new Chunked(C), major = new Chunked(C), freeway = new Chunked(C), service = new Chunked(C), aisle = new Chunked(C);
+    const reviewedAisles = new Chunked(C);
     const paint = new Chunked(C), paintDim = new Chunked(C), paintYellow = new Chunked(C);
     const deckTop = new Chunked(C), freewayDeckTop = new Chunked(C), deckPaint = new Chunked(C), deckPaintYellow = new Chunked(C);
     const deckSide = new Soup(), deckCoping = new Soup();
@@ -172,6 +177,24 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
     };
     const isAir = (l)=>l.y.some((v)=>v > ELEV);
     const { legs, mouthStart, mouthEnd, setback, endSetback, intersectionAt } = plan;
+    const legsByCenter = new Map();
+    for (const leg of legs) {
+        const key = leg.ctr.map(coordinate=>coordinate.toFixed(2)).join(',');
+        if (!legsByCenter.has(key)) legsByCenter.set(key, []);
+        legsByCenter.get(key).push(leg);
+    }
+    const reviewedJunctions = new Map();
+    const medianOpenings = new Set();
+    for (const junctionLegs of legsByCenter.values()) {
+        const center = junctionLegs[0].ctr;
+        if (!inSouthStrip(...center) || junctionLegs.length < 2 || junctionLegs.some(l=>l.entries.some(({e})=>isAir(e.ref)))) continue;
+        const id = intersectionAt(junctionLegs[0].entries[0].node)?.id;
+        if (id === undefined) continue;
+        reviewedJunctions.set(center, id);
+        if (isSouthStripMedianOpening(junctionLegs)) medianOpenings.add(id);
+    }
+    const reviewedJunctionIds = new Set(reviewedJunctions.values());
+    const withinMedianOpening = id=>medianOpenings.has(intersectionAt(id)?.id);
     const stripStreets = planStripStreets(g, plan);
     const stripSlipEdges = new Set(stripStreets.slips.flatMap(chain=>chain.map(e=>e.id)));
     const edgeCut = (e, atStart)=>{
@@ -438,7 +461,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         let at = hash(e.id) * 12, cur = e, guard = 0;
         while(cur && !dashStart.has(cur.id) && guard++ < 500){
             dashStart.set(cur.id, at);
-            at = (at + cur.ref.length) % 12;
+            at += cur.ref.length;
             cur = cur.next !== undefined ? g.edges[cur.next] : undefined;
         }
     }
@@ -477,10 +500,11 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             if (e.oneway || e.twin === undefined || e.id < e.twin) {
                 pillarsAlong(pillars, e, leftRoad, rightDeck, blocksSupport);
             }
-        } else {
+        } else if (!e.internal || !e.southStrip || !inSouthStrip(...e.ref.pts[0]) ||
+            (withinMedianOpening(e.fromNode) && isSouthStripMedianOpeningLane(e))) {
             ribbonY(surface.at(e.ref.pts[0][0], e.ref.pts[0][1]), leftRoad, rightRoad, null);
         }
-        if (!e.internal && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local')) {
+        if (!e.internal && !isSouthStripTurn(e) && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local')) {
             const sw = sidewalkWidth(e);
             const cut0 = edgeCut(e, true), cut1 = e.ref.length - edgeCut(e, false);
             const outer = rightRoad;
@@ -557,7 +581,8 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             if (!lane.raw) continue;
             for (const run of departures(lane.line, lane.raw, lane.width / 2))surfaceFor(e).at(run[0][0], run[0][1]).ribbon(run, -lane.width / 2 - 0.3, lane.width / 2 + 0.3, 0);
         }
-        if (!e.internal && e.oneway && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local' && e.way.name) && !isLink && e.ref.length > 5) {
+        if (!e.internal && e.oneway && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local' && e.way.name) && !isLink && e.ref.length > 5 &&
+            !(e.southStrip && e.way.name === 'South Las Vegas Boulevard' && e.ref.pts.every(p=>inSouthStrip(...p)))) {
             const startMouth = mouthStart.get(e.id), endMouth = mouthEnd.get(e.id);
             const cut0 = Math.min((stripApproach ? startMouth?.band?.[0] : undefined) ?? startMouth?.clear ?? edgeCut(e, true), e.ref.length / 2);
             const cut1 = Math.min((stripApproach ? endMouth?.band?.[0] : undefined) ?? endMouth?.stop ?? edgeCut(e, false), e.ref.length / 2);
@@ -693,7 +718,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 }
             }
         }
-        if (internal || e.cls === 'service') continue;
+        if (internal || isSouthStripTurn(e) || e.cls === 'service') continue;
         const a0 = isLinkOrRamp && !setback.has(e.fromNode) ? 0 : mouthStart.get(e.id)?.clear ?? endSetback(e, e.fromNode);
         const a1 = e.ref.length - (isLinkOrRamp && !setback.has(e.toNode) ? 0 : mouthEnd.get(e.id)?.stop ?? endSetback(e, e.toNode));
         const hasPrev = e.prev !== undefined && g.edges[e.prev]?.lanes.length === e.lanes.length;
@@ -722,7 +747,9 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 const only = (t, m)=>!!t && t.length === 1 && t[0] === m;
                 const turnDiv = only(e.turns[i - 1], 'left') && !only(e.turns[i], 'left') || only(e.turns[i], 'right') && !only(e.turns[i - 1], 'right');
                 const stripTail = !isLinkOrRamp && intersectionAt(e.toNode)?.control === 'signal' && e.cls === 'arterial' ? Math.min(18, Math.max(0, (a1 - a0) * 0.42)) : 0;
-                const dashEnd = turnDiv ? a0 : Math.max(a0, a1 - stripTail);
+                const longPocket = turnDiv && !e.southStrip;
+                const solidTail = turnDiv && e.southStrip ? Math.max(stripTail, 24) : stripTail;
+                const dashEnd = longPocket ? a0 : Math.max(a0, a1 - solidTail);
                 // Crisp Apple Maps dashes along Strip approaches, transitioning to solid pocket/stop-bar channelization.
                 for (const [d0, d1] of dashRuns(a0, dashEnd, 2.4, 4.6, dashStart.get(e.id) ?? 0)){
                     const d = (d0 + d1) * 0.5, mid = boundaryAt(e, i, d);
@@ -813,11 +840,19 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         if (controlled && e.cls !== 'motorway' && e.cls !== 'ramp' && chainSpan > 14 && a1 - a0 > 0.8) {
             const sL = a1 + 0.2;
             const p = sample(e.ref, sL);
-            const left = atStation(e, laneBoundary(e, 0), sL);
-            const right = atStation(e, laneBoundary(e, e.lanes.length), sL);
+            const leg = crossingPaint.arrivals.get(e.id);
+            const mappedBar = leg?.mapped && Math.abs((p.x - leg.ctr[0]) * leg.a[0] +
+                (p.z - leg.ctr[1]) * leg.a[1] - leg.d - 4.8) < 1;
+            const barEnd = index=>{
+                const line = laneBoundary(e, index);
+                const distance = mappedBar ? e.ref.length - crossingStation(e, line, leg, leg.d + 4.8, false) : sL;
+                return atStation(e, line, distance);
+            };
+            const left = barEnd(0), right = barEnd(e.lanes.length);
             const s = at(P, p.x, p.z);
+            const [hx, hz] = mappedBar ? leg.a : [p.hx, p.hz];
             const bar = [[left, -0.22], [right, -0.22], [right, 0.22], [left, 0.22]].map(([q, d])=>
-                s.vert(q.x + p.hx * d, paintHeight(q.y, yOff), q.z + p.hz * d));
+                s.vert(q.x + hx * d, paintHeight(q.y, yOff), q.z + hz * d));
             s.quad(...bar);
             const chainLaneSample = (laneIdx, d, half)=>{
                 if (d >= a0 && markFits(e, d, half)) return laneSample(e, laneIdx, d);
@@ -937,7 +972,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         }
         // Use the local pavement beneath gaps left open for vehicle paths between islands.
         const base = convexHull(islandOutlines);
-        if (base.length >= 3) slipPavement.at(...base[0]).polygon(base, 0);
+        if (base.length >= 3 && !chain[0].southStrip) slipPavement.at(...base[0]).polygon(base, 0);
     }
     for (const A of g.edges){
         if (A.next === undefined || A.internal) continue;
@@ -983,8 +1018,28 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             if (walkClear) sidewalk.at(pa.x, pa.z).polygon(walk, WALK_HEIGHT);
         }
     }
+    // At the Strip use the mapped island footprints. They stay continuous
+    // through way splits and stop at the actual median opening.
+    for (const area of data.areas.filter(isSouthStripMedian)) {
+        const {pts: ring} = roundSouthStripRoad(area.pts, area.pts.map(()=>0), true);
+        const [x, z] = ring[0];
+        medianPlanting.at(x, z).polygon(ring, WALK_HEIGHT + 0.012);
+        concreteMedians.at(x, z).polygon(ring, WALK_HEIGHT);
+        const loop = [...ring, ring[0]];
+        sidewalkPiece({pts: loop, y: loop.map(()=>0)}, -0.10, 0.10, 0);
+    }
+    for (const area of data.areas) {
+        if (area.k === 'park' && area.pts.every(([x,z])=>x >= -66 && x <= 126 && z > 2520 && z < 2960)) {
+            const {pts: ring} = roundSouthStripRoad(area.pts, area.pts.map(()=>0), true);
+            frontagePlanting.at(...ring[0]).polygon(ring, 0.065);
+        } else if (area.k === 'parking' && area.pts.every(p=>inSouthStrip(...p))) {
+            parkingBase.at(...area.pts[0]).polygon(area.pts, 0);
+        }
+    }
     for (const [id, r] of setback){
         const node = g.nodes.get(id);
+        const ix = plan.intersectionAt(id);
+        if (reviewedJunctionIds.has(ix?.id)) continue;
         const pts = [], rims = [];
         let air = false;
         let surf = asphalt;
@@ -1041,19 +1096,15 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         else surf.at(node.x, node.z).polygon(hull, 0);
     }
     {
-        const byCtr = new Map();
-        for (const leg of legs){
-            const k = `${leg.ctr[0].toFixed(2)},${leg.ctr[1].toFixed(2)}`;
-            if (!byCtr.has(k)) byCtr.set(k, []);
-            byCtr.get(k).push(leg);
-        }
         const mouthOf = (leg)=>{
             const pts = [];
             let air = false, y = 0;
             for (const { e, atStart } of leg.entries){
                 const m = (atStart ? mouthStart : mouthEnd).get(e.id);
                 if (!m) continue;
-                const [l0, l1] = extents(e), station = atStart ? m.inner : e.ref.length - m.inner;
+                const distance = leg.mapped ? (m.band ? (m.band[0] + m.band[1]) / 2 : m.clear) : m.inner;
+                const station = atStart ? distance : e.ref.length - distance;
+                const [l0, l1] = extents(e);
                 const q = sample(e.ref, station), nx = -q.hz, nz = q.hx;
                 const left = atStation(e, laneBoundary(e, 0), station);
                 const right = atStation(e, laneBoundary(e, e.lanes.length), station);
@@ -1077,7 +1128,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 y
             };
         };
-        for (const list of byCtr.values()){
+        for (const list of legsByCenter.values()){
             if (list.length < 2) continue;
             const mouths = list.map((leg)=>({
                     leg,
@@ -1087,6 +1138,14 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                     ...o.m
                 }));
             mouths.sort((a, b)=>Math.atan2(a.dir[1], a.dir[0]) - Math.atan2(b.dir[1], b.dir[0]));
+            const center = list[0].ctr;
+            if (reviewedJunctions.has(center) && mouths.length >= 2 && mouths.every(m=>!m.air)) {
+                if (medianOpenings.has(reviewedJunctions.get(center))) continue;
+                const outline = junctionOutline(mouths, center);
+                const arterial = list.some(leg=>leg.entries.some(({e})=>e.cls === 'arterial'));
+                (arterial ? major : asphalt).at(...center).polygon(outline, 0);
+                continue;
+            }
             for(let i = 0; i < mouths.length; i++){
                 const A = mouths[i], B = mouths[(i + 1) % mouths.length];
                 if (A === B) continue;
@@ -1258,6 +1317,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 s.quad(v(from, -CROSSWALK_HALF), v(to, -CROSSWALK_HALF), v(to, CROSSWALK_HALF), v(from, CROSSWALK_HALF));
             }
         }
+        if (reviewedJunctions.has(leg.ctr)) continue;
         const pts = [];
         let major2 = false, legAir = false, legY = 0;
         for (const { e, atStart } of leg.entries){
@@ -1301,16 +1361,28 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         for (const [lo, hi] of zebraBars(from + 0.28, l1 - 0.28)) quadAt(s, p, nx, nz, lo, hi, -CROSSWALK_HALF, CROSSWALK_HALF, null);
     }
     for (const k of g.lanes){
-        if (!k.connector || !k.next.length || !k.prev.length || k.movement === 'through' || k.line.y.some((v)=>v > 1)) continue;
+        if (!k.connector || !k.next.length || !k.prev.length || k.line.y.some((v)=>v > 1)) continue;
         const from = g.edges[g.lanes[k.prev[0]].edge], to = g.edges[g.lanes[k.next[0]].edge];
-        if (!from || !to || from.cls !== 'service' && to.cls !== 'service' && from.cls !== 'local' && to.cls !== 'local') continue;
-        const a = g.lanes[k.prev[0]].line, b = g.lanes[k.next[0]].line, mid = k.line.pts[k.line.pts.length >> 1];
+        if (!from || !to) continue;
+        const mid = k.line.pts[k.line.pts.length >> 1];
+        const reviewed = inSouthStrip(...mid);
+        if (!reviewed && (k.movement === 'through' ||
+            from.cls !== 'service' && to.cls !== 'service' && from.cls !== 'local' && to.cls !== 'local')) continue;
+        const a = g.lanes[k.prev[0]].line, b = g.lanes[k.next[0]].line;
         const pa = a.pts[a.pts.length - 1], pb = b.pts[0], reach = Math.max(k.width * 1.2, Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) * 0.28);
         const bow = Math.abs((mid[0] - pa[0]) * (pb[1] - pa[1]) - (mid[1] - pa[1]) * (pb[0] - pa[0])) / (Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) || 1);
-        if (k.line.length < 5 || bow < reach * 0.5) continue;
-        const surface = from.cls === 'arterial' || to.cls === 'arterial' ? major : from.cls === 'service' && to.cls === 'service' ? service : asphalt;
-        const pts = k.line.pts;
+        if (!reviewed && (k.line.length < 5 || bow < reach * 0.5)) continue;
+        const surface = from.cls === 'arterial' || to.cls === 'arterial' ? major :
+            from.way.svc === 'parking_aisle' && to.way.svc === 'parking_aisle' ? aisle :
+            from.cls === 'service' && to.cls === 'service' ? service : asphalt;
+        let pts = k.line.pts;
         const pad = from.cls === 'service' || to.cls === 'service' ? 0.16 : 0.22;
+        if (reviewed) {
+            // Extend by a small joint tolerance at the approach seam. Sweeping
+            // only to the graph endpoint can leave open triangles at tight joins.
+            const p = sample(k.line, 0), q = sample(k.line, k.line.length);
+            pts = [[p.x - p.hx * 0.24, p.z - p.hz * 0.24], ...pts, [q.x + q.hx * 0.24, q.z + q.hz * 0.24]];
+        }
         surface.at(pts[0][0], pts[0][1]).ribbon(pts, -k.width / 2 - pad, k.width / 2 + pad, 0);
     }
     {
@@ -1344,6 +1416,8 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             if (fromLane.index > 0 && fromEdge.turns[fromLane.index - 1]?.includes('left')) drawGuide(offset(k.line, k.width * 0.5));
         }
     }
+    await finishSouthStripPavement({ major, asphalt, service, aisle, slipPavement, sidewalk, concreteMedians,
+        medians, medianPaving, medianPlanting, frontagePlanting, curb, paint, paintDim, paintYellow, reviewedAisles, parkingBase }, pause);
     const add = (arr)=>arr.forEach((m)=>group.add(m));
     const roadMat = surfaceMaterial('road', { grain: 0.16, weathering: 0.08, corridor: STRIP_PAVEMENT });
     const serviceMat = surfaceMaterial('service', {
@@ -1359,6 +1433,9 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
     add(sidewalk.meshes(walkMat, 'sidewalk', ORDER.sidewalk));
     add(service.meshes(serviceMat, 'service', ORDER.road));
     add(aisle.meshes(surfaceMaterial('parking', { grain: 0.12, weathering: 0.07 }), 'aisles', ORDER.road - 1));
+    add(parkingBase.meshes(surfaceMaterial('parking', { grain: 0.07, weathering: 0.02, tone: 1.70 }), 'south-strip-lots', ORDER.road - 2));
+    add(reviewedAisles.meshes(surfaceMaterial('parking', { grain: 0.10, weathering: 0.03, tone: 1.32 }), 'south-strip-parking', ORDER.road - 1));
+    add(frontagePlanting.meshes(medianMat, 'south-strip-landscaping', ORDER.sidewalk - 2));
     add(asphalt.meshes(roadMat, 'asphalt', ORDER.road + 1));
     add(major.meshes(roadMat, 'major', ORDER.road + 2));
     add(freeway.meshes(freewayMat, 'freeway', ORDER.road + 3));
