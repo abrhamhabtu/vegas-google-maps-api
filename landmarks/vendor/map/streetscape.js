@@ -31,10 +31,7 @@ export function buildStreetscape(g, engine, lampSpots) {
         box(s, (x0 + x1) / 2, (z0 + z1) / 2, w, L, y, y + w, Math.atan2(x1 - x0, z1 - z0));
     };
     const plan = planSignals(g);
-    const heads = plan.heads.map((h, slot)=>({
-            ...h,
-            slot
-        }));
+    const heads = plan.heads;
     const byChunk = new Map();
     const bucket = (x, z)=>{
         const k = `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`;
@@ -122,9 +119,10 @@ export function buildStreetscape(g, engine, lampSpots) {
         fog: true
     }), Math.max(1, heads.length));
     lamps.frustumCulled = false;
+    lamps.count = 0;
     const red = new THREE.Color(3.4, 0.2, 0.08), amber = new THREE.Color(3.6, 2.0, 0.1), green = new THREE.Color(0.12, 3.2, 1.3);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s1 = new THREE.Vector3(1, 1, 1), pos = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
-    const setHead = (h, t)=>{
+    const setHead = (h, t, slot)=>{
         const st = signalState(h.i, t);
         let c = red, dy = LENS_Y;
         if (st.phase >= 0 && st.state !== 'red') {
@@ -141,10 +139,9 @@ export function buildStreetscape(g, engine, lampSpots) {
         }
         q.setFromAxisAngle(up, h.yaw);
         pos.set(h.x + Math.sin(h.yaw) * 0.125, h.y + dy, h.z + Math.cos(h.yaw) * 0.125);
-        lamps.setMatrixAt(h.slot, m.compose(pos, q, s1));
-        lamps.setColorAt(h.slot, c);
+        lamps.setMatrixAt(slot, m.compose(pos, q, s1));
+        lamps.setColorAt(slot, c);
     };
-    heads.forEach((h)=>setHead(h, 0));
     const postGeo = new Soup();
     box(postGeo, 0, 0, 0.2, 0.2, 0, 9.4, 0);
     box(postGeo, 0, 1.1, 0.12, 2.4, 9.3, 9.42, 0);
@@ -221,17 +218,21 @@ export function buildStreetscape(g, engine, lampSpots) {
         out.add(c.group);
     }
     out.add(lamps);
-    let last = -1;
+    let last = -1, lastX = Infinity, lastZ = Infinity, wasLow = false;
     const near = [];
     engine.updaters.push((f)=>{
         const cam = engine.camera.position, low = cam.y < (lamps.visible ? SHOW_BELOW * 1.12 : SHOW_BELOW * 0.9);
         lamps.visible = low;
         if (!low) {
-            for (const c of chunks.values())c.group.visible = false;
+            if (wasLow) for (const c of chunks.values())c.group.visible = false;
+            wasLow = false;
             return false;
         }
-        if (f.t - last < 0.5) return false;
+        if (wasLow && f.t - last < 0.5 && Math.hypot(cam.x - lastX, cam.z - lastZ) < 100) return false;
+        wasLow = true;
         last = f.t;
+        lastX = cam.x;
+        lastZ = cam.z;
         near.length = 0;
         const R = Math.max(900, cam.y * 2.2) ** 2;
         for (const c of chunks.values()){
@@ -239,7 +240,8 @@ export function buildStreetscape(g, engine, lampSpots) {
             c.group.visible = d < R;
             if (c.group.visible) near.push(...c.signals);
         }
-        for (const h of near)setHead(h, f.t);
+        lamps.count = near.length;
+        near.forEach((h, slot)=>setHead(h, f.t, slot));
         lamps.instanceMatrix.needsUpdate = true;
         if (lamps.instanceColor) lamps.instanceColor.needsUpdate = true;
         return false;

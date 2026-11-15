@@ -166,9 +166,9 @@ export function signalHeadGeometry() {
     const parts = [
         paint(new THREE.BoxGeometry(0.1, 1.15, 0.1).translate(0, 1.0, -0.02), BRONZE),
         paint(new THREE.BoxGeometry(0.36, 1.16, 0.22), '#121312'),
-        paint(new THREE.BoxGeometry(0.72, 1.52, 0.02).translate(0, 0, -0.1), '#0b0b0b'),
-        paint(new THREE.BoxGeometry(0.8, 1.6, 0.012).translate(0, 0, -0.114), '#c8a31c'),
-        paint(new THREE.BoxGeometry(0.82, 1.62, 0.02).translate(0, 0, -0.13), '#0b0b0b')
+        paint(new THREE.BoxGeometry(0.48, 1.32, 0.025).translate(0, 0, -0.081), '#c9a940'),
+        paint(new THREE.BoxGeometry(0.43, 1.26, 0.054).translate(0, 0, -0.093), '#333630'),
+        paint(new THREE.BoxGeometry(0.22, 0.91, 0.044).translate(0, 0, -0.125), '#464843')
     ];
     const lens = [
         '#2d0805',

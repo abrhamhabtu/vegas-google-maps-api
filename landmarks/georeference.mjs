@@ -3,6 +3,7 @@ export const ORIGIN = Object.freeze({ lat: 36.11624, lon: -115.17455 });
 const R = 6378137;
 const D = Math.PI / 180;
 const COS = Math.cos(ORIGIN.lat * D);
+export const localMetreInMercatorUnits = 1 / (2 * Math.PI * R * COS);
 const TAN = Math.tan(ORIGIN.lat * D);
 const A = -TAN / (2 * R);
 const B = (1 + 2 * TAN * TAN) / (6 * R * R);

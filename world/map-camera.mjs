@@ -11,6 +11,15 @@ export function zoomToDistance(zoom, height, latitude) {
   return height * 1.5 * 2 * Math.PI * R * Math.cos(latitude * D) / (512 * 2 ** zoom);
 }
 
+/** Replace the clip-space Z row only. The map's screen projection and near plane stay put. */
+export function extendCityDepth(matrix, near, far, cityFar) {
+  if (!(near > 0 && far > near && cityFar > far)) return false;
+  const scale = (cityFar + near) / (cityFar - near);
+  for (let i = 0; i < 16; i += 4) matrix[i + 2] = matrix[i + 3] * scale;
+  matrix[14] -= 2 * cityFar * near / (cityFar - near);
+  return true;
+}
+
 /** Source MapControls interface, backed by the existing geographic map camera. */
 export function createMapControls(map, getFleet) {
   const controls = { cur: {}, goal: {}, minDist: 9, maxPitch: 1.42, targetElevation: 0 };
@@ -47,16 +56,23 @@ export function createMapControls(map, getFleet) {
   controls.advance = dt => {
     const fleet = getFleet();
     if (!fleet?.following) {
+      const changed = controls.targetElevation !== 0;
       controls.targetElevation = 0;
       controls.sync();
-      return;
+      return changed;
     }
-    controls.targetElevation = Math.max(0, fleet.selected.y || 0);
+    const elevation = Math.max(0, fleet.selected.y || 0);
+    const movedVertically = Math.abs(elevation - controls.targetElevation) > 0.001;
+    controls.targetElevation = elevation;
     if (map.isEasing()) { Object.assign(controls.cur, read()); return; }
     const k = 1 - Math.exp(-dt * 10), cur = controls.cur, goal = controls.goal;
     goal.yaw = nearestAngle(goal.yaw, cur.yaw);
+    const settled = Math.abs(goal.x - cur.x) < 0.004 && Math.abs(goal.z - cur.z) < 0.004 &&
+      Math.abs(goal.dist - cur.dist) < 0.004 && Math.abs(goal.pitch - cur.pitch) < 1e-5 && Math.abs(goal.yaw - cur.yaw) < 1e-5;
+    if (settled && !movedVertically) return;
     for (const key of ['x', 'z', 'dist', 'pitch', 'yaw']) cur[key] += (goal[key] - cur[key]) * k;
     map.jumpTo(options(cur));
+    return true;
   };
   return controls;
 }

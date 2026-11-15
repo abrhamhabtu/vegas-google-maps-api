@@ -1,10 +1,12 @@
 /** The reference city's road users and geometry, on the existing Google map. */
-import { ORIGIN, toLocal, mercatorSouth, adaptVertexShader } from './landmarks/georeference.mjs';
+import { ORIGIN, toLocal, mercatorSouth, adaptVertexShader, localMetreInMercatorUnits } from './landmarks/georeference.mjs';
 import { decode } from './landmarks/vendor/core/data.js';
 import { theme } from './landmarks/vendor/core/theme.js';
 import { Shadows } from './landmarks/vendor/core/shadows.js';
 import { buildCity } from './world/city.js';
 import { startFleet } from './world/fleet-runtime.js';
+import { extendCityDepth, zoomToDistance } from './world/map-camera.mjs';
+import { createCityHorizon } from './world/city-horizon.js';
 
 const THREE = window.THREE;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -34,6 +36,8 @@ window.createVegasThreeLayer = function() {
   camera.matrixAutoUpdate = false;
   const ambient = new THREE.HemisphereLight('#dceeff', '#70716b', 1.1);
   const sun = new THREE.DirectionalLight('#fff0d8', 1.1);
+  const horizon = createCityHorizon(), horizonScene = new THREE.Scene();
+  horizonScene.add(horizon.mesh);
   scene.add(ambient, sun);
   const animations = [], simulationAnimations = [], disposers = [], scheduled = new Set();
   const frustum = new THREE.Frustum(), mvp = new THREE.Matrix4(), target = new THREE.Vector3();
@@ -81,7 +85,12 @@ window.createVegasThreeLayer = function() {
     progress: (text, fraction) => status(text, 'loading', fraction),
     attach,
     reveal,
-    yield: () => new Promise(resolve => setTimeout(resolve, 0)),
+    yield: () => window.scheduler?.yield?.() ?? new Promise(resolve => setTimeout(resolve, 0)),
+    paint: () => new Promise(resolve => {
+      if (document.hidden) { setTimeout(resolve, 0); return; }
+      const stop = setTimeout(resolve, 150);
+      requestAnimationFrame(() => { clearTimeout(stop); setTimeout(resolve, 0); });
+    }),
     schedule(callback, delay) {
       const id = setTimeout(() => { scheduled.delete(id); if (!disposed) callback(); }, delay);
       scheduled.add(id);
@@ -105,8 +114,8 @@ window.createVegasThreeLayer = function() {
       simulationTime += dt;
       for (const animation of simulationAnimations) animation.update({ t: simulationTime, dt });
     }
-    runtime.controls.advance(dt);
-    requestFrame();
+    const movingCamera = runtime.controls.advance(dt);
+    if (!runtime.fleet.paused || movingCamera) requestFrame();
     simulationTimer = setTimeout(tick, 33);
   }
 
@@ -159,14 +168,17 @@ window.createVegasThreeLayer = function() {
     onAdd(mapInstance, gl) {
       map = mapInstance;
       const origin = maplibregl.MercatorCoordinate.fromLngLat([ORIGIN.lon, ORIGIN.lat], 0);
-      const scale = origin.meterInMercatorCoordinateUnits();
+      // X/Z follow the same WGS84 radius as the footprint snapshot. The altitude
+      // axis follows MapLibre's metre convention for bridge and follow elevations.
+      const scale = localMetreInMercatorUnits;
       this.modelMatrix = new THREE.Matrix4().set(
         scale, 0, 0, origin.x, 0, 0, scale, origin.y,
-        0, scale, 0, origin.z, 0, 0, 0, 1,
+        0, origin.meterInMercatorCoordinateUnits(), 0, origin.z, 0, 0, 0, 1,
       );
       renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
       renderer.autoClear = false;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
+      prepareMaterials(horizonScene);
       engine.listen(document, 'visibilitychange', () => {
         clearTimeout(timer); clearTimeout(simulationTimer);
         lastTick = 0;
@@ -182,12 +194,12 @@ window.createVegasThreeLayer = function() {
     },
     setBuildingsVisible(next) {
       visible = next;
-      if (city) city.buildings.visible = next;
+      if (parts) parts.buildings.visible = next;
       requestFrame();
     },
     setStreetsVisible(next) {
       detailed = next;
-      if (city) city.roads.visible = city.detail.visible = next;
+      if (parts) parts.roads.visible = parts.detail.visible = next;
       requestFrame();
     },
     setLabelsVisible(next) {
@@ -204,27 +216,36 @@ window.createVegasThreeLayer = function() {
       }
     },
     updateEgoVehiclePose() { /* The imported Fleet owns all road users. */ },
-    render(gl, matrix) {
+    render(gl, matrix, depth) {
       if (disposed) return;
       clearTimeout(timer);
       const now = performance.now() / 1000, dt = Math.min(now - (lastRender || now), 0.1);
       lastRender = now;
       const transitioning = theme.step(dt);
-      scene.fog.color.copy(theme.c('fog'));
-      scene.fog.density = theme.current.fogDensity * 0.35;
       animationTime += reducedMotion.matches ? 0 : dt;
       theme.uniforms.uTime.value = animationTime;
       sun.position.copy(theme.uniforms.uSunDir.value).multiplyScalar(1000);
       sun.intensity = theme.uniforms.uSun.value;
       ambient.intensity = theme.uniforms.uAmbient.value;
       mvp.fromArray(matrix).multiply(this.modelMatrix);
-      frustum.setFromProjectionMatrix(mvp);
 
       const center = map.getCenter(), [cx, cz] = toLocal(center.lat, center.lng);
-      const pitch = map.getPitch() * Math.PI / 180, bearing = map.getBearing() * Math.PI / 180;
-      const pixelsPerMeter = 512 * 2 ** map.getZoom() / (2 * Math.PI * 6378137 * Math.cos(center.lat * Math.PI / 180));
-      const distance = map.getCanvas().clientHeight * 1.5 / pixelsPerMeter;
+      const degrees = map.getPitch(), pitch = degrees * Math.PI / 180, bearing = map.getBearing() * Math.PI / 180;
+      const height = map.getCanvas().clientHeight;
+      const distance = zoomToDistance(map.getZoom(), height, center.lat);
+      const pixelsPerMeter = height * 1.5 / distance;
       const horizontal = distance * Math.sin(pitch), elevation = this.getFollowElevation();
+      // The v4.7.1 custom-layer Mercator matrix omits the map's camera elevation.
+      if (elevation) for (let i = 0; i < 4; i++) mvp.elements[12 + i] -= elevation * mvp.elements[4 + i];
+      const cityFar = Math.max(9500, 2 * distance) * pixelsPerMeter;
+      const extended = degrees > 10 && extendCityDepth(mvp.elements, depth?.nearZ, depth?.farZ, cityFar);
+      const haze = 0.00029 + theme.uniforms.uNight.value * 0.00007;
+      const street = THREE.MathUtils.smoothstep(degrees, 57, 74) * (1 - THREE.MathUtils.smoothstep(distance, 100, 420));
+      scene.fog.color.copy(theme.c('fog')).lerp(theme.c('skyHorizon'), street);
+      scene.fog.density = THREE.MathUtils.lerp(theme.current.fogDensity * 0.35, haze, street);
+      horizon.update((visible || detailed) && extended && degrees >= 69, depth?.farZ / pixelsPerMeter, cityFar / pixelsPerMeter,
+        scene.fog.density, cx, cz);
+      frustum.setFromProjectionMatrix(mvp);
       camera.position.set(cx - Math.sin(bearing) * horizontal, elevation + distance * Math.cos(pitch), mercatorSouth(cz) + Math.cos(bearing) * horizontal);
       camera.up.set(0, 1, 0);
       camera.lookAt(target.set(cx, elevation, mercatorSouth(cz)));
@@ -245,6 +266,7 @@ window.createVegasThreeLayer = function() {
       }
       renderer.resetState();
       renderer.clearDepth();
+      if (horizon.mesh.visible) renderer.render(horizonScene, camera);
       renderer.render(scene, camera);
       for (const callback of engine.afterRender) callback({ t: simulationTime, dt });
       if (!document.hidden && (transitioning || updating || (!runtime && ready))) timer = setTimeout(requestFrame, transitioning ? 16 : 50);
@@ -269,6 +291,8 @@ window.createVegasThreeLayer = function() {
       }
       for (const geometry of geometries) geometry.dispose();
       for (const texture of textures) texture.dispose();
+      horizon.mesh.geometry.dispose();
+      horizon.mesh.material.dispose();
       renderer?.dispose();
     },
   };

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ORIGIN, toLocal, toLngLat, mercatorSouth, projectionGLSL, adaptVertexShader } from '../landmarks/georeference.mjs';
+import { ORIGIN, toLocal, toLngLat, mercatorSouth, projectionGLSL, adaptVertexShader, localMetreInMercatorUnits } from '../landmarks/georeference.mjs';
 
 const R = 6378137;
 const D = Math.PI / 180;
@@ -26,6 +26,16 @@ test('Mercator correction stays within one millimetre throughout the imported ci
     const lat = ORIGIN.lat - z / R / D;
     const exact = R * Math.cos(ORIGIN.lat * D) * (mercatorY(ORIGIN.lat) - mercatorY(lat));
     assert.ok(Math.abs(mercatorSouth(z) - exact) < 0.001, `Projection drift at ${z}m`);
+  }
+});
+
+test('local city metres and Google raster tile positions agree across the Strip', () => {
+  const mercY = lat => (1 - Math.log(Math.tan(Math.PI / 4 + lat * D / 2)) / Math.PI) / 2;
+  for (const [lat, lng] of landmarks) {
+    const [x, z] = toLocal(lat, lng);
+    const [dx, dz] = [(lng - ORIGIN.lon) / 360, mercY(lat) - mercY(ORIGIN.lat)];
+    assert.ok(Math.abs(x - dx / localMetreInMercatorUnits) < 1e-6);
+    assert.ok(Math.abs(mercatorSouth(z) - dz / localMetreInMercatorUnits) < 0.001);
   }
 });
 
