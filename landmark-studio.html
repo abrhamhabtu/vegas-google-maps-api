@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14202c">
+  <title>Landmark Studio — Vegas Strip</title>
+  <link rel="stylesheet" href="world/landmark-studio.css">
+  <link rel="preconnect" href="https://unpkg.com">
+  <script defer src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script type="importmap">
+    {"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}
+  </script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="back-link" id="back-to-map" href="./">← Back to the Strip</a>
+    <span class="wordmark">VEGAS <i></i> 3D CITY</span>
+  </header>
+  <main>
+    <aside>
+      <div class="intro">
+        <p class="overline">THE STRIP COLLECTION</p>
+        <h1>Landmark Studio</h1>
+        <p class="intro-copy">Explore the buildings that shape the skyline. Rotate a model, change the light, or take it into your own project.</p>
+      </div>
+      <nav aria-label="Landmark models" id="model-list"></nav>
+      <p class="credits">Geometry based on <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> and exterior references.</p>
+    </aside>
+    <section class="plate" aria-label="Selected 3D model">
+      <div class="plate-head">
+        <div>
+          <p class="overline" id="model-district"></p>
+          <h2 id="model-title">Loading the collection…</h2>
+        </div>
+        <div class="lights" role="group" aria-label="Time of day">
+          <button type="button" data-light="day" aria-pressed="true">Day</button>
+          <button type="button" data-light="golden" aria-pressed="false">Sunset</button>
+          <button type="button" data-light="night" aria-pressed="false">Night</button>
+        </div>
+      </div>
+      <div class="viewport" id="viewport">
+        <p id="model-status" role="status">Loading model data…</p>
+        <div class="view-controls" role="group" aria-label="Model camera">
+          <button type="button" id="orbit-left" aria-label="Rotate model left" title="Rotate left">↶</button>
+          <button type="button" id="orbit-right" aria-label="Rotate model right" title="Rotate right">↷</button>
+          <button type="button" id="zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
+          <button type="button" id="zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
+          <button type="button" id="reset-model" aria-label="Reset model view" title="Reset view">⌂</button>
+        </div>
+      </div>
+      <div class="plate-footer">
+        <div>
+          <p id="model-note"></p>
+          <p id="model-size"></p>
+        </div>
+        <div class="actions">
+          <a id="model-map-link" href="./">View on map ↗</a>
+          <button type="button" id="download-model" disabled>Download .glb <span aria-hidden="true">↓</span></button>
+        </div>
+        <p class="sr-only" id="export-status" role="status"></p>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="world/landmark-studio.js"></script>
+</body>
+</html>

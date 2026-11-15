@@ -10,12 +10,14 @@ npm start
 ## Explore
 
 - **Places** opens the searchable landmark menu: Bellagio fountains, Paris/Eiffel Tower, Sphere, Luxor, Allegiant Stadium, T-Mobile Arena, Athletics ballpark construction, Hard Rock guitar construction, High Roller, Resorts World, Wynn/Encore, and more.
+- **Places → Landmark Studio** lets you orbit 15 models on their own and download a metre-scale `.glb` for Blender, Three.js, or another project. See the [model notes](docs/center-strip-models.md) for sources and export details.
 - **Day / Sunset / Night** smoothly changes building lighting, windows, LEDs, fountain lighting and the map's brightness.
 - **Layers** controls buildings, detailed streets/bridges, landmark badges, Google satellite imagery and traffic.
 - **Street lanes** returns to the original MGM Road / Bruno Mars Drive intersection in unobstructed 2D.
-- The driving card includes the source **Zoox / Waymo / Tesla** models, four driving profiles, pickup/dropoff bookings, follow camera, manual driving and telemetry. **Pause / Resume / Reset** controls the fleet.
+- The driving card includes **Zoox / Waymo Ojai / Tesla Cybercab / Tesla Robovan** models, four driving profiles, pickup/dropoff bookings, follow camera, manual driving and telemetry. **Pause / Resume / Reset** controls the fleet.
 - **Lab** opens the original eight driving scenarios and traffic density control. Autonomous driving uses the source lane graph, signals, stop lines, valets and road-deck elevations.
 - **Places → Streets & bridges** includes the Tropicana flyover over Joey Bishop Drive and the Airport Connector at Terminal 3, along with the Flamingo freeway bridge and ARIA tram.
+- **Places → Street-level Strip skyline** is a fixed northbound view just south of Harmon for comparing distant roads and buildings without waiting for a ride.
 
 Drag to pan, scroll/pinch to zoom, Shift/right-drag to orbit. Use the camera dock to zoom, turn, tilt or reset north. Keyboard: **T** cycles lighting, **D** toggles 2D/3D, **N** resets north, **P** opens places, **L** opens layers, **B** opens the vehicle Lab, **C** cycles the car camera, **H** hides controls, **Escape** closes panels. In manual driving, use **W/A/S/D** or arrows and **Space** to brake. Map shortcuts yield to manual driving and text fields. Reduced motion stops decorative animation while the vehicle test clock keeps running.
 
@@ -40,7 +42,7 @@ npm run test:drive
 npm run import-landmarks -- /path/to/vegas-strip-v2
 ```
 
-The driving check runs the source's 66 rides across all three vehicle types and four profiles, checking signals, stop lines and pavement containment. The Node regression suite covers projection, camera continuity, road levels and rail clearance.
+The driving check runs 69 rides across four vehicle types and four profiles, checking signals, stop lines and pavement containment. The Node regression suite covers projection, camera continuity and depth, road levels and rail clearance.
 
 ## Local configuration
 

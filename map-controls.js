@@ -116,6 +116,14 @@ window.setupMapChrome = function({ getMap, getLayer }) {
       closePanels(true);
     });
   });
+  byId('landmark-studio-link').addEventListener('click', event => {
+    const params = new URLSearchParams(location.hash.slice(1));
+    const view = params.get('view') || 'bellagio';
+    const url = new URL('./landmark-studio.html', location.href);
+    url.search = new URLSearchParams({ from: view, theme: currentTheme });
+    url.hash = view;
+    event.currentTarget.href = url.href;
+  });
 
   function applyRasterTheme() {
     const map = getMap();
@@ -291,10 +299,10 @@ window.setupMapChrome = function({ getMap, getLayer }) {
   addEventListener('vegas-city-reveal', ({ detail }) => {
     if (detail.phase !== 'skyline') return;
     bootFill.style.width = '100%';
-    requestAnimationFrame(() => setTimeout(() => {
+    requestAnimationFrame(() => {
       document.body.classList.remove('booting');
       showHint();
-    }, 120));
+    });
   });
   addEventListener('vegas-landmarks-ready', () => document.body.classList.remove('booting'));
 
