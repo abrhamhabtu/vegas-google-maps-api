@@ -16,7 +16,7 @@ import { addBrooklynBridge, addLiberty, addMgmLion, addNynyPavilions } from './t
 const THREE = window.THREE;
 
 // ───────────────────────────────── MGM Grand ─────────────────────────────────
-function buildMGM(data, graph) {
+export function buildMGM(data, graph) {
   const out = new THREE.Group();
   out.name = 'MGM Grand';
   const towers = [], rotunda = [];
@@ -170,7 +170,7 @@ function chryslerCrown(g, w, mats, add) {
   add(g, new THREE.SphereGeometry(0.2, 10, 8), mats.beacon, 22.35);
 }
 
-function buildNYNY(data) {
+export function buildNYNY(data) {
   const parts = data.buildings.filter(b => {
     if (!b.part || b.h < 70) return false;
     const c = centroid(b.pts);

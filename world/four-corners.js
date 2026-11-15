@@ -1,6 +1,6 @@
 /**
  * Hand-built models for the Flamingo Road corner ("Four Corners"): Bellagio, Caesars Palace,
- * Paris Las Vegas, its Eiffel Tower and Flamingo. Built with docs/landmark-rebuild-playbook.md against
+ * Paris Las Vegas and its Eiffel Tower. Built with docs/landmark-rebuild-playbook.md against
  * Apple Maps night references. Towers are claimed in heroOwned; podiums stay with the city pipeline.
  */
 import { hash } from '../landmarks/vendor/map/geom.js';
@@ -10,7 +10,6 @@ import { bakeStatic } from '../landmarks/vendor/landmarks/bake.js';
 import { MODE, SERIF, Soup, WHITE, centroid, clean, facade, inset, keep, obb, offset, sign, spill } from './hero-kit.js';
 
 const THREE = window.THREE;
-const SCRIPT = '"Snell Roundhand", "Brush Script MT", Georgia, cursive';
 const mesh = (geometry, material, x, y, z, ry = 0) => {
   const m = new THREE.Mesh(geometry, material);
   m.position.set(x, y, z);
@@ -519,38 +518,10 @@ function buildEiffel(data) {
   return out;
 }
 
-function buildFlamingo(data) {
-  const campus = data.buildings.find(b => /^flamingo las vegas$/i.test(b.name ?? ''));
-  if (!campus) return null;
-  const targets = [[257, 18], [266, -89], [240, -41]];
-  const wings = targets.map(([x, z]) => data.buildings.find(b => !b.name && b.h >= 82 && b.h <= 89 && near(b, x, z, 4)));
-  if (!wings[0]) return null;
-  const group = new THREE.Group();
-  group.name = 'Flamingo Las Vegas';
-  const walls = new Soup(), band = new Soup(), roofs = new Soup();
-  for (const wing of wings.filter(Boolean)) {
-    const ring = clean(wing.pts);
-    walls.walls(ring, 0, wing.h, WHITE, [wing.h, 0, 0, campus.h]);
-    cornice(band, ring, campus.h + 1, 0.32, 0.76);
-    cornice(band, ring, wing.h + 0.38, 0.38, 2.8);
-    roofs.cap(ring, wing.h + 0.36);
-    heroOwned.add(wing);
-  }
-  const pink = facade(MODE.flamingo, { color: '#bd9fb7', glass: '#43567e', glow: '#ff75c8', floodK: 1.12, bay: 10.7 });
-  const trim = facade(MODE.stone, { color: '#a3a9be', roof: '#7e92b2', flood: '#e6aed8', floodK: 0.32, self: 0.12 });
-  const slate = facade(MODE.stone, { color: '#7e90b1', roof: '#7790b2', flood: '#ad94cb', roofGlow: 0.49 });
-  group.add(walls.mesh(pink, 'Flamingo pink-lit fins'), band.mesh(trim, 'Flamingo parapets'), roofs.mesh(slate, 'Flamingo cool roofs'));
-  const style = { font: `italic 700 126px ${SCRIPT}`, color: '#ffc5e3' };
-  group.add(sign('Flamingo', 28, 4.8, 215.25, wings[0].h - 6.2, 13, -1, 0, style));
-  group.add(sign('Flamingo', 30, 4.8, 290, wings[0].h - 6.2, 70.65, 0, 1, style));
-  group.add(spill(220, 0.45, 50, 63, '#ec91ce', 0.22));
-  return group;
-}
-
 export function buildFourCorners(data) {
   const group = new THREE.Group();
   group.name = 'Four Corners resorts';
-  for (const build of [buildBellagio, buildCaesars, buildParis, buildEiffel, buildFlamingo]) {
+  for (const build of [buildBellagio, buildCaesars, buildParis, buildEiffel]) {
     const model = build(data);
     if (model) group.add(model);
   }

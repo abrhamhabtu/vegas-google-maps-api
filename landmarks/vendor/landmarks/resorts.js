@@ -447,7 +447,7 @@ export function buildResorts(data, engine) {
     add(treasureIsland(data));
     // Bellagio is drawn by world/four-corners.js now; keep its height for the camera index.
     heights.push([-170, 348, 155]);
-    add(cosmopolitan(data));
+    // Cosmopolitan towers and Strip frontage are drawn by world/citycenter.js.
     // Mandalay Bay and W Las Vegas are drawn by world/mandalay-bay.js.
     add(parkMgm(data));
     // Brooklyn Bridge is drawn from the mapped footway in world/tropicana-fronts.js.
@@ -1534,33 +1534,9 @@ function buildStripResorts(data, engine) {
         adBoard(f, engine, 66, 2, 16, 20, nextAd(), bronze);
         g.add(f);
     }
-    const venSkin = sheen('#f2e3c0', {
-        windows: 0.4,
-        masonry: true,
-        glow: '#ffdca0',
-        glowK: 0.08
-    });
-    const copperRoof = sheen('#4d8275', {
-        refl: 0.3,
-        spec: 0.8
-    });
-    for (const re of [
-        /^venetian tower$/i,
-        /^venezia tower$/i,
-        /^palazzo tower$/i
-    ]){
-        const t = tower(re);
-        if (t) dress(g, t, {
-            skin: venSkin,
-            trim: white,
-            crown: copperRoof,
-            crownH: 7,
-            every: 14
-        });
-    }
-    const vt = tower(/^venetian tower$/i), pz = tower(/^palazzo tower$/i);
-    if (vt) faceSign(data, g, vt, 'THE VENETIAN', 52, 7, vt.h - 7, serif(90), '#ffe2a8');
-    if (pz) faceSign(data, g, pz, 'THE PALAZZO', 44, 6.5, pz.h - 6, serif(90), '#ffe2a8');
+    // Venetian, Venezia and Palazzo hotel towers: world/mid-strip-resorts.js.
+    // The canal frontage, bridge and Campanile remain here.
+    const copperRoof = sheen('#4d8275', { refl: 0.3, spec: 0.8 });
     const cam = tower(/^the campanile$/i);
     if (cam) {
         const c = centroid(cam.ring), part = new THREE.Group();
@@ -1631,19 +1607,7 @@ function buildStripResorts(data, engine) {
     }
     const ph = tower(/^planet hollywood resort and casino$/i);
     if (ph) {
-        const glass = sheen('#22324c', {
-            windows: 0.4,
-            refl: 0.65,
-            spec: 1.3,
-            glow: '#ff5fd0',
-            glowK: 0.12
-        });
-        dress(g, ph, {
-            skin: glass,
-            trim: white,
-            every: 9
-        });
-        faceSign(data, g, ph, 'PLANET HOLLYWOOD', 58, 6.5, ph.h - 7, sans(84, 800), '#f5d6ff');
+        // The hotel tower and lower wings are drawn by world/mid-strip-resorts.js.
         const f = frontFrame(data, centroid(ph.ring), 36);
         block(f, 0, 0, 10, 70, 10, 10, sheen('#2b2545', {
             refl: 0.4
@@ -1653,7 +1617,7 @@ function buildStripResorts(data, engine) {
         g.add(f);
     }
     const flam = tower(/^flamingo las vegas$/i);
-    // Flamingo's tower wings are drawn by world/four-corners.js. Keep the street marquee.
+    // Flamingo's tower wings are drawn by world/mid-strip-resorts.js. Keep the street marquee.
     if (flam) {
         const f = frontFrame(data, centroid(flam.ring), 30);
         const pink = sheen('#ff5c9f', {
@@ -1938,108 +1902,10 @@ function buildStripResorts(data, engine) {
             every: 18
         });
     }
-    const silver = sheen('#c4cdd6', {
-        refl: 0.62,
-        spec: 1.25,
-        glow: '#e4f0ff',
-        glowK: 0.16
-    });
-    const ariaGlass = sheen('#1c3858', {
-        windows: 0.42,
-        refl: 0.78,
-        spec: 1.48,
-        glow: '#a8d4ff',
-        glowK: 0.18
-    });
-    const aria = towersNear(data, -210, 950, 175, 90);
-    for (const t of aria){
-        dress(g, t, {
-            skin: ariaGlass,
-            trim: silver,
-            crown: silver,
-            crownH: 5.5,
-            every: 18
-        });
-        const tc = centroid(t.ring);
-        for(let y = 26; y < t.h - 4; y += 18){
-            const bandGrp = new THREE.Group();
-            bandGrp.position.set(tc[0], 0, tc[1]);
-            ringTower(bandGrp, t.ring, tc, y, y + 0.85, silver, 1.018);
-            g.add(bandGrp);
-        }
-        if (t.h >= 155) {
-            faceSign(data, g, t, 'ARIA', 32, 8.8, t.h - 8.5, `300 128px ${SANS}`, '#f0f7ff');
-        }
-    }
+    // ARIA, Vdara, Veer and the Crystals roof are drawn by world/citycenter.js.
+    // Preserve the existing storefronts and their street and promenade signs.
+    const silver = sheen('#c4cdd6', { refl: 0.62, spec: 1.25, glow: '#e4f0ff', glowK: 0.16 });
     {
-        const veerYellow = sheen('#d6b228', {
-            windows: 0.45,
-            refl: 0.68,
-            spec: 1.35,
-            glow: '#ffe26a',
-            glowK: 0.25
-        });
-        const veerLouvers = sheen('#e5c94c', {
-            refl: 0.5,
-            spec: 1.2,
-            glow: '#ffea88',
-            glowK: 0.18
-        });
-        const veerConfigs = [
-            [
-                14,
-                980,
-                132,
-                0.088,
-                -0.04
-            ],
-            [
-                -40,
-                983,
-                132,
-                -0.088,
-                0.04
-            ]
-        ];
-        for (const [vx, vz, vh, tiltZ, tiltX] of veerConfigs){
-            const vt = new THREE.Group();
-            vt.position.set(vx, 0, vz);
-            vt.rotation.y = 0.28;
-            vt.rotation.z = tiltZ;
-            vt.rotation.x = tiltX;
-            const body = new THREE.Mesh(new THREE.BoxGeometry(24, vh, 44), veerYellow);
-            body.position.y = vh / 2;
-            vt.add(body);
-            for(let h = 14; h < vh - 6; h += 13){
-                const band = new THREE.Mesh(new THREE.BoxGeometry(24.6, 1.1, 44.6), veerLouvers);
-                band.position.y = h;
-                vt.add(band);
-            }
-            const fin = new THREE.Mesh(new THREE.BoxGeometry(22, 7.5, 42), silver);
-            fin.position.y = vh + 3.75;
-            vt.add(fin);
-            g.add(vt);
-        }
-        const crystalRoof = sheen('#d4dde8', {
-            refl: 0.78,
-            spec: 1.5,
-            glow: '#e2f0ff',
-            glowK: 0.22
-        });
-        const crystalGlass = sheen('#2b415c', {
-            windows: 0.48,
-            refl: 0.82,
-            spec: 1.5,
-            glow: '#cce6ff',
-            glowK: 0.28
-        });
-        for(let k = 0; k < 7; k++){
-            const facet = new THREE.Mesh(new THREE.ConeGeometry(24, 15, 4), k % 2 ? crystalRoof : crystalGlass);
-            facet.position.set(-22 + k * 15, 30.5 + k % 3 * 2.4, 868 + k * 18);
-            facet.rotation.set(0.22 * (k % 2 ? 1 : -1), 0.38 + k * 0.32, 0.16 * (k % 2 ? -1 : 1));
-            facet.scale.set(1.45, 0.68, 1.15);
-            g.add(facet);
-        }
         // Iconic Gucci Flagship Pavilion at ARIA / The Shops at Crystals (faceted champagne-bronze & fluted charcoal-gold architectural box)
         const gucciBronze = sheen('#8c6d46', {
             refl: 0.68,

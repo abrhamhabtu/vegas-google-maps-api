@@ -12,7 +12,6 @@ import { buildBuildings, makeHeightIndex } from '../landmarks/vendor/map/buildin
 import { buildLandmarks } from '../landmarks/vendor/landmarks/landmarks.js';
 import { buildResorts } from '../landmarks/vendor/landmarks/resorts.js';
 import { buildArenas } from '../landmarks/vendor/landmarks/arenas.js';
-import { buildGuitar } from '../landmarks/vendor/landmarks/guitar.js';
 import { buildDetails } from '../landmarks/vendor/landmarks/details.js';
 import { welcomeSign } from '../landmarks/vendor/landmarks/welcome.js';
 import { buildSigns } from '../landmarks/vendor/landmarks/signs.js';
@@ -24,6 +23,7 @@ import { buildRio } from './rio.js';
 import { buildNorthStrip } from './north-strip.js';
 import { buildLuxor } from './luxor.js';
 import { buildMandalayBay } from './mandalay-bay.js';
+import { stripModels } from './landmark-models.js';
 
 const THREE = window.THREE;
 
@@ -38,9 +38,9 @@ function stage(label, build) {
 
 /**
  * Builds the city in the order it becomes useful to look at:
- *   1. ground work  – lane graph, valet plan, intersection plan (mutates the graph; once only)
+ *   1. ground work  – lane graph and valet plan
  *   2. skyline      – landmarks, resorts and every other building  → engine.reveal('skyline')
- *   3. streets      – roads (time-sliced), valets, bridges, rail, trees, lights, signs → reveal('streets')
+ *   3. streets      – intersection plan (once), roads, valets, bridges, rail, trees, lights, signs
  * The three groups are handed to the engine up front so each phase can appear as soon as it exists.
  */
 export async function buildCity(data, engine) {
@@ -52,14 +52,10 @@ export async function buildCity(data, engine) {
   const graph = stage('lane graph', () => buildLaneGraph(data));
   const valetPlan = stage('valet plan', () => planValets(data));
   await engine.yield();
-  engine.progress('Planning intersections…', 0.25);
-  const plan = stage('intersections', () => planIntersections(data, graph));
-  await engine.yield();
-
   engine.progress('Raising the skyline…', 0.45);
   // The clearance-aware rail renderer below owns guideways and supports.
   const specialData = { ...data, rail: [] };
-  buildings.add(stage('landmarks', () => buildLandmarks(specialData, engine)), buildArenas(data, engine), buildGuitar(data, engine));
+  buildings.add(stage('landmarks', () => buildLandmarks(specialData, engine)), buildArenas(data, engine));
   const resorts = stage('resorts', () => buildResorts(data, engine));
   buildings.add(resorts.group, buildDetails(specialData, engine, graph), welcomeSign(graph, engine));
   await engine.yield();
@@ -68,11 +64,15 @@ export async function buildCity(data, engine) {
     buildings.add(buildTropicanaTrio(specialData, graph), buildFourCorners(specialData), buildWynnTI(specialData));
     buildings.add(buildRio(specialData, graph), buildNorthStrip(specialData, graph));
     buildings.add(buildLuxor(specialData, graph), buildMandalayBay(specialData, graph));
+    for (const item of stripModels) buildings.add(item.build(specialData, undefined, engine, graph));
   });
   buildings.add(stage('buildings', () => buildBuildings(data, valetPlan)).group);
   engine.reveal?.('skyline');
-  await engine.yield();
+  await engine.paint();
 
+  engine.progress('Planning intersections…', 0.52);
+  const plan = stage('intersections', () => planIntersections(data, graph));
+  await engine.yield();
   engine.progress('Paving the streets…', 0.6);
   performance.mark('city:roads');
   const roadOutput = await buildRoads(data, graph, valetPlan.zones, plan, engine.yield);

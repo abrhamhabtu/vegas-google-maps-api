@@ -50,7 +50,7 @@ export const RESORT_LOOKS = [
         glow: '#ff5cc4',
         glowK: 1.2,
         podium: 3,
-        low: { tint: '#ac9db4', roof: '#8290a8', k: 0.6, glow: '#ffb1db', glowK: 0.64 }
+        low: { tint: '#c9bcb6', roof: '#b4a9b7', k: 0.71, glow: '#ffb1db', glowK: 0.64 }
     },
     {
         re: /wynn|encore/i,
@@ -69,7 +69,8 @@ export const RESORT_LOOKS = [
         k: 0.6,
         style: 8,
         glow: '#ffffff',
-        glowK: 0.6
+        glowK: 0.6,
+        roof: '#9b8c79'
     },
     {
         re: /venetian|palazzo/i,
@@ -78,7 +79,8 @@ export const RESORT_LOOKS = [
         style: 7,
         glow: '#ffdca6',
         glowK: 0.7,
-        roof: '#c98a5c'
+        roof: '#c98a5c',
+        low: { tint: '#d4c1ac', roof: '#bcb0a2', k: 0.68, glow: '#ffe2b9', glowK: 0.63 }
     },
     {
         re: /treasure island|\bti\b/i,
@@ -193,7 +195,8 @@ export const RESORT_LOOKS = [
         k: 0.6,
         style: 4,
         glow: '#cfe3ff',
-        glowK: 0.6
+        glowK: 0.6,
+        low: { tint: '#b3bbb9', roof: '#a3aaa9', k: 0.7, glow: '#d8e9ff', glowK: 0.64 }
     },
     {
         re: /cosmopolitan|chelsea|boulevard tower/i,
@@ -201,7 +204,8 @@ export const RESORT_LOOKS = [
         k: 0.62,
         style: 4,
         glow: '#b8d0ff',
-        glowK: 0.7
+        glowK: 0.7,
+        low: { tint: '#a6b0b7', roof: '#a4a9aa', k: 0.7, glow: '#e7d6ff', glowK: 0.62 }
     },
     {
         re: /planet hollywood|elara/i,
