@@ -14,7 +14,7 @@ const SIGNS = [
         color: '#f6e7a6',
         both: true
     },
-    // Caesars Palace and Paris signs are positioned on their models in world/four-corners.js.
+    // Caesars and Paris signs are positioned on their tower models in world/.
     // Flamingo's rooftop wordmarks are drawn by world/four-corners.js.
     {
         lat: 36.0986,
@@ -31,14 +31,7 @@ const SIGNS = [
         color: '#ffffff'
     },
     // Rio's signed towers and street marquee are supplied by world/rio.js.
-    {
-        lat: 36.1140,
-        lon: -115.1946,
-        text: 'PALMS',
-        font: `800 120px ${SANS}`,
-        color: '#8ff4ff',
-        both: true
-    },
+    // Palms crown and roadside signs are positioned by world/palms.js.
     {
         lat: 36.1215,
         lon: -115.1689,
@@ -75,14 +68,6 @@ const SIGNS = [
         color: '#f5d6ff'
     },
     {
-        lat: 36.1072,
-        lon: -115.1768,
-        text: 'ARIA',
-        font: `300 130px ${SANS}`,
-        color: '#ffffff',
-        both: true
-    },
-    {
         lat: 36.1425,
         lon: -115.1564,
         text: 'SAHARA',
@@ -96,13 +81,6 @@ const SIGNS = [
         text: 'HORSESHOE',
         font: `800 92px ${SERIF}`,
         color: '#ffd27a'
-    },
-    {
-        lat: 36.1046,
-        lon: -115.1762,
-        text: 'PARK MGM',
-        font: `700 92px ${SANS}`,
-        color: '#f2e6c8'
     },
     {
         lat: 36.1720,

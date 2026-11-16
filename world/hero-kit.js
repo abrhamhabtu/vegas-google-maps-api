@@ -135,13 +135,15 @@ export class Soup {
       const a0 = E(-w / 2, sd * d / 2), a1 = E(w / 2, sd * d / 2), b1 = E(w / 2, 0), b0 = E(-w / 2, 0);
       const v0 = this.vert(a0[0], y, a0[1], n, 0, c, x), v1 = this.vert(a1[0], y, a1[1], n, w, c, x);
       const v2 = this.vert(b1[0], y + rise, b1[1], n, w, c, x), v3 = this.vert(b0[0], y + rise, b0[1], n, 0, c, x);
-      this.idx.push(v0, v2, v1, v0, v3, v2);
+      if (sd < 0) this.idx.push(v0, v2, v1, v0, v3, v2);
+      else this.idx.push(v0, v1, v2, v0, v2, v3);
     }
     for (const se of [-1, 1]) {
       const n = [ax * se, 0, az * se], p0 = E(se * w / 2, -d / 2), p1 = E(se * w / 2, d / 2), top = E(se * w / 2, 0);
       const v0 = ends.vert(p0[0], y, p0[1], n, 0, c, endAux), v1 = ends.vert(p1[0], y, p1[1], n, d, c, endAux);
       const v2 = ends.vert(top[0], y + rise, top[1], n, d / 2, c, endAux);
-      ends.idx.push(v0, v2, v1);
+      if (se > 0) ends.idx.push(v0, v2, v1);
+      else ends.idx.push(v0, v1, v2);
     }
   }
   /** Upright box; (ax, az) is the unit direction of its width. */
@@ -240,7 +242,19 @@ export const FRAG = `
     vec3 c;
     vec3 e = vec3(0.0);
 
-    if (uMode > 10.5) {
+    if (uMode > 11.5) {
+      // The lit lower bevels and the two light wells carry the night silhouette.
+      c = base * (0.17 + 0.81 * light) * (1.0 - night * 0.47);
+      float shaft = vAux.w;
+      float band = sin(clamp(u, 0.0, 1.0) * 3.141593);
+      float footing = (0.92 * exp(-pow((y - 9.0) / 23.0, 2.0))
+        + 0.23 * exp(-pow((y - 43.0) / 29.0, 2.0))) * (1.0 - shaft);
+      float wash = 0.72 * exp(-pow((y - 87.0) / 36.0, 2.0));
+      float well = mix(0.27, 1.22, shaft) * exp(-pow((y - 232.0) / 9.0, 2.0));
+      e += (uFlood * (footing + well) + vec3(1.0, 0.77, 0.63) * wash)
+        * mix(0.19, 1.0, band) * variant * uFloodK * night;
+      e += base * uSelf * night;
+    } else if (uMode > 10.5) {
       // Luxor's rooms are behind inclined glass. Read floor and mullion spacing
       // in metres so the glazing stays aligned across the narrowing faces.
       float floorY = (y - vAux.w) / uBay;
@@ -546,7 +560,7 @@ export const FRAG = `
     #include <colorspace_fragment>
   }
 `;
-export const MODE = { glass: 0, stucco: 1, masonry: 2, stone: 3, palazzo: 4, ribbon: 5, rio: 6, arcade: 7, flamingo: 8, curtainWall: 9, goldGlass: 10, slopedGlass: 11 };
+export const MODE = { glass: 0, stucco: 1, masonry: 2, stone: 3, palazzo: 4, ribbon: 5, rio: 6, arcade: 7, flamingo: 8, curtainWall: 9, goldGlass: 10, slopedGlass: 11, towerConcrete: 12 };
 export function facade(mode, o = {}) {
   const u = theme.uniforms;
   return new THREE.ShaderMaterial({

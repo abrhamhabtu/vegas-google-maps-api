@@ -59,6 +59,8 @@ const LANDMARKS = [
   { name: "New York-New York", lat: 36.1024, lng: -115.1745, category: "Resort", color: "#ffd27d" },
   { name: "T-Mobile Arena", lat: 36.1028, lng: -115.1784, category: "Arena", color: "#ff4fa3" },
   { name: "Aria Resort", lat: 36.1072, lng: -115.1766, category: "Resort", color: "#8ec5ff" },
+  { name: "Palms Casino Resort", lat: 36.11455, lng: -115.19440, category: "Resort", color: "#85c1c7" },
+  { name: "Palms Place", lat: 36.11417, lng: -115.19877, category: "Resort", color: "#8bbacf" },
   { name: "The Cosmopolitan", lat: 36.1098, lng: -115.1739, category: "Resort", color: "#6ea8ff" },
   { name: "Bellagio Fountains", lat: 36.1127, lng: -115.1743, category: "Landmark", color: "#ffd9a0" },
   { name: "Paris & Eiffel Tower", lat: 36.1125, lng: -115.1722, category: "Resort", color: "#ff9e44" },
@@ -286,7 +288,9 @@ function renderLandmarkMarkers() {
   });
 }
 
-function flyToLocation(lat, lng, zoom = 17.0, tilt = 60, heading = 0) {
+const standardPadding = { top: 0, right: 0, bottom: 0, left: 0 };
+
+function flyToLocation(lat, lng, zoom = 17.0, tilt = 60, heading = 0, topPadding = 0) {
   if (glMap) {
     threeStripLayer?.stopFollowing?.();
     glMap.flyTo({
@@ -294,6 +298,7 @@ function flyToLocation(lat, lng, zoom = 17.0, tilt = 60, heading = 0) {
       zoom: zoom,
       pitch: tilt,
       bearing: heading,
+      padding: { ...standardPadding, top: topPadding },
       duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1300,
     });
   }
@@ -489,6 +494,7 @@ function placeEgoVehicleAt(miles) {
     glMap.jumpTo({
       center: [pose.lng, pose.lat],
       bearing: is3DView ? pose.heading : 0,
+      padding: standardPadding,
     });
   }
 }
@@ -581,8 +587,9 @@ async function handlePlaceSearch() {
   const query = document.getElementById("place-search-input").value.trim();
   if (!query) return;
 
+  const lower = query.toLowerCase();
   const place = [...document.querySelectorAll('#landmark-chips .chip')].find(chip =>
-    chip.querySelector('span').textContent.toLowerCase().includes(query.toLowerCase()));
+    [chip.querySelector('span').textContent, chip.dataset.alias].some(term => term?.toLowerCase().includes(lower)));
   if (place) { place.click(); return; }
 
   const localMatch = LANDMARKS.find((l) => l.name.toLowerCase().includes(query.toLowerCase()));
@@ -624,11 +631,12 @@ function setupUIHandlers() {
       const zoom = parseFloat(chip.dataset.zoom || "17.0");
       const tilt = parseFloat(chip.dataset.tilt || "0");
       const heading = parseFloat(chip.dataset.heading || "0");
-      const frameWidth = Number(chip.dataset.frameWidth);
-      const mapWidth = glMap?.getContainer().clientWidth;
-      const zoomAdjustment = mapWidth > 0 && mapWidth < frameWidth
-        ? Math.log2(mapWidth / frameWidth)
-        : 0;
+      const container = glMap?.getContainer();
+      const frameScale = (size, target) => size > 0 && Number(target) > 0 ? size / Number(target) : 1;
+      const zoomAdjustment = Math.log2(Math.min(1,
+        frameScale(container?.clientWidth, chip.dataset.frameWidth),
+        frameScale(container?.clientHeight, chip.dataset.frameHeight),
+      ));
 
       // If jumping to a high-zoom intersection (zoom >= 18.5), switch cleanly to top-down lane view
       if (zoom >= 18.5 && tilt === 0) {
@@ -642,7 +650,8 @@ function setupUIHandlers() {
         document.getElementById("mode-3d-btn").classList.add("active");
         document.getElementById("mode-lanes-btn").classList.remove("active");
       }
-      flyToLocation(lat, lng, zoom + zoomAdjustment, tilt, heading);
+      const topPadding = (container?.clientHeight ?? 0) * Number(chip.dataset.topPadding ?? 0);
+      flyToLocation(lat, lng, zoom + zoomAdjustment, tilt, heading, topPadding);
     });
   });
 
@@ -665,7 +674,7 @@ function setupUIHandlers() {
     mode3dBtn.classList.remove("active");
     set3DBuildingsVisibility(false);
     if (glMap) {
-      glMap.easeTo({ pitch: 0, bearing: 0, zoom: Math.max(glMap.getZoom(), 18.8), duration: 600 });
+      glMap.easeTo({ pitch: 0, bearing: 0, zoom: Math.max(glMap.getZoom(), 18.8), padding: standardPadding, duration: 600 });
     }
   });
 
@@ -675,7 +684,7 @@ function setupUIHandlers() {
     modeLanesBtn.classList.remove("active");
     set3DBuildingsVisibility(true);
     if (glMap) {
-      glMap.easeTo({ pitch: 60, duration: 600 });
+      glMap.easeTo({ pitch: 60, padding: standardPadding, duration: 600 });
     }
   });
 

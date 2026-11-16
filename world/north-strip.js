@@ -6,6 +6,7 @@ import { litColor } from '../landmarks/vendor/map/materials.js';
 import { palmGeometry } from '../landmarks/vendor/map/trees.js';
 import { bakeStatic } from '../landmarks/vendor/landmarks/bake.js';
 import { glowPoints, sheen } from '../landmarks/vendor/landmarks/sheen.js';
+import { displayMaterial, displayRibbon } from './strip-displays.js';
 import {
   MODE, SANS, SERIF, Soup, WHITE, centroid, clean, facade, inset, makeWaterMaterial,
   obb, offset, sign, spill,
@@ -115,38 +116,6 @@ function mediaPanel(texture) {
   });
 }
 
-function resortsWorldArtwork() {
-  return artwork(512, 640, (ctx, w, h) => {
-    const backdrop = ctx.createLinearGradient(0, 0, w, h);
-    backdrop.addColorStop(0, '#3b3639');
-    backdrop.addColorStop(1, '#28262c');
-    ctx.fillStyle = backdrop;
-    ctx.fillRect(0, 0, w, h);
-    // The red, swept Resorts World emblem wraps around a dark center.
-    ctx.translate(w / 2, h / 2);
-    ctx.scale(1.35, 1.35);
-    ctx.fillStyle = '#ac3d2b';
-    ctx.beginPath();
-    ctx.moveTo(-126, 33);
-    ctx.bezierCurveTo(-113, 0, -67, -10, -30, 30);
-    ctx.bezierCurveTo(-7, 55, 11, 95, 33, 84);
-    ctx.bezierCurveTo(56, 75, 44, 24, 72, 6);
-    ctx.bezierCurveTo(86, -4, 90, 27, 79, 54);
-    ctx.bezierCurveTo(116, 38, 143, -4, 127, -41);
-    ctx.bezierCurveTo(108, -89, 53, -115, -8, -116);
-    ctx.bezierCurveTo(-88, -117, -136, -70, -144, -18);
-    ctx.bezierCurveTo(-154, 34, -112, 79, -62, 93);
-    ctx.bezierCurveTo(-98, 68, -129, 51, -126, 33);
-    ctx.closePath();
-    ctx.moveTo(-69, -63);
-    ctx.bezierCurveTo(-89, -49, -61, -44, -40, -44);
-    ctx.bezierCurveTo(-15, -43, 1, -56, 17, -75);
-    ctx.bezierCurveTo(-13, -88, -46, -80, -69, -63);
-    ctx.closePath();
-    ctx.fill('evenodd');
-  });
-}
-
 function roofFace(soup, points, color = WHITE) {
   const [a, b, c] = points;
   const ab = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
@@ -219,7 +188,7 @@ function finishDeck(out, deck, name, { stoneColor, waterColor, blueAtNight, fabr
   out.add(palms);
 }
 
-function resortsWorldTowers(out, tower, base) {
+function resortsWorldTowers(out, tower, base, engine) {
   // Keep the two bowed wings and their tight elbow from the surveyed perimeter.
   const westFront = curve([[638.4, -2074.9], [672.6, -2087.5], [703.5, -2093.3], [738.3, -2092.3]]);
   const eastFront = curve([[738.3, -2092.3], [747.4, -2088], [755.1, -2070.1], [775.4, -2036.8],
@@ -264,22 +233,21 @@ function resortsWorldTowers(out, tower, base) {
     [red, stone('#ad454a', { flood: '#ffd0ba', floodK: 0.34, self: 0.31 }), 'Resorts World coral cores'],
     [roof, stone('#c8c6c2', { roof: '#dad9d1', roofGlow: 0.1 }), 'Resorts World roof and penthouses'],
     [coping, stone('#555a60', { self: 0.14 }), 'Resorts World graphite coping'],
-    [screen, mediaPanel(resortsWorldArtwork()), 'Resorts World west-wing LED'],
-    [sideScreen, mediaPanel(artwork(128, 640, (ctx, w, height) => {
-      const gradient = ctx.createLinearGradient(0, 0, w, height);
-      gradient.addColorStop(0, '#625080');
-      gradient.addColorStop(1, '#302648');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, w, height);
-    })), 'Resorts World Strip LED'],
   ]);
+  const streetMedia = new THREE.Group(); streetMedia.name = 'Resorts World tower displays';
+  const primary = displayMaterial(streetMedia, engine, 'Resorts World west-wing LED', 0.69,
+    ['zouk', 'city-afterglow', 'shows', 'neon-dive', 'zoox'], { duration: 9.8 });
+  const end = displayMaterial(streetMedia, engine, 'Resorts World Strip LED', 0.13,
+    ['shows', 'ghostbar', 'zouk'], { duration: 9.8 });
+  streetMedia.add(screen.mesh(primary, primary.name), sideScreen.mesh(end, end.name));
+  out.add(streetMedia);
   curvedLettering(out, westFront, 1, 0.13, 0.73, h - 16, h - 4, 'Resorts World', `italic 600 152px ${SCRIPT}`, '#fff5e5');
   curvedLettering(out, eastFront, 1, 0.57, 0.90, h - 13.5, h - 3, 'CONRAD', `500 127px ${SERIF}`, '#f2dfc5');
   curvedLettering(out, westBack, -1, 0.14, 0.69, h - 15, h - 3.5, 'Hilton', `600 145px ${SERIF}`, '#f6e2c7');
   curvedLettering(out, eastBack, -1, 0.15, 0.86, h - 16, h - 3.6, 'RESORTS WORLD', `600 110px ${SANS}`, '#f8e8d9');
 }
 
-function resortsWorldGrounds(out, podium, onRoad) {
+function resortsWorldGrounds(out, podium, onRoad, engine) {
   const y = podium.h, deck = deckSoups();
   const wings = new Soup(), coral = new Soup(), arcade = new Soup(), balcony = new Soup();
   const terrace = clean([[615, -2013], [645, -2060], [681, -2080], [727, -2087], [747, -2075],
@@ -327,8 +295,7 @@ function resortsWorldGrounds(out, podium, onRoad) {
     [744, -1795], [747, -1837]]), y - 0.3, y + 6.4);
   arcade.box(771, y - 0.3, -1771, 61, 8.6, 44, 1, 0, WHITE, [y + 8.3, 2, 0, y]);
   wings.box(771, y + 7.5, -1771, 62, 0.95, 44.9);
-  out.add(sign('ZOUK', 30, 7.8, 771, y + 5.4, -1748.7, 0, 1,
-    { font: `800 151px ${SANS}`, color: '#edd5f1' }));
+  zoukFrontage(out, y, engine);
   for (const [x, z, w, h, angle] of [[810, -1822, 11, 15, 1.57], [818, -1888, 15, 17.5, -1.08],
     [853, -1955, 15, 17, -1.08], [626, -1947, 11, 12.5, 0.45]]) {
     coral.box(x, 6.8, z, w, h - 6.8, 1.1, Math.cos(angle), Math.sin(angle));
@@ -355,7 +322,53 @@ function resortsWorldGrounds(out, podium, onRoad) {
   out.add(spill(965, 0.44, -2027, 20, '#ff919f', 0.15));
 }
 
-function buildResortsWorld(data, onRoad) {
+function zoukFrontage(out, podium, engine) {
+  const ribbon = new THREE.Group(); ribbon.name = 'Zouk Nightclub wraparound display';
+  const bottom = podium - 6.2, top = podium + 7.35;
+  const openingLow = podium - 0.2, openingHigh = podium + 2.55;
+  const frontZ = x => -1741.5 + (x - 702.8) * 4.8 / 104;
+  const frame = new Soup(), glazing = new Soup(), back = new Soup();
+  const plan = clean([[741, -1768], [806.13, -1768], [805.95, frontZ(805.95) - 0.24], [741, frontZ(741) - 0.24]]);
+  back.prism(plan, podium - 0.75, top + 1.98);
+  frame.box(773.3, top, frontZ(773.3) + 0.04, 64.55, 2.04, 0.91, 0.999, 0.046);
+  frame.box(773.5, bottom - 0.39, frontZ(773.5), 65.2, 0.34, 0.52, 0.999, 0.046);
+  glazing.box(783.8, openingLow, frontZ(783.8) + 0.19, 42.7, openingHigh - openingLow, 0.27, 0.999, 0.046);
+  for (let x = 761; x < 805; x += 4.52) {
+    frame.box(x, openingLow, frontZ(x) + 0.36, 0.088, openingHigh - openingLow, 0.12, 0.999, 0.046);
+  }
+  finish(ribbon, [
+    [frame, stone('#ccc5af', { self: 0.16 }), 'Zouk warm facade trim and lintel'],
+    [back, stone('#b7ae9b', { self: 0.12 }), 'Zouk corner housing'],
+    [glazing, sheen('#252e32', { refl: 0.36, glow: '#e6bcad', glowK: 0.09, windows: 0.22 }), 'Horizontal window cut through the display'],
+  ]);
+  const full = [[741, frontZ(741) + 0.46], [761, frontZ(761) + 0.46], [804.87, frontZ(804.87) + 0.46],
+    [805.91, -1736.25], [806.70, -1736.56], [807.19, -1737.19], [807.36, -1738.11], [808.29, -1762.7]];
+  const width = full.slice(1).reduce((sum, [x, z], i) => sum + Math.hypot(x - full[i][0], z - full[i][1]), 0);
+  const art = displayMaterial(ribbon, engine, 'Zouk continuous LED', width / (top - bottom), ['zoox', 'zouk', 'city-afterglow', 'shows'],
+    { duration: 10.7, layout: 'slit' });
+  const v = y => (y - bottom) / (top - bottom);
+  displayRibbon(ribbon, art, full, bottom, openingLow, { v0: 0, v1: v(openingLow) });
+  displayRibbon(ribbon, art, full, openingHigh, top, { v0: v(openingHigh), v1: 1 });
+  displayRibbon(ribbon, art, full.slice(0, 2), openingLow, openingHigh,
+    { u0: 0, u1: Math.hypot(20, frontZ(761) - frontZ(741)) / width, v0: v(openingLow), v1: v(openingHigh) });
+  out.add(ribbon);
+  out.add(sign('ZOUK', 21.5, 2.92, 756.9, top + 1.12, frontZ(756.9) + 0.58, -0.046, 0.999,
+    { font: `900 148px ${SANS}`, color: '#403745' }));
+}
+
+function oppositeShopDisplay(data, engine) {
+  const out = new THREE.Group(); out.name = 'Strip retail opposite Resorts World';
+  const storefront = data.buildings.find(b => b.name === 'Tacos El Gordo' && Math.abs(centroid(b.pts)[1] + 1762) < 15);
+  if (!storefront) return out;
+  // The small opposite-facing sign follows the mapped retail corner at street level.
+  const corner = [[895.4, -1750.21], [888.6, -1749.86], [887.72, -1750.02], [887.06, -1750.8],
+    [885.01, -1754.38], [885.04, -1755.66], [890.75, -1766.18], [897.58, -1778.57]];
+  const art = displayMaterial(out, engine, 'Corner retail LED', 6.8, ['neon-market', 'waymo', 'zoox'], { duration: 8.8, layout: 'ribbons' });
+  displayRibbon(out, art, corner, storefront.h - 3.7, storefront.h - 0.22);
+  return out;
+}
+
+function buildResortsWorld(data, onRoad, engine) {
   const out = new THREE.Group();
   out.name = 'Resorts World Las Vegas';
   const buildings = data.buildings.filter(b => /^resorts world las vegas$/i.test(b.name ?? ''));
@@ -363,8 +376,9 @@ function buildResortsWorld(data, onRoad) {
   const podium = buildings.find(b => b.h < 25);
   if (!tower || !podium) return out;
   heroOwned.add(tower);
-  resortsWorldTowers(out, tower, podium.h);
-  resortsWorldGrounds(out, podium, onRoad);
+  resortsWorldTowers(out, tower, podium.h, engine);
+  resortsWorldGrounds(out, podium, onRoad, engine);
+  out.add(oppositeShopDisplay(data, engine));
   return out;
 }
 
@@ -782,10 +796,10 @@ function buildFontainebleau(data, onRoad) {
   return out;
 }
 
-export function buildNorthStrip(data, graph) {
+export function buildNorthStrip(data, graph, engine) {
   const onRoad = roadMask(graph, true);
   const group = new THREE.Group();
   group.name = 'North Strip resorts';
-  group.add(buildResortsWorld(data, onRoad), buildCircusCircus(data, onRoad), buildFontainebleau(data, onRoad));
+  group.add(buildResortsWorld(data, onRoad, engine), buildCircusCircus(data, onRoad), buildFontainebleau(data, onRoad));
   return group;
 }

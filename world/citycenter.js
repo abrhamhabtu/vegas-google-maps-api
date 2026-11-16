@@ -1,6 +1,8 @@
 /** ARIA campus. Dimensions and placement use the mapped rings in local metres. */
 import { MODE, Soup, SANS, centroid, clean, facade, inset, offset, sign, spill } from './hero-kit.js';
 import { addShape, along, faces, mapped, material, model, named, own, parapet, put, standalonePodium, wordmark } from './landmark-forms.js';
+import { paintAria, signMaterial, signMesh } from './architectural-signs.js';
+import { sheen } from '../landmarks/vendor/landmarks/sheen.js';
 
 const THREE = window.THREE;
 const cool = { bay: 3.28, pilaster: '#b9d5e4', rate: 0.092 };
@@ -15,7 +17,7 @@ export function buildAria(data, options) {
     if (!footprint) continue;
     const ring = own(footprint, options), top = footprint.h;
     glazing.walls(ring, 12, top - 3.7, undefined, [top, 14 + i * 8, 1, 0]);
-    silver.walls(offset(ring, 0.4), top - 3.8, top - 2.9);
+    silver.walls(offset(ring, 0.23), top - 4.15, top - 1.2);
     parapet(silver, ring, top - 2.4, 1.2, 0.24);
     roof.cap(ring, top - 2.58);
     const well = inset(ring, 1.2);
@@ -31,12 +33,26 @@ export function buildAria(data, options) {
       along(silver, f, f.length * 0.05, f.length * 0.12, 14, top - 18, 0.72, 0.25);
       along(silver, f, f.length * 0.88, f.length * 0.95, 14, top - 18, 0.72, 0.25);
     }
-    light.walls(offset(ring, 0.42), top - 3.6, top - 3.3);
-    for (const dir of [[-1, 0], [1, 0]]) wordmark(out, ring, dir, 'ARIA', 21, 6.0, top - 8, modernType);
+    for (const h of [1.35, 2.05, 2.75, 3.45, 4.15]) {
+      light.walls(offset(ring, 0.46), top - h, top - h + 0.13);
+    }
+    if (i !== 0) continue;
+    const logo = signMaterial('Aria crown lettering', 2.58, paintAria, '#dce6ec');
+    const wallFaces = faces(ring, 6);
+    // The script stands above the slatted crown, toward the north end of the tall wing.
+    for (const [side, z] of [[1, 965], [-1, 981]]) {
+      const f = wallFaces.filter(f => f.nx * side > 0.75)
+        .sort((a, b) => Math.abs(a.z + a.az * a.length / 2 - z) - Math.abs(b.z + b.az * b.length / 2 - z))[0];
+      if (!f) continue;
+      const s = f.length / 2;
+      for (const u of [-5.5, 5.5]) along(silver, f, s + u - 0.13, s + u + 0.13, top - 0.55, 2.05, 0.32);
+      out.add(signMesh(logo, 20.6, 8, f.x + s * f.ax + 0.55 * f.nx, top + 3.51,
+        f.z + s * f.az + 0.55 * f.nz, f.nx, f.nz));
+    }
   }
   put(out, glazing, facade(MODE.curtainWall, { ...cool, color: '#507d9a', glass: '#97b7cd', roof: '#546779', glow: '#b0d8ff', self: 0.035 }), 'ARIA opposing arcs and lower shoulders');
   put(out, silver, material('#a2b1b9', '#c3cdd3', { self: 0.13 }), 'ARIA silver crown and spandrels');
-  put(out, light, material('#b2c9d6', '#b2c9d6', { flood: '#bbdbff', floodK: 0.75, self: 0.55 }), 'ARIA crown light');
+  put(out, light, sheen('#d9d8d0', { glow: '#ffe6b8', glowK: 0.82, baseGlow: 0.07 }), 'ARIA crown light');
   put(out, roof, material('#788a96', '#a6a7a5'), 'ARIA roof wells');
   put(out, service, material('#4a6173', '#a4acaf', { self: 0.13 }), 'ARIA recessed mechanical floors');
 

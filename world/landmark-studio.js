@@ -8,6 +8,7 @@ const THREE = window.THREE;
 const byId = id => document.getElementById(id);
 const viewport = byId('viewport'), list = byId('model-list'), status = byId('model-status');
 const download = byId('download-model'), exportStatus = byId('export-status');
+const detailViews = byId('detail-views');
 const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(39, 1, 0.15, 5000);
 // The shared aureoles read exponential fog uniforms, even in an isolated scene.
 scene.fog = new THREE.FogExp2('#d7e3ed', 0.00001);
@@ -17,6 +18,7 @@ const swatches = { day: ['#d7e3ed', '#c2ccd0', '#8796a1'], golden: ['#dac9bd', '
 let renderer, selected, current, cityData, graph, measure, backdrop, grid, capture, waiting = false, show = 'day', exportBusy = false;
 let azimuth, elevation, range, drag;
 let drawing = false;
+let detailId = new URLSearchParams(location.search).get('focus') ?? '';
 const target = new THREE.Vector3();
 const cache = new Map();
 const engine = { animate() {}, invalidate() {} }; // construction poses in the studio are static
@@ -66,8 +68,22 @@ function resize() {
 function radiusFor(box) {
   return Math.max(5, box.getSize(new THREE.Vector3()).length() * 0.5);
 }
+const currentDetail = () => selected?.details?.find(({ id }) => id === detailId);
+
 function resetView() {
   if (!measure) return;
+  const detail = currentDetail();
+  if (detail) {
+    const [x, y, z] = detail.target;
+    target.set(x - measure.anchor[0], y, z - measure.anchor[1]);
+    azimuth = (180 - detail.bearing) * Math.PI / 180;
+    elevation = detail.elevation;
+    range = detail.range * Math.max(1, 0.94 / camera.aspect);
+    camera.far = 2500;
+    camera.updateProjectionMatrix();
+    draw();
+    return;
+  }
   azimuth = (180 - selected.bearing) * Math.PI / 180;
   elevation = selected.id === 'crystals' ? 0.57 : 0.39;
   // Fit the projected bounds from this angle. A circumscribed sphere leaves
@@ -87,7 +103,8 @@ function resetView() {
 }
 function stepZoom(factor) {
   if (!measure) return;
-  range = THREE.MathUtils.clamp(range * factor, measure.radius * 0.68, Math.max(measure.radius * 10, range * 1.001));
+  const closest = currentDetail()?.range * 0.5 || measure.radius * 0.68;
+  range = THREE.MathUtils.clamp(range * factor, closest, Math.max(measure.radius * 10, range * 1.001));
   draw();
 }
 function orbit(radians) { azimuth += radians; draw(); }
@@ -125,13 +142,51 @@ function build(item) {
   local.add(root);
   const points = bounds.flatMap(({ min, max }) => [min.x, max.x].flatMap(x => [min.y, max.y].flatMap(y =>
     [min.z, max.z].map(z => new THREE.Vector3(x - center.x, y, z - center.z)))));
-  const entry = { group: local, size, points, radius: radiusFor(box) };
+  const entry = { group: local, size, points, anchor, radius: radiusFor(box) };
   cache.set(item.id, entry);
   return entry;
 }
+function updateStudioURL() {
+  const url = new URL(location.href);
+  url.hash = selected.id;
+  if (currentDetail()) url.searchParams.set('focus', detailId);
+  else url.searchParams.delete('focus');
+  history.replaceState(null, '', url);
+}
+function showDetailButtons() {
+  detailViews.replaceChildren();
+  detailViews.hidden = !selected.details;
+  if (!selected.details) return;
+  for (const { id, label } of [{ id: '', label: 'Full model' }, ...selected.details]) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.setAttribute('aria-pressed', String(id === detailId));
+    button.addEventListener('click', () => {
+      detailId = id;
+      for (const choice of detailViews.children) choice.setAttribute('aria-pressed', String(choice === button));
+      updateStudioURL();
+      resetView();
+    });
+    detailViews.append(button);
+  }
+}
 function select(item) {
+  if (selected && selected !== item) detailId = '';
   selected = item;
-  for (const button of list.children) button.setAttribute('aria-current', String(button.dataset.id === item.id));
+  if (!currentDetail()) detailId = '';
+  showDetailButtons();
+  for (const button of list.children) {
+    const active = button.dataset.id === item.id;
+    button.setAttribute('aria-current', String(active));
+    if (active) {
+      const itemRect = button.getBoundingClientRect(), listRect = list.getBoundingClientRect();
+      list.scrollBy(
+        Math.max(0, itemRect.right - listRect.right) + Math.min(0, itemRect.left - listRect.left),
+        Math.max(0, itemRect.bottom - listRect.bottom) + Math.min(0, itemRect.top - listRect.top),
+      );
+    }
+  }
   const idx = studioModels.indexOf(item) + 1;
   byId('model-title').textContent = item.title;
   byId('model-district').textContent = `MODEL ${String(idx).padStart(2,'0')} / ${item.district}`;
@@ -139,7 +194,7 @@ function select(item) {
   byId('model-size').textContent = '';
   download.disabled = true;
   updateLinks();
-  history.replaceState(null, '', '#' + item.id);
+  updateStudioURL();
   if (current) scene.remove(current);
   current = null;
   measure = null;

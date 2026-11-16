@@ -10,6 +10,16 @@ window.setupMapChrome = function({ getMap, getLayer }) {
 
   const sheet = byId('sheet'), search = byId('place-search-input');
   const phone = matchMedia('(max-width: 720px)');
+  const sphereAd = byId('sphere-ad');
+  sphereAd.value = new URLSearchParams(location.search).get('sphere-ad') || '';
+  if (sphereAd.selectedIndex < 0) sphereAd.selectedIndex = 0;
+  sphereAd.addEventListener('change', () => {
+    const url = new URL(location.href);
+    if (sphereAd.value) url.searchParams.set('sphere-ad', sphereAd.value);
+    else url.searchParams.delete('sphere-ad');
+    history.replaceState(null, '', url);
+    dispatchEvent(new Event('vegas-sphere-ad'));
+  });
 
   // ── places: a dropdown list on desktop, the body of a draggable bottom sheet on phones ──
   function setSheet(state) {
@@ -49,7 +59,7 @@ window.setupMapChrome = function({ getMap, getLayer }) {
     query = query.toLowerCase().trim();
     let count = 0;
     document.querySelectorAll('#landmark-chips .chip').forEach(chip => {
-      const matches = chip.textContent.toLowerCase().includes(query);
+      const matches = chip.textContent.toLowerCase().includes(query) || (chip.dataset.alias ?? '').toLowerCase().includes(query);
       chip.hidden = !matches;
       if (matches) count++;
     });
@@ -77,7 +87,7 @@ window.setupMapChrome = function({ getMap, getLayer }) {
       setSheet(order[(order.indexOf(sheet.dataset.state) + 1) % order.length] ?? 'half');
     });
     const start = event => {
-      if (!phone.matches || event.target.closest('input, .corridor-chips, button:not(#sheet-grabber)')) return;
+      if (!phone.matches || event.target.closest('input, select, .corridor-chips, button:not(#sheet-grabber)')) return;
       drag = { y: event.clientY, h: sheet.getBoundingClientRect().height, moved: false, id: event.pointerId };
       sheet.setPointerCapture?.(event.pointerId);
     };
@@ -110,20 +120,26 @@ window.setupMapChrome = function({ getMap, getLayer }) {
       const params = new URLSearchParams(location.hash.slice(1));
       params.set('view', chip.dataset.view);
       history.replaceState(null, '', '#' + params.toString());
+      byId('sphere-ad-control').hidden = chip.dataset.view !== 'sphere';
+      setStudioLinks();
       announce(`Viewing ${byId('view-title').textContent}`);
       search.value = ''; filterPlaces('');
       search.blur();
       closePanels(true);
     });
   });
-  byId('landmark-studio-link').addEventListener('click', event => {
+  function setStudioLinks() {
     const params = new URLSearchParams(location.hash.slice(1));
     const view = params.get('view') || 'bellagio';
     const url = new URL('./landmark-studio.html', location.href);
+    const studio = document.querySelector(`.chip[data-view="${CSS.escape(view)}"]`)?.dataset;
     url.search = new URLSearchParams({ from: view, theme: currentTheme });
-    url.hash = view;
-    event.currentTarget.href = url.href;
-  });
+    if (studio?.studioFocus) url.searchParams.set('focus', studio.studioFocus);
+    url.hash = studio?.studioModel || view;
+    document.querySelectorAll('[data-studio-link]').forEach(link => { link.href = url.href; });
+  }
+  setStudioLinks();
+  addEventListener('hashchange', setStudioLinks);
 
   function applyRasterTheme() {
     const map = getMap();
@@ -141,6 +157,8 @@ window.setupMapChrome = function({ getMap, getLayer }) {
       night: ['#050814', '#161d36', '#121628'],
     }[currentTheme];
     map.setSky({ 'sky-color': sky[0], 'horizon-color': sky[1], 'fog-color': sky[2], 'sky-horizon-blend': 0.65, 'horizon-fog-blend': 0.5 });
+    // At street height an off-center camera can see past the last raster row.
+    map.getContainer().style.backgroundColor = sky[1];
     for (const id of ['google-roadmap-layer', 'google-satellite-layer']) {
       if (!map.getLayer(id)) continue;
       map.setPaintProperty(id, 'raster-saturation', palette.saturation);
@@ -166,6 +184,7 @@ window.setupMapChrome = function({ getMap, getLayer }) {
     const params = new URLSearchParams(location.hash.slice(1));
     params.set('theme', name);
     history.replaceState(null, '', '#' + params.toString());
+    setStudioLinks();
     announce(`${name === 'golden' ? 'Sunset' : name} lighting`);
   }
   document.querySelectorAll('.theme-btn').forEach(button => button.addEventListener('click', () => setTheme(button.dataset.theme)));

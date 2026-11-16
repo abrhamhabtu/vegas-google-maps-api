@@ -8,6 +8,7 @@ import { ORIGIN } from '../places.js';
 import { latLonToXZ } from '../core/data.js';
 import { bakeStatic } from './bake.js';
 import { glowPoints, halo, nightAura, sheen, textPanel } from './sheen.js';
+import { makeSphereCampaignTexture, sphereCampaignIds, SPHERE_AD_COLUMNS, SPHERE_AD_ROWS } from '../../../world/vegas-campaigns.js';
 export function footprint(data, re, near) {
     let best = null, bd = Infinity;
     for (const b of data.buildings){
@@ -92,17 +93,17 @@ export function buildLandmarks(data, engine) {
         if (o) g.add(o);
     };
     add(sphere(data, engine));
-    add(highRoller(data, engine));
+    // The rim, upright capsules and Wheel House now come from world/high-roller.js.
     // Eiffel Tower: drawn by world/four-corners.js.
     add(balloon(data));
     // Luxor's pyramid and Sky Beam are drawn by world/luxor.js.
-    add(strat(data));
+    // The STRAT is drawn by world/strat.js and shared with Landmark Studio.
     add(fountains(data, engine));
     add(monorail(data));
     add(fremont(data, engine));
     return g;
 }
-const PROGRAMME = [
+const LEGACY_PROGRAMME = [
     [
         0
     ],
@@ -235,6 +236,15 @@ const PROGRAMME = [
         22
     ]
 ];
+const CAMPAIGN_MODE = 23;
+const PROGRAMME = [[CAMPAIGN_MODE, 0]];
+let nextCampaign = 1;
+for (const cue of LEGACY_PROGRAMME) {
+    if (cue[0] === 8 && nextCampaign < sphereCampaignIds.length) {
+        PROGRAMME.push([CAMPAIGN_MODE, nextCampaign++]);
+    }
+    PROGRAMME.push(cue);
+}
 const ROBOTAXI_GLSL = `
   float rbox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
   vec4 titleAt(float row, vec2 p, vec2 ctr, vec2 size) {
@@ -704,6 +714,7 @@ function sphere(data, engine) {
     const f = footprint(data, /^sphere$/i);
     if (!f) return null;
     const R = 78.5, H = 112;
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
     const geo = new THREE.SphereGeometry(R, 96, 64, 0, Math.PI * 2, 0, Math.acos((H - R) / R * -1));
     const mat = new THREE.ShaderMaterial({
         uniforms: {
@@ -716,6 +727,9 @@ function sphere(data, engine) {
             uAds: {
                 value: sphereAds()
             },
+            uCampaigns: { value: makeSphereCampaignTexture(THREE) },
+            uPreviewAd: { value: -1 },
+            uReducedMotion: { value: 0 },
             uTitles: {
                 value: sphereTitles()
             },
@@ -728,7 +742,8 @@ function sphere(data, engine) {
             uStart: {
                 value: PROGRAMME.map((_, i)=>{
                     let k = i;
-                    while(k > 0 && PROGRAMME[k - 1][0] === PROGRAMME[i][0] && PROGRAMME[i][0] !== 8)k--;
+                    const mode = PROGRAMME[i][0];
+                    while (k > 0 && PROGRAMME[k - 1][0] === mode && mode !== 8 && mode !== CAMPAIGN_MODE) k--;
                     return k;
                 })
             }
@@ -746,6 +761,8 @@ function sphere(data, engine) {
       #include <common>
       #include <fog_pars_fragment>
       uniform float uTime, uNight; uniform vec3 uFace; uniform sampler2D uAds, uTitles; varying vec3 vN;
+      uniform sampler2D uCampaigns;
+      uniform float uPreviewAd, uReducedMotion;
       uniform float uMode[${PROGRAMME.length}], uAd[${PROGRAMME.length}], uStart[${PROGRAMME.length}];
       float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       ${ROBOTAXI_GLSL}
@@ -764,6 +781,11 @@ function sphere(data, engine) {
         float slot = float(slotI), mode = uMode[slotI], ad = uAd[slotI];
         float showT = (slot - uStart[slotI]) * 9.0 + mod(time, 9.0);
         float blend = smoothstep(0.0, 1.2, showT);
+        if (uPreviewAd >= 0.0) {
+          mode = ${CAMPAIGN_MODE.toFixed(1)};
+          ad = uPreviewAd;
+          blend = 1.0;
+        }
         // pictures repeat on the far hemisphere, so the Strip side and the Koval side both get the show
         float lonF = mod(lon + 1.5708, 3.1416) - 1.5708;
         vec2 p = vec2(lonF, lat);
@@ -861,6 +883,17 @@ function sphere(data, engine) {
           c = texture2D(uAds, (auv + cell) / vec2(3.0, 2.0)).rgb;
           // a sheen sweeps across every few seconds
           c += vec3(0.3) * smoothstep(0.12, 0.0, abs(p.x + p.y * 0.4 - mod(time * 0.9, 6.0) + 3.0));
+        } else if (mode > ${(CAMPAIGN_MODE - 0.5).toFixed(1)}) {
+          // Mirror the wrap on the Strip and Koval sides. Keep the title above the lower rim.
+          float motion = (1.0 - uReducedMotion) * (0.5 + 0.5 * sin(time * 0.66));
+          vec2 artwork = (p - vec2(0.0, 0.35)) / vec2(2.7, 1.37) * (1.0 - 0.048 * motion) + 0.5;
+          vec2 tiles = vec2(${SPHERE_AD_COLUMNS.toFixed(1)}, ${SPHERE_AD_ROWS.toFixed(1)});
+          vec2 tile = vec2(mod(ad, tiles.x), tiles.y - 1.0 - floor(ad / tiles.x));
+          c = texture2D(uCampaigns, (clamp(artwork, 0.003, 0.997) + tile) / tiles).rgb;
+          float edge = 1.0 - smoothstep(0.44, 0.72, max(abs(artwork.x - 0.5), abs(artwork.y - 0.5)));
+          c *= 0.52 + edge * 0.68;
+          float sweep = p.x * 0.83 + p.y * 0.45 - mod(time * 0.33, 5.4) + 2.7;
+          c += vec3(0.075, 0.065, 0.12) * (1.0 - smoothstep(0.03, 0.37, abs(sweep))) * (1.0 - uReducedMotion);
         } else if (mode < 9.5) {     // a roulette wheel, ball racing the other way
           p -= vec2(0.0, 0.3);
           float r = length(p * vec2(1.0, 1.1)), a = atan(p.y, p.x), spin = time * 0.9;
@@ -908,6 +941,16 @@ function sphere(data, engine) {
         #include <colorspace_fragment>
       }`
     });
+    const syncAd = () => {
+        const requested = new URLSearchParams(location.search).get('sphere-ad');
+        const preview = sphereCampaignIds.indexOf(requested);
+        mat.uniforms.uPreviewAd.value = preview >= 0 ? preview : reducedMotion.matches ? 0 : -1;
+        mat.uniforms.uReducedMotion.value = Number(reducedMotion.matches);
+        engine.invalidate();
+    };
+    engine.listen(window, 'vegas-sphere-ad', syncAd);
+    engine.listen(reducedMotion, 'change', syncAd);
+    syncAd();
     const m = new THREE.Mesh(geo, mat);
     m.position.set(f.c[0], H - R, f.c[1]);
     const grp = new THREE.Group();

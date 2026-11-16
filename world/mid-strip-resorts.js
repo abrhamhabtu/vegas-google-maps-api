@@ -1,10 +1,8 @@
 /** Hotel envelopes from their mapped rings; storefront, sign, and roof details are drawn here. */
-import { MODE, Soup, WHITE, SANS, SERIF, clean, facade, inset, offset, sign, spill } from './hero-kit.js';
+import { MODE, Soup, WHITE, SANS, clean, facade, inset, offset, sign, spill } from './hero-kit.js';
 import { addShape, along, faces, mapped, material, model, named, own, parapet, put, standalonePodium, wordmark } from './landmark-forms.js';
 
 const THREE = window.THREE;
-const serif = (color, weight = '600') => ({ font: `${weight} 110px ${SERIF}`, color });
-const paler = { glass: '#556574', flood: '#ffe2b5', floodK: 0.49, rate: 0.1, pilasterK: 0.63 };
 const stone = (color, roof = color, amount = 0.27) => material(color, roof, { flood: '#ffe4bd', floodK: amount, self: 0.07 });
 
 export function buildPlanetHollywood(data, options) {
@@ -130,78 +128,6 @@ export function buildFlamingo(data, options) {
   return out;
 }
 
-function italianTower(out, b, options, spec) {
-  if (!b) return;
-  const ring = own(b, options), top = b.h;
-  const walls = new Soup(), pilasters = new Soup(), belts = new Soup(), grand = new Soup(), crown = new Soup(), roof = new Soup();
-  const start = top - spec.crownH;
-  walls.walls(ring, spec.base, start, WHITE, [start, 21 + top, 0, spec.base]);
-  const profile = spec.belts;
-  for (const f of faces(ring, 3.7)) {
-    const width = Math.min(f.length * 0.38, spec.pier);
-    along(pilasters, f, 0, width, spec.base, start - spec.base, 1.2, 0.27);
-    along(pilasters, f, f.length - width, f.length, spec.base, start - spec.base, 1.2, 0.27);
-    if (f.length < 8) continue;
-    const divisions = Math.max(1, Math.round(f.length / spec.section));
-    for (let k = 1; k < divisions; k++) {
-      const s = k * f.length / divisions;
-      along(pilasters, f, s - 0.57, s + 0.57, spec.base + 4.8, start - spec.base - 5, 0.8, 0.32);
-    }
-  }
-  for (const [i, y] of profile.entries()) {
-    belts.walls(offset(ring, i % 2 === 0 ? 0.52 : 0.3), y, y + (i % 2 === 0 ? 0.82 : 0.55));
-  }
-  belts.walls(offset(ring, 0.68), start - 0.7, start + 0.55);
-  grand.walls(ring, start, top - 3.1, WHITE, [top - 2.0, 35, 0, start]);
-  crown.walls(offset(ring, 0.48), top - 4.2, top - 3.0);
-  parapet(crown, ring, top - 2.8, 2.3, 0.64);
-  roof.cap(ring, top - 2.9);
-  const roofCore = inset(ring, 1.3);
-  if (roofCore) roof.prism(roofCore, top - 3.0, top - 1.55);
-  if (spec.mark) wordmark(out, ring, [-1, 0], spec.mark, spec.markWidth, 4.4, top - 6.5, serif(spec.letter));
-  put(out, walls, facade(MODE.palazzo, {
-    ...paler, color: spec.wall, glass: spec.glass ?? paler.glass, bay: spec.bay, roof: spec.roof, pilaster: spec.trim,
-  }), b.name + ' paired window bays');
-  put(out, pilasters, stone(spec.trim, spec.roof, 0.4), b.name + ' corner pilasters');
-  put(out, belts, stone(spec.trim, spec.roof, 0.52), b.name + ' horizontal cornices');
-  put(out, grand, facade(MODE.palazzo, {
-    ...paler, color: spec.wall, bay: spec.grand, tier: 125, tier0: start, roof: spec.roof, pilaster: spec.trim, glass: spec.glass ?? paler.glass,
-  }), b.name + ' upper arcade');
-  put(out, crown, stone(spec.trim, spec.roof, 0.4), b.name + ' cap and balustrade');
-  put(out, roof, stone(spec.wall, spec.roof, 0.0), b.name + ' recessed roof');
-}
-
-const venetian = { wall: '#e0c7a7', trim: '#eadbc1', roof: '#aeb4ad', base: 15.8, bay: 5.4, grand: 7.3, pier: 2.15, section: 17,
-  crownH: 14, belts: [23.5, 53.5, 87.7, 117.9], mark: 'THE VENETIAN', letter: '#f0d5a5', markWidth: 47 };
-
-export function buildVenetian(data, options) {
-  const out = model('The Venetian');
-  italianTower(out, named(data, 'Venetian Tower'), options, venetian);
-  italianTower(out, named(data, 'Venezia Tower'), options, {
-    ...venetian, wall: '#cdb595', trim: '#e6d5b9', roof: '#ac9d86', belts: [23, 48, 71], crownH: 10.5, mark: '',
-  });
-  standalonePodium(out, named(data, 'The Venetian Las Vegas'), options, stone('#d3b8a0', '#c6b9a8'));
-  out.add(spill(379, 0.45, -562, 125, '#ffdca9', 0.2));
-  return out;
-}
-
-export function buildPalazzo(data, options) {
-  const out = model('The Palazzo');
-  italianTower(out, named(data, 'Palazzo Tower'), options, {
-    wall: '#c6a482', trim: '#e3ccb0', roof: '#b1a99e', glass: '#646a72', base: 23.5, bay: 6.2, grand: 8.7, pier: 2.6, section: 19.5,
-    crownH: 18.5, belts: [34, 67, 97.9, 128.9, 152.7], mark: 'THE PALAZZO', markWidth: 37, letter: '#ffeece',
-  });
-  standalonePodium(out, named(data, out.name), options, stone('#baa28e', '#c9bbad'));
-  const frame = new Soup(), clerestory = new Soup();
-  const pavilion = clean([[426, -774], [441, -786], [464, -775], [457, -755], [432, -751]]);
-  clerestory.prism(pavilion, 12, 19, WHITE, [19, 19, 0, 0]);
-  parapet(frame, pavilion, 19.0, 1.12, 0.3);
-  put(out, clerestory, facade(MODE.palazzo, { ...paler, color: '#bfa58f', roof: '#9a948b', bay: 3.6 }), 'Palazzo lower arrival pavilion');
-  put(out, frame, stone('#decaad', '#dac8af', 0.42), 'Palazzo arrival crown');
-  out.add(spill(443, 0.44, -790, 124, '#ffd391', 0.18));
-  return out;
-}
-
 function ellipse(x, z, rx, rz, count = 32) {
   return Array.from({ length: count }, (_, i) => {
     const a = i * Math.PI * 2 / count;
@@ -209,17 +135,44 @@ function ellipse(x, z, rx, rz, count = 32) {
   });
 }
 
+function glazingSection(soup, f, start, end, bottom, top, aux) {
+  const base = soup.pos.length / 3, normal = [f.nx, 0, f.nz];
+  for (const [s, y] of [[start, bottom], [end, bottom], [end, top], [start, top]]) {
+    soup.vert(f.x + s * f.ax, y, f.z + s * f.az, normal, s, WHITE, aux);
+  }
+  soup.idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+}
+
 export function buildHardRockHotel(data, options) {
   const out = model('Hard Rock · former Mirage');
   const tower = mapped(data, -58, -566, 102, 5);
   if (!tower) return out;
   const yPlan = own(tower, options), h = tower.h;
-  const bronze = new Soup(), lintels = new Soup(), spine = new Soup(), cornice = new Soup(), roof = new Soup(), band = new Soup();
-  const low = 15.6, crown = h - 13.2;
-  bronze.walls(yPlan, low, crown, WHITE, [h, 28, 0, low]);
-  // The retained hotel has long bronze panes tucked between stacked limestone lines.
-  for (let y = low + 1.8; y < crown - 0.9; y += 3.32) band.walls(offset(yPlan, 0.17), y, y + 0.66);
-  bronze.walls(yPlan, crown + 1.3, h - 2.9, WHITE, [h, 11, 0, crown]);
+  const glassWall = new Soup(), lintels = new Soup(), spine = new Soup(), cornice = new Soup(), roof = new Soup(), band = new Soup();
+  const bareSlabs = new Soup(), bareColumns = new Soup(), interiors = new Soup();
+  const low = 15.6, crown = h - 13.2, story = 3.32;
+  interiors.walls(inset(yPlan, 1.22) ?? yPlan, low, crown);
+  // Stagger the glazing across the Y wings in runs of bays. Dark recesses,
+  // concrete floor edges and columns mark the areas still awaiting panels.
+  for (const [side, f] of faces(yPlan).entries()) {
+    const sections = Math.ceil(f.length / 12), pitch = f.length / sections;
+    for (let k = 0; k < sections; k++) {
+      const start = k * pitch, end = (k + 1) * pitch, middle = (start + end) * 0.5;
+      const x = f.x + middle * f.ax, z = f.z + middle * f.az;
+      const floor = 12 + (x < -122 ? 1 : 0) + (z < -599 ? -1 : z > -510 ? 1 : 0);
+      const bottom = low + floor * story;
+      glazingSection(glassWall, f, start, end, bottom, crown, [h, 28 + side, 1, low]);
+      for (let y = low; y < bottom - 0.1; y += story) {
+        along(bareSlabs, f, start, end, y, 0.42, 1.29, -0.6);
+      }
+      for (let y = bottom; y < crown - 0.9; y += story) {
+        along(band, f, start, end, y + 0.11, 0.46, 0.23, 0.11);
+      }
+      const column = Math.min(0.35, pitch * 0.2);
+      along(bareColumns, f, middle - column, middle + column, low, bottom - low, 0.72, -0.71);
+    }
+  }
+  glassWall.walls(yPlan, crown + 1.3, h - 2.9, WHITE, [h, 11, 1, crown]);
   lintels.walls(offset(yPlan, 0.48), crown, crown + 1.37);
   lintels.walls(offset(yPlan, 0.41), h - 3.45, h - 1.36);
   for (const f of faces(yPlan, 7.3)) {
@@ -233,14 +186,17 @@ export function buildHardRockHotel(data, options) {
   spine.prism(core, low, h + 0.9);
   parapet(cornice, yPlan, h - 1.6, 1.8, 0.53);
   roof.cap(yPlan, h - 1.83);
-  put(out, bronze, facade(MODE.goldGlass, {
-    color: '#b18b59', glass: '#816149', roof: '#bfb29a', glow: '#d9c19b', bay: 3.32, rate: 0.085, self: 0.17,
-  }), 'Mirage retained Y-plan bronze elevations');
-  put(out, band, stone('#c2b59d', '#c8bca9', 0.33), 'Mirage limestone ribbons');
-  put(out, lintels, stone('#d3c6ad', '#e0d4bf', 0.38), 'Mirage upper lintels');
-  put(out, spine, stone('#c9bca2', '#d5c7af', 0.34), 'Mirage junction and outer blades');
-  put(out, cornice, stone('#cec1aa', '#d5c9b7', 0.32), 'Mirage wraparound parapet');
-  put(out, roof, stone('#b9ae9b', '#c8bdad', 0), 'Mirage recessed hotel roof');
+  put(out, glassWall, facade(MODE.curtainWall, {
+    color: '#326b91', glass: '#275476', roof: '#85939a', glow: '#7fb4ce', bay: story, rate: 0, self: 0.14,
+  }), 'Blue curtain wall installed to date');
+  put(out, interiors, stone('#434a50', '#717172', 0.02), 'Recessed unfinished hotel floors');
+  put(out, bareSlabs, stone('#aba9a0', '#918e84', 0.13), 'Exposed concrete slab edges');
+  put(out, bareColumns, stone('#858683', '#9b9a92', 0.09), 'Exposed concrete columns');
+  put(out, band, material('#9aafb4', '#a8b9b9', { self: 0.12 }), 'Installed silver spandrels');
+  put(out, lintels, material('#a9b6b8', '#b3bfc0', { self: 0.18 }), 'Retained hotel upper lintels');
+  put(out, spine, material('#a7b7b8', '#aebabb', { self: 0.15 }), 'Retained hotel junction and outer blades');
+  put(out, cornice, material('#b3bec0', '#aab5b6'), 'Retained hotel wraparound parapet');
+  put(out, roof, material('#858f94', '#a0a6a8'), 'Retained hotel recessed roof');
 
   // Kept behind the guitar site. Use separate volumes instead of extruding the
   // whole construction polygon, which also contains operating access roads.

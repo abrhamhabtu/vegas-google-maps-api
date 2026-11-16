@@ -444,12 +444,12 @@ export function buildResorts(data, engine) {
     };
     // Wynn and Encore towers: drawn by world/wynn-ti.js.
     // Resorts World, Circus Circus and Fontainebleau are drawn by world/north-strip.js.
-    add(treasureIsland(data));
+    // Treasure Island tower, lagoon and marquee: world/treasure-island.js.
     // Bellagio is drawn by world/four-corners.js now; keep its height for the camera index.
     heights.push([-170, 348, 155]);
     // Cosmopolitan towers and Strip frontage are drawn by world/citycenter.js.
     // Mandalay Bay and W Las Vegas are drawn by world/mandalay-bay.js.
-    add(parkMgm(data));
+    // Park MGM is drawn by world/park-mgm.js.
     // Brooklyn Bridge is drawn from the mapped footway in world/tropicana-fronts.js.
     add(buildStripResorts(data, engine));
     return {
@@ -869,7 +869,7 @@ function treasureIsland(data) {
     const g = new THREE.Group();
     g.name = 'Treasure Island';
     g.position.set(c[0], 0, c[1]);
-    // the tower itself is drawn by world/wynn-ti.js; the pirate lagoon and TI pylon stay here.
+    // Superseded by the mapped lagoons and tower in world/treasure-island.js.
     const fr = frontage(data, c);
     const front = new THREE.Group();
     front.name = 'Treasure Island front';
@@ -1185,37 +1185,6 @@ function mandalay(data) {
     }
     return bakeStatic(g, keep);
 }
-function parkMgm(data) {
-    const f = towerNear(data, -146, 1285, 25, 90);
-    if (!f) return null;
-    const c = centroid(f.ring), H = f.h;
-    const g = new THREE.Group();
-    g.name = 'Park MGM';
-    g.position.set(c[0], 0, c[1]);
-    ringTower(g, f.ring, c, 0, H, sheen('#c7ad86', {
-        windows: 0.42,
-        masonry: true,
-        refl: 0.05,
-        glow: '#ffc98a',
-        glowK: 0.06
-    }));
-    const bronze = sheen('#6f5436', {
-        refl: 0.35,
-        spec: 1,
-        glow: '#ffb765',
-        glowK: 1
-    });
-    for (const y of [
-        13,
-        H * 0.5
-    ])ringTower(g, f.ring, c, y, y + 0.9, bronze, 1.008);
-    ringTower(g, f.ring, c, H, H + 2.2, bronze, 1.012);
-    pilasters(g, f.ring, c, 14, H, 13, sheen('#d8c19c', {
-        glow: '#ffd9a8',
-        glowK: 0.5
-    }), 1.1);
-    return bakeStatic(g, keep);
-}
 function circusFront(data) {
     const main = named(data, /^circus circus las vegas$/i);
     if (!main) return null;
@@ -1498,7 +1467,7 @@ function buildStripResorts(data, engine) {
         glow: '#bfe0ff',
         glowK: 0.12
     });
-    // Caesars towers (and their signs) are drawn by world/four-corners.js; the forecourt stays here.
+    // Caesars towers, arrival and fountains are dressed in world/caesars-palace.js.
     const aug = tower(/^palace tower$/i);
     const caes = tower(/^caesars palace hotel and casino$/i) ?? aug;
     if (caes) {
@@ -1510,7 +1479,7 @@ function buildStripResorts(data, engine) {
         }
         block(f, 0, 14.8, 6, 88, 1.3, 2.4, white);
         block(f, 0, 14.8, 13, 88, 1.3, 2.4, white);
-        block(f, 0, 16.1, 9.5, 88, 0.6, 10, gold);
+        block(f, 0, 16.1, 9.5, 88, 0.6, 10, white);
         const dome = sheen('#5d9a8c', {
             refl: 0.3,
             spec: 0.8
@@ -1534,67 +1503,11 @@ function buildStripResorts(data, engine) {
         adBoard(f, engine, 66, 2, 16, 20, nextAd(), bronze);
         g.add(f);
     }
-    // Venetian, Venezia and Palazzo hotel towers: world/mid-strip-resorts.js.
-    // The canal frontage, bridge and Campanile remain here.
-    const copperRoof = sheen('#4d8275', { refl: 0.3, spec: 0.8 });
+    // Venetian towers, Campanile and canal frontage: world/venetian-palazzo.js.
+    // The city keeps its animated sidewalk display.
     const cam = tower(/^the campanile$/i);
     if (cam) {
-        const c = centroid(cam.ring), part = new THREE.Group();
-        part.position.set(c[0], 0, c[1]);
-        const W = 12, brick = sheen('#a9543d', {
-            refl: 0.02
-        }), H = cam.h;
-        block(part, 0, 0, 0, W + 2, 3, W + 2, stone);
-        block(part, 0, 3, 0, W, H * 0.62, W, brick);
-        for (const sx of [
-            -1,
-            1
-        ])for (const f2 of [
-            0,
-            1
-        ])for(let k = -1; k <= 1; k++){
-            const a = f2 ? k * 3 : sx * (W / 2 + 0.1), b = f2 ? sx * (W / 2 + 0.1) : k * 3;
-            block(part, a, 3, b, f2 ? 0.7 : 0.4, H * 0.62, f2 ? 0.4 : 0.7, brick);
-        }
-        const y1 = 3 + H * 0.62;
-        block(part, 0, y1, 0, W + 1.4, 1.2, W + 1.4, white);
-        block(part, 0, y1 + 1.2, 0, W - 1, H * 0.14, W - 1, dark);
-        for (const sx of [
-            -1,
-            1
-        ])for (const sz of [
-            -1,
-            1
-        ])block(part, sx * (W - 1) / 2, y1 + 1.2, sz * (W - 1) / 2, 1.3, H * 0.14, 1.3, white);
-        block(part, 0, y1 + 1.2 + H * 0.14, 0, W + 1.2, 1.4, W + 1.2, white);
-        const y2 = y1 + 2.6 + H * 0.14;
-        block(part, 0, y2, 0, W - 2, H * 0.06, W - 2, ivory);
-        const spire = new THREE.Mesh(new THREE.ConeGeometry((W - 2) * 0.72, H * 0.14, 4), copperRoof);
-        spire.rotation.y = Math.PI / 4;
-        spire.position.set(0, y2 + H * 0.06 + H * 0.07, 0);
-        part.add(spire);
-        const angel = new THREE.Mesh(new THREE.ConeGeometry(0.8, 4.4, 8), gold);
-        angel.position.set(0, y2 + H * 0.2 + 2.2, 0);
-        part.add(angel);
-        g.add(part);
-        const f = frontFrame(data, c, 54);
-        const pink = sheen('#e4b7a8', {
-            refl: 0.02
-        });
-        block(f, 0, 0, 12, 76, 6, 16, ivory);
-        for(let x = -36; x <= 36; x += 4)column(f, x, 3.4, 5, 0.4, white);
-        block(f, 0, 6.4, 8, 76, 1, 9, white);
-        block(f, 0, 7.4, 12, 76, 12, 16, pink);
-        for(let x = -34; x <= 34; x += 8.5)block(f, x, 10.6, 3.9, 3, 5, 0.3, dark);
-        block(f, 0, 19.4, 12, 77, 0.9, 17, white);
-        for(let x = -36; x <= 36; x += 4.5)block(f, x, 20.3, 4.4, 1.3, 2, 0.6, white);
-        block(f, 0, 0.05, -5, 96, 0.8, 7, water);
-        const rialto = new THREE.Mesh(new THREE.TorusGeometry(10, 1.1, 8, 20, Math.PI), white);
-        rialto.position.set(42, 0, -3);
-        rialto.rotation.y = Math.PI / 2;
-        f.add(rialto);
-        block(f, 42, 10.4, -3, 7, 3.6, 12, ivory);
-        block(f, 42, 14, -3, 8, 1.3, 13, copperRoof);
+        const f = frontFrame(data, centroid(cam.ring), 54);
         adBoard(f, engine, -56, -2, 16, 20, nextAd(), bronze);
         g.add(f);
     }
@@ -2112,7 +2025,7 @@ function buildStripResorts(data, engine) {
             g.add(crSign);
         }
     }
-    // Across S Las Vegas Blvd from ARIA & Crystals: 63 Las Vegas & BLVD Retail Center (Netflix, Lululemon, JD Sports, In-N-Out Burger, Adidas, Puma)
+    // Across S Las Vegas Blvd from ARIA & Crystals: 63 Las Vegas and Netflix
     {
         const eastRetail = new THREE.Group();
         eastRetail.name = 'East Strip Retail across from ARIA';
@@ -2122,10 +2035,6 @@ function buildStripResorts(data, engine) {
             glow: '#ffe8c2',
             glowK: 0.25,
             baseGlow: 0.08
-        });
-        const darkMetal = sheen('#181b22', {
-            refl: 0.55,
-            spec: 1.25
         });
         const warmStorefront = sheen('#fff3d8', {
             glow: '#ffe4b4',
@@ -2218,318 +2127,10 @@ function buildStripResorts(data, engine) {
             eastRetail.add(nf);
         }
 
-        // 3. Lululemon Flagship at BLVD (x=185..219, z=1044..1060)
-        {
-            const lulu = new THREE.Group();
-            lulu.position.set(202, 0, 1052);
-            const luluWhite = sheen('#f5f2ec', {
-                refl: 0.25,
-                spec: 0.9,
-                glow: '#fff8ee',
-                glowK: 0.45,
-                baseGlow: 0.14
-            });
-            const luluRed = sheen('#d31334', {
-                glow: '#ff2b4a',
-                glowK: 1.25,
-                baseGlow: 0.3
-            });
-            const luluBody = new THREE.Mesh(new THREE.BoxGeometry(34, 15.5, 16), luluWhite);
-            luluBody.position.y = 7.75;
-            lulu.add(luluBody);
-            const luluGlass = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.4, 13.5), warmStorefront);
-            luluGlass.position.set(-17.1, 2.8, 0);
-            lulu.add(luluGlass);
-            const omegaBadge = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 0.45, 24).rotateZ(Math.PI * 0.5), luluRed);
-            omegaBadge.position.set(-17.3, 11.6, -5.6);
-            lulu.add(omegaBadge);
-            const luluSign = textPanel('lululemon', 11.5, 2.8, {
-                font: sans(104, 700),
-                color: '#ffffff',
-                background: '#d31334'
-            });
-            luluSign.userData.keep = true;
-            luluSign.position.set(-17.35, 11.6, 1.5);
-            luluSign.rotation.y = -Math.PI * 0.5;
-            lulu.add(luluSign);
-            eastRetail.add(lulu);
-        }
-
-        // 4. JD Sports Flagship (x=185..219, z=1063..1081)
-        {
-            const jd = new THREE.Group();
-            jd.position.set(202, 0, 1072);
-            const jdBody = new THREE.Mesh(new THREE.BoxGeometry(34, 15.0, 18), darkMetal);
-            jdBody.position.y = 7.5;
-            jd.add(jdBody);
-            const jdSign = textPanel('JD SPORTS', 15, 3.0, {
-                font: sans(104, 900),
-                color: '#ffe100',
-                background: '#101216'
-            });
-            jdSign.userData.keep = true;
-            jdSign.position.set(-17.3, 11.4, 0);
-            jdSign.rotation.y = -Math.PI * 0.5;
-            jd.add(jdSign);
-            eastRetail.add(jd);
-        }
-
-        // 5. New In-N-Out Burger Flagship across from ARIA (x=185..217, z=1086..1110)
-        {
-            const ino = new THREE.Group();
-            ino.position.set(201, 0, 1098);
-            const inoWhite = sheen('#fbf8f1', {
-                refl: 0.2,
-                spec: 0.85,
-                glow: '#fff3dc',
-                glowK: 0.5,
-                baseGlow: 0.16
-            });
-            const inoRed = sheen('#d91e26', {
-                refl: 0.35,
-                spec: 1.1,
-                glow: '#ff333b',
-                glowK: 1.35,
-                baseGlow: 0.32
-            });
-            const inoYellow = sheen('#ffd400', {
-                refl: 0.45,
-                spec: 1.2,
-                glow: '#ffe033',
-                glowK: 1.5,
-                baseGlow: 0.38
-            });
-            const inoBody = new THREE.Mesh(new THREE.BoxGeometry(32, 13.5, 24), inoWhite);
-            inoBody.position.y = 6.75;
-            ino.add(inoBody);
-            // Signature red parapet fascia + awning
-            const inoRoofTrim = new THREE.Mesh(new THREE.BoxGeometry(33.2, 1.35, 25.2), inoRed);
-            inoRoofTrim.position.y = 13.5;
-            const inoAwning = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.65, 20), inoRed);
-            inoAwning.position.set(-16.9, 5.2, 0);
-            const inoWindows = new THREE.Mesh(new THREE.BoxGeometry(0.8, 4.4, 19), warmStorefront);
-            inoWindows.position.set(-16.1, 2.4, 0);
-            ino.add(inoRoofTrim, inoAwning, inoWindows);
-            // Iconic In-N-Out yellow bent-arrow boomerang tower + red marquee sign on the Strip corner
-            const pylon = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 21, 12), inoWhite);
-            pylon.position.set(-15.7, 10.5, -9.5);
-            ino.add(pylon);
-            const arrowBoomerang = new THREE.Group();
-            arrowBoomerang.position.set(-16.3, 17.5, -9.5);
-            const seg1 = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.1, 9.5), inoYellow);
-            seg1.position.set(0, 1.8, 2.2);
-            seg1.rotation.x = 0.42;
-            const seg2 = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.1, 7.5), inoYellow);
-            seg2.position.set(0, -0.4, -2.0);
-            seg2.rotation.x = -0.55;
-            const arrowTip = new THREE.Mesh(new THREE.ConeGeometry(1.35, 2.6, 4), inoYellow);
-            arrowTip.position.set(0, -2.4, -5.2);
-            arrowTip.rotation.x = -Math.PI * 0.5 - 0.55;
-            arrowBoomerang.add(seg1, seg2, arrowTip);
-            ino.add(arrowBoomerang);
-            const inoSign = textPanel('IN-N-OUT BURGER', 18, 3.8, {
-                font: sans(104, 900),
-                color: '#ffffff',
-                background: '#c8161d'
-            });
-            inoSign.userData.keep = true;
-            inoSign.position.set(-16.4, 10.2, 1.5);
-            inoSign.rotation.y = -Math.PI * 0.5;
-            ino.add(inoSign);
-            eastRetail.add(ino);
-        }
-
-        // 6. Adidas Flagship Store across from ARIA (x=185.7, z=1149.6, span z=1129..1182)
-        {
-            const adi = new THREE.Group();
-            adi.position.set(203, 0, 1154);
-            const adiBlack = sheen('#12151b', {
-                refl: 0.62,
-                spec: 1.35
-            });
-            const adiStripe = sheen('#ffffff', {
-                refl: 0.5,
-                spec: 1.2,
-                glow: '#ffffff',
-                glowK: 1.45,
-                baseGlow: 0.35
-            });
-            const adiBody = new THREE.Mesh(new THREE.BoxGeometry(35, 18.5, 46), adiBlack);
-            adiBody.position.y = 9.25;
-            adi.add(adiBody);
-            const adiGlass = new THREE.Mesh(new THREE.BoxGeometry(0.9, 5.6, 38), warmStorefront);
-            adiGlass.position.set(-17.6, 2.9, 0);
-            adi.add(adiGlass);
-            // Iconic Three Diagonal Stripes (///) across the Adidas Strip facade
-            for(let sIdx = -1; sIdx <= 1; sIdx++){
-                const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.75, 12.2, 2.3), adiStripe);
-                stripe.position.set(-17.85, 11.4, -10.5 + sIdx * 4.2);
-                stripe.rotation.x = 0.46;
-                adi.add(stripe);
-            }
-            const adiSign = textPanel('adidas', 18.5, 4.0, {
-                font: sans(120, 900),
-                color: '#ffffff',
-                background: '#0d0f14'
-            });
-            adiSign.userData.keep = true;
-            adiSign.position.set(-17.9, 12.6, 8.5);
-            adiSign.rotation.y = -Math.PI * 0.5;
-            adi.add(adiSign);
-            eastRetail.add(adi);
-        }
-
-        // 7. Puma Flagship Store (x=185.1, z=1203.7, span z=1185..1224)
-        {
-            const puma = new THREE.Group();
-            puma.position.set(203, 0, 1204);
-            const pumaBody = new THREE.Mesh(new THREE.BoxGeometry(34, 16.5, 34), darkMetal);
-            pumaBody.position.y = 8.25;
-            puma.add(pumaBody);
-            const pumaAccent = new THREE.Mesh(new THREE.BoxGeometry(34.8, 0.85, 34.8), sheen('#e41e2b', {
-                glow: '#ff2e3b',
-                glowK: 1.2,
-                baseGlow: 0.25
-            }));
-            pumaAccent.position.y = 15.8;
-            puma.add(pumaAccent);
-            const pumaSign = textPanel('PUMA', 16, 3.6, {
-                font: sans(112, 900),
-                color: '#ffffff',
-                background: '#c41622'
-            });
-            pumaSign.userData.keep = true;
-            pumaSign.position.set(-17.4, 11.8, 0);
-            pumaSign.rotation.y = -Math.PI * 0.5;
-            puma.add(pumaSign);
-            eastRetail.add(puma);
-        }
-
         g.add(eastRetail);
     }
-    {
-        const cokePoi = data.pois.find((p)=>/coca.?cola/i.test(p.n));
-        const cx = cokePoi ? cokePoi.x - 4 : 180.5, cz = cokePoi ? cokePoi.z : 1403.1;
-        const cokeGreen = sheen('#1c8a52', {
-            refl: 0.78,
-            spec: 1.5,
-            glow: '#48ff9e',
-            glowK: 0.48,
-            baseGlow: 0.15
-        });
-        const cokeRed = sheen('#e01a22', {
-            glow: '#ff3838',
-            glowK: 0.85,
-            baseGlow: 0.25
-        });
-        const bottle = new THREE.Group();
-        bottle.position.set(cx, 0, cz);
-        const lower = new THREE.Mesh(new THREE.CylinderGeometry(3.8, 3.3, 11, 18), cokeGreen);
-        lower.position.y = 5.5;
-        bottle.add(lower);
-        const waist = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.8, 5, 18), cokeGreen);
-        waist.position.y = 13.5;
-        bottle.add(waist);
-        const labelBand = new THREE.Mesh(new THREE.CylinderGeometry(4.05, 3.35, 5.5, 18), cokeRed);
-        labelBand.position.y = 18.5;
-        bottle.add(labelBand);
-        const shoulder = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 3.95, 6.5, 18), cokeGreen);
-        shoulder.position.y = 24.5;
-        bottle.add(shoulder);
-        const neck = new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.7, 4.5, 16), cokeGreen);
-        neck.position.y = 30.0;
-        bottle.add(neck);
-        const cap = new THREE.Mesh(new THREE.CylinderGeometry(1.65, 1.65, 1.3, 18), silver);
-        cap.position.y = 32.8;
-        bottle.add(cap);
-        const cokeSign = textPanel('Coca-Cola', 8.2, 2.8, {
-            font: `italic 700 96px ${SCRIPT}`,
-            color: '#ffffff',
-            background: '#d81820'
-        });
-        cokeSign.userData.keep = true;
-        cokeSign.position.set(-4.2, 18.5, 0);
-        cokeSign.rotation.y = -Math.PI / 2;
-        bottle.add(cokeSign);
-        g.add(bottle);
-        const mmPoi = data.pois.find((p)=>/m&m/i.test(p.n));
-        const mx = mmPoi ? mmPoi.x - 10 : 181.8, mz = mmPoi ? mmPoi.z : 1431.5;
-        const mmSign = textPanel("M&M'S WORLD", 22, 4.8, {
-            font: sans(96, 900),
-            color: '#ffdd20',
-            background: '#4a200a'
-        });
-        mmSign.userData.keep = true;
-        mmSign.position.set(mx, 16.5, mz);
-        mmSign.rotation.y = -Math.PI / 2;
-        g.add(mmSign);
-        const candyColors = [
-            '#e02020',
-            '#ffd000',
-            '#1e78d6',
-            '#28a848',
-            '#f07818'
-        ];
-        candyColors.forEach((col, idx)=>{
-            const candy = new THREE.Mesh(new THREE.SphereGeometry(2.1, 14, 10), sheen(col, {
-                spec: 1.2,
-                glow: col,
-                glowK: 0.4,
-                baseGlow: 0.12
-            }));
-            candy.scale.set(0.45, 1, 1);
-            candy.position.set(mx - 0.5, 10.5 + idx % 2 * 2.2, mz - 10 + idx * 5);
-            g.add(candy);
-        });
-    }
-    {
-        const cloudGrp = new THREE.Group();
-        cloudGrp.position.set(492, 0, -1245);
-        cloudGrp.rotation.y = 0.46;
-        const cloudSilver = sheen('#dfe5ee', {
-            refl: 0.65,
-            spec: 1.4,
-            glow: '#cfe4ff',
-            glowK: 0.25,
-            baseGlow: 0.08
-        });
-        const ledUnderside = sheen('#48b8ff', {
-            glow: '#58c8ff',
-            glowK: 1.4,
-            baseGlow: 0.25
-        });
-        const cloudCanopy = new THREE.Mesh(new THREE.SphereGeometry(1, 36, 16), cloudSilver);
-        cloudCanopy.scale.set(18, 3.2, 63);
-        cloudCanopy.position.y = 39;
-        cloudGrp.add(cloudCanopy);
-        const cloudScreen = new THREE.Mesh(new THREE.CylinderGeometry(14, 14, 0.6, 24), ledUnderside);
-        cloudScreen.scale.set(1.0, 1, 3.8);
-        cloudScreen.position.y = 36.2;
-        cloudGrp.add(cloudScreen);
-        for (const pz of [
-            -34,
-            34
-        ]){
-            for (const px of [
-                -11,
-                11
-            ]){
-                const pylon = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.5, 39, 10), silver);
-                pylon.position.set(px, 19.5, pz);
-                cloudGrp.add(pylon);
-            }
-        }
-        const fsSign = textPanel('FASHION SHOW', 34, 5.2, {
-            font: sans(92, 800),
-            color: '#ffffff',
-            background: '#162844'
-        });
-        fsSign.userData.keep = true;
-        fsSign.position.set(18.5, 22, 0);
-        fsSign.rotation.y = Math.PI / 2;
-        cloudGrp.add(fsSign);
-        g.add(cloudGrp);
-    }
+    // BLVD and Showcase storefronts are built in world/strip-retail.js.
+    // The Cloud and its LED columns are drawn by world/north-strip-marquees.js.
     const hs = tower(/^horseshoe las vegas hotel/i);
     if (hs) {
         const c = centroid(hs.ring), gildSkin = sheen('#d9bb88', {
@@ -2545,9 +2146,7 @@ function buildStripResorts(data, engine) {
             every: 14
         });
         if (list[0]) faceSign(data, g, list[0], 'HORSESHOE', 48, 7.5, list[0].h - 7, serif(92, 700), '#ffd98a');
-        const f = frontFrame(data, c, 34);
-        adBoard(f, engine, 0, 2, 18, 16, nextAd(), bronze);
-        g.add(f);
+        // The street marquee is drawn by world/flamingo-marquees.js.
     }
     const lq = tower(/^the linq hotel & casino/i);
     if (lq) {

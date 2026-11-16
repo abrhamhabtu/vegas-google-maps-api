@@ -1,13 +1,13 @@
 /**
- * Hand-built models for Wynn Las Vegas, Encore and Treasure Island, matched to Apple Maps night
+ * Hand-built models for Wynn Las Vegas and Encore, matched to Apple Maps night
  * references (docs/landmark-rebuild-playbook.md). Towers and bespoke resort villas/pavilions are
  * claimed in heroOwned; road-cut main podiums stay with the generic extruder so valet tunnels survive.
  */
 import { hash, ringArea } from '../landmarks/vendor/map/geom.js';
 import { heroOwned } from '../landmarks/vendor/map/buildings.js';
 import { theme } from '../landmarks/vendor/core/theme.js';
-import { halo, sheen } from '../landmarks/vendor/landmarks/sheen.js';
-import { MODE, Soup, WHITE, centroid, clean, facade, inset, makeWaterMaterial, obb, offset, sign, spill } from './hero-kit.js';
+import { sheen } from '../landmarks/vendor/landmarks/sheen.js';
+import { MODE, Soup, WHITE, centroid, clean, facade, inset, makeWaterMaterial, obb, offset, spill } from './hero-kit.js';
 
 const THREE = window.THREE;
 const SCRIPT = '"Snell Roundhand", "Apple Chancery", "Brush Script MT", "Segoe Script", cursive';
@@ -44,7 +44,7 @@ function addSlatePavilion(arcadeSoup, slateSoup, trimSoup, ring, y0, y1, archTop
   slateSoup.cap(r0, y1 + 0.2, WHITE, [y1 + 0.2, seed, 0, y1]);
 }
 
-function crownSignature(text) {
+export function crownSignature(text) {
   const canvas = document.createElement('canvas');
   canvas.width = 1024; canvas.height = 320;
   const ctx = canvas.getContext('2d');
@@ -298,218 +298,6 @@ function crescent(data, re, name, o) {
   const c = centroid(ring);
   out.add(spill(c[0], 0.45, c[1], 220, '#ffc972', 0.2));
   return out;
-}
-
-// ───────────────────── Curved Street Marquee Pylon Sign ("Wynn.") ─────────────────────
-/**
- * Matches the Apple Maps close-up reference (media_1794388102489_51fca1ed.jpg):
- * - Curved dark chocolate-brown pedestal at bottom
- * - Curved dark chocolate-brown outer bezel frame & raked rooftop crest fin
- * - Upper and lower luminous cool ice-blue/white curved LED screen panels
- * - Projecting middle curved dark chocolate-brown collar band with warm amber spotlight glow
- *   and the golden cursive "Wynn." signature across the front.
- */
-function makeIceScreenTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512; canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-
-  // Cool luminous ice-blue/white LED screen panel with subtle darker edge vignette
-  const bg = ctx.createLinearGradient(0, 0, 512, 0);
-  bg.addColorStop(0.0, '#9cb5e2');
-  bg.addColorStop(0.18, '#bed4f8');
-  bg.addColorStop(0.5, '#dceaff');
-  bg.addColorStop(0.82, '#bed4f8');
-  bg.addColorStop(1.0, '#9cb5e2');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, 512, 512);
-
-  // Vertical soft shading
-  const vg = ctx.createLinearGradient(0, 0, 0, 512);
-  vg.addColorStop(0.0, 'rgba(110, 140, 195, 0.35)');
-  vg.addColorStop(0.2, 'rgba(255, 255, 255, 0.08)');
-  vg.addColorStop(0.8, 'rgba(255, 255, 255, 0.08)');
-  vg.addColorStop(1.0, 'rgba(110, 140, 195, 0.35)');
-  ctx.fillStyle = vg;
-  ctx.fillRect(0, 0, 512, 512);
-
-  // Thin dark recessed inner bezel border
-  ctx.strokeStyle = 'rgba(45, 35, 38, 0.65)';
-  ctx.lineWidth = 10;
-  ctx.strokeRect(5, 5, 502, 502);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  return tex;
-}
-
-function makeMiddleCollarLogoTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1024; canvas.height = 320;
-  const ctx = canvas.getContext('2d');
-
-  // Rich dark chocolate-brown collar background
-  const bg = ctx.createLinearGradient(0, 0, 1024, 0);
-  bg.addColorStop(0.0, '#361f19');
-  bg.addColorStop(0.22, '#4a2b22');
-  bg.addColorStop(0.52, '#633928');
-  bg.addColorStop(0.78, '#4a2b22');
-  bg.addColorStop(1.0, '#361f19');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, 1024, 320);
-
-  // Warm amber-orange radial glow behind the "Wynn." script in the center of the chocolate band
-  ctx.save();
-  ctx.translate(485, 165);
-  ctx.scale(2.5, 1.0);
-  const rad = ctx.createRadialGradient(0, 0, 10, 0, 0, 150);
-  rad.addColorStop(0.0, 'rgba(255, 176, 82, 0.68)');
-  rad.addColorStop(0.48, 'rgba(215, 125, 52, 0.38)');
-  rad.addColorStop(0.82, 'rgba(120, 62, 28, 0.12)');
-  rad.addColorStop(1.0, 'rgba(60, 32, 18, 0)');
-  ctx.fillStyle = rad;
-  ctx.beginPath();
-  ctx.arc(0, 0, 150, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  // Subtle top & bottom dark trim lips on the collar
-  ctx.fillStyle = '#2a1712';
-  ctx.fillRect(0, 0, 1024, 10);
-  ctx.fillRect(0, 310, 1024, 10);
-
-  // Bright golden cursive "Wynn." signature matching the Apple Maps close-up
-  ctx.save();
-  ctx.font = `italic 700 205px ${SCRIPT}`;
-  ctx.textBaseline = 'alphabetic';
-  const base = 212;
-  for (const [col, blur, lw] of [
-    ['#ffbf55', 28, 6.0],
-    ['#ffe478', 12, 3.5],
-    ['#fff4b8', 4, 1.5],
-  ]) {
-    ctx.save();
-    ctx.fillStyle = col;
-    ctx.strokeStyle = col;
-    ctx.shadowColor = 'rgba(255, 195, 78, 0.96)';
-    ctx.shadowBlur = blur;
-    ctx.lineWidth = lw;
-    ctx.lineJoin = 'round';
-    ctx.fillText('Wynn', 135, base);
-    ctx.strokeText('Wynn', 135, base);
-    ctx.lineCap = 'round';
-    ctx.lineWidth = lw * 2.1;
-    ctx.beginPath();
-    ctx.moveTo(590, base - 12);
-    ctx.bezierCurveTo(665, base - 8, 760, base - 24, 845, base - 34);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(882, base - 37, 10.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-  ctx.restore();
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  return tex;
-}
-
-function buildWynnMarquee(cx = 626, cz = -1172) {
-  const group = new THREE.Group();
-  group.name = 'Wynn Street Marquee';
-  // Oriented facing southwest toward Las Vegas Blvd & Apple Maps camera
-  const ax = 0.74, az = 0.673; // width axis
-  const nx = -az, nz = ax;     // outward normal (-0.673, 0.74)
-
-  const bowedRing = (w, d, bow = 2.4, segs = 16, shiftT = 0) => {
-    const pts = [];
-    for (let i = 0; i <= segs; i++) {
-      const u = -0.5 + i / segs;
-      const b = Math.cos(u * Math.PI) * bow;
-      const s = u * w, t = d / 2 + b + shiftT;
-      pts.push([cx + ax * s + nx * t, cz + az * s + nz * t]);
-    }
-    for (let i = segs; i >= 0; i--) {
-      const u = -0.5 + i / segs;
-      const b = Math.cos(u * Math.PI) * bow * 0.55;
-      const s = u * w, t = -d / 2 + b + shiftT;
-      pts.push([cx + ax * s + nx * t, cz + az * s + nz * t]);
-    }
-    return clean(pts);
-  };
-
-  const chocSoup = new Soup();
-  const baseRing = bowedRing(17.5, 4.8, 1.9);
-  const frameRing = bowedRing(22.6, 5.6, 2.5);
-  const collarRing = bowedRing(24.4, 7.2, 2.85, 16, 0.25);
-
-  // 1. Curved dark chocolate-brown pedestal base (y = 0..9.8m)
-  chocSoup.prism(baseRing, 0, 9.8, WHITE, [9.8, 5, 0, 0]);
-
-  // 2. Curved dark chocolate-brown main frame core & outer bezel (y = 9.5..35.8m)
-  chocSoup.prism(frameRing, 9.5, 35.8, WHITE, [35.8, 5, 0, 9.5]);
-  // Left & right vertical dark chocolate bezel piers proud of the ice-blue screens
-  for (const s of [-10.6, 10.6]) {
-    chocSoup.box(cx + ax * s + nx * 0.65, 9.5, cz + az * s + nz * 0.65, 1.8, 26.3, 6.2, ax, az, WHITE, [35.8, 5, 0, 9.5]);
-  }
-
-  // 3. Projecting middle dark chocolate-brown collar band (y = 18.6..25.6m)
-  chocSoup.prism(collarRing, 18.6, 25.6, WHITE, [25.6, 5, 0, 18.6]);
-
-  // 4. Stepped / raked dark chocolate-brown rooftop crest fin (y = 35.8..40.2m, rising toward the right/back)
-  const crestRing = bowedRing(19.5, 3.6, 2.1, 14, -0.3);
-  const sCoord = p => (p[0] - cx) * ax + (p[1] - cz) * az;
-  const crestTop = p => 36.6 + 3.6 * Math.max(0, Math.min(1, (sCoord(p) + 9.5) / 19.0));
-  slopedWalls(chocSoup, crestRing, () => 35.6, crestTop, [40.2, 5, 0, 35.6]);
-  slopedCap(chocSoup, crestRing, crestTop);
-
-  const chocMat = facade(MODE.stone, {
-    color: '#3f251e', roof: '#2e1b15', flood: '#ffcf88', floodK: 0.38, self: 0.14, roofGlow: 0.08,
-  });
-  const chocMesh = chocSoup.mesh(chocMat, 'Wynn marquee chocolate frame');
-  if (chocMesh) group.add(chocMesh);
-
-  // Helper to build a curved textured ribbon surface on both front and back faces
-  const addCurvedPanel = (w, y0, y1, bowFront, bowBack, tFront, tBack, mat, label) => {
-    for (const faceSign of [1, -1]) {
-      const N = 18, pos = [], uv = [], idx = [];
-      const bow = faceSign > 0 ? bowFront : bowBack;
-      const tOff = faceSign > 0 ? tFront : tBack;
-      for (let k = 0; k <= N; k++) {
-        const u = -0.5 + k / N;
-        const b = Math.cos(u * Math.PI) * bow;
-        const s = u * w, t = tOff + b;
-        const px = cx + ax * s + nx * t, pz = cz + az * s + nz * t;
-        const texU = faceSign > 0 ? k / N : 1 - k / N;
-        pos.push(px, y0, pz, px, y1, pz);
-        uv.push(texU, 0, texU, 1);
-        if (k) idx.push(2 * k - 2, 2 * k - 1, 2 * k, 2 * k - 1, 2 * k + 1, 2 * k);
-      }
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-      g.setIndex(idx);
-      const m = new THREE.Mesh(g, mat);
-      m.userData.keep = true;
-      m.name = label;
-      group.add(m);
-    }
-  };
-
-  // Upper (y = 25.8..34.4m) & Lower (y = 10.6..18.4m) luminous ice-blue/white curved screen panels
-  const iceMat = new THREE.MeshBasicMaterial({ map: makeIceScreenTexture(), side: THREE.DoubleSide, fog: true });
-  addCurvedPanel(19.6, 10.6, 18.4, 2.55, 1.38, 2.92, -2.92, iceMat, 'Wynn marquee lower ice screen');
-  addCurvedPanel(19.6, 25.8, 34.4, 2.55, 1.38, 2.92, -2.92, iceMat, 'Wynn marquee upper ice screen');
-
-  // Projecting middle chocolate collar face (y = 18.7..25.5m) with glowing golden "Wynn." script
-  const collarMat = new THREE.MeshBasicMaterial({ map: makeMiddleCollarLogoTexture(), side: THREE.DoubleSide, fog: true });
-  addCurvedPanel(23.8, 18.7, 25.5, 2.90, 1.55, 3.92, -3.42, collarMat, 'Wynn marquee middle logo band');
-
-  group.add(spill(cx - 6, 0.45, cz + 6, 48, '#ffd488', 0.25));
-  return group;
 }
 
 // ───────────────────── Wynn Golf Club Course & Water Hazards ─────────────────────
@@ -880,56 +668,17 @@ function buildWynnCampusAndGolf(data) {
     spill(745, 0.45, -1295, 85, '#ffdfa6', 0.18), // Esplanade / Urth Caffé arcade
     spill(682, 0.45, -1138, 75, '#ffda98', 0.18), // PISCES / Lake of Dreams amphitheater
     spill(756, 14.8, -1462, 55, '#68e2ff', 0.18), // Encore Beach Club turquoise pool glow
-    buildWynnMarquee(626, -1172),
   );
   return out;
 }
 
-// ─────────────────────────────── Treasure Island ───────────────────────────────
-function buildTI(data) {
-  const b = data.buildings.find(x => x.part && x.h > 100 && Math.hypot(centroid(x.pts)[0] - 243, centroid(x.pts)[1] + 944) < 25);
-  if (!b) return null;
-  heroOwned.add(b);
-  const out = new THREE.Group();
-  out.name = 'Treasure Island';
-  const ring = clean(b.pts), h = b.h;
-  const walls = new Soup(), rail = new Soup(), roof = new Soup();
-  walls.walls(ring, 0, h, WHITE, [h, 21, 0, 0]);
-  roof.cap(ring, h + 1.4);
-  rail.walls(offset(ring, 0.35), h - 0.4, h + 1.4, WHITE, [h + 1.4, 3, 0, 0]);
-  for (const y of [h - 8, 15]) rail.walls(offset(ring, 0.45), y - 0.45, y + 0.55, WHITE, [y + 0.55, 3, 0, y - 4]);
-  const coral = facade(MODE.palazzo, {
-    color: '#dc8a72', pilaster: '#fff4ea', pilasterK: 1.0, pilasterW: 0.3, flood: '#ffdcc8', floodK: 1.9, self: 0.08,
-    glow: '#fff0e0', line: 0.5, bay: 3.9, rate: 0.03,
-  });
-  const cornice = facade(MODE.stone, { color: '#fbefe4', flood: '#fff0e0', floodK: 1.3, self: 0.3 });
-  const lid = facade(MODE.stone, { color: '#b9b2bd', roof: '#8e8a9a' });
-  for (const m of [walls.mesh(coral, 'TI tower'), rail.mesh(cornice, 'TI cornices'), roof.mesh(lid, 'TI roof')]) if (m) out.add(m);
-
-  // "Treasure Island" in script letters standing on the roof edges of the V that faces the Strip
-  const style = { font: `italic 700 190px ${SCRIPT}`, color: '#ff4a32' };
-  for (const [text, a, z] of [['Treasure', [280, -907], [257, -933]], ['Island', [257, -951], [298, -989]]]) {
-    const mx = (a[0] + z[0]) / 2, mz = (a[1] + z[1]) / 2, L = Math.hypot(z[0] - a[0], z[1] - a[1]);
-    let nx = (z[1] - a[1]) / L, nz = -(z[0] - a[0]) / L;
-    if (nx < 0) { nx = -nx; nz = -nz; }
-    out.add(sign(text, Math.min(42, L * 0.95), 11, mx + nx * 0.6, h + 6.6, mz + nz * 0.6, nx, nz, style));
-  }
-  const c = centroid(ring);
-  out.add(spill(c[0] + 30, 0.45, c[1], 170, '#ffb59a', 0.26));
-  const wash = halo(150, '#ffc0a6', 0.1);
-  wash.position.set(c[0], 50, c[1]);
-  out.add(wash);
-  return out;
-}
-
-export function buildWynnTI(data) {
+export function buildWynn(data) {
   const group = new THREE.Group();
-  group.name = 'Wynn, Encore and Treasure Island';
+  group.name = 'Wynn and Encore';
   for (const model of [
     crescent(data, /^wynn las vegas$/i, 'Wynn', { glass: '#9a5e45', floor: 6.7, crown: 33, drop: 17, sweep: 2.8 }),
     crescent(data, /^encore las vegas$/i, 'Encore', { glass: '#a56651', floor: 6.6, crown: 34, drop: 8, sweep: 5.2 }),
     buildWynnCampusAndGolf(data),
-    buildTI(data),
   ]) if (model) group.add(model);
   return group;
 }

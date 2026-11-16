@@ -3,6 +3,7 @@ const THREE = window.THREE;
 import { mercatorSouth } from '../../georeference.mjs';
 import { PLACES, placeXZ } from '../places.js';
 import { landmarkBadgeArt } from '../../../world/landmark-badges.js';
+import { stratDeckAltitude } from '../../../world/strat.js';
 const KIND = {
     resort: {
         c: '#d58cff',
@@ -217,8 +218,8 @@ const FEATURED_STORES = [
     {
         n: 'lululemon',
         x: 190.0,
-        z: 1048.5,
-        y: 17,
+        z: 1131.8,
+        y: 14,
         c: '#d31334',
         icon: 'bag',
         prio: 2,
@@ -390,15 +391,18 @@ export class Labels {
             if (p.n.length > 34 || /^las vegas strip$/i.test(p.n)) continue;
             if (taken.some(([x, z])=>Math.hypot(x - p.x, z - p.z) < 90 && (p.k === 'resort' || p.k === 'hotel'))) continue;
             if (featuredCoords.some(([fx, fz])=>Math.hypot(fx - p.x, fz - p.z) < 18)) continue;
+            const deck = stratDeckAltitude(p);
             const el = document.createElement('div');
             el.className = 'lbl poi';
             el.style.setProperty('--c', k.c);
             el.dataset.tipTitle = p.n;
             el.dataset.tipSub = `${KIND_LABEL[p.k] || 'Point of Interest'} · Las Vegas Strip`;
-            el.dataset.tip = `Click to focus camera on ${p.n}. Mapped at street level along the Las Vegas Strip corridor.`;
+            el.dataset.tip = deck ? 'On the observation tower at The STRAT. Click to view the tower.' : `Click to focus camera on ${p.n}. Mapped at street level along the Las Vegas Strip corridor.`;
             el.innerHTML = `<div class="dot"><svg viewBox="0 0 16 16" width="11" height="11">${ICON[k.icon]}</svg></div><div class="t">${wrap(esc(p.n))}</div>`;
             el.addEventListener('click', (e)=>{
                 e.stopPropagation();
+                const tower = deck && document.querySelector('#landmark-chips [data-view="strat"]');
+                if (tower) { tower.click(); return; }
                 this.controls.flyTo({
                     x: p.x,
                     z: p.z,
@@ -410,7 +414,7 @@ export class Labels {
             const big = (p.area ?? 0) > 20000;
             this.add({
                 x: p.x,
-                y: 2,
+                y: deck ?? 2,
                 z: p.z,
                 text: p.n,
                 kind: 'poi',

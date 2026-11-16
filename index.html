@@ -55,6 +55,20 @@
       <span class="eyebrow">Las Vegas, Nevada</span>
       <span id="view-title">Bellagio & the fountains</span>
       <span id="scene-status" role="status">Loading landmarks…</span>
+      <label id="sphere-ad-control" hidden>
+        <span>Sphere ads</span>
+        <select id="sphere-ad">
+          <option value="">Play rotation</option>
+          <option value="city-afterglow">Afterglow</option>
+          <option value="ghostbar">Ghostbar</option>
+          <option value="pit-lights">Lights Out</option>
+          <option value="neon-dive">Make a Splash</option>
+          <option value="desert-miles">The Scenic Route</option>
+          <option value="second-set">The Second Set</option>
+          <option value="neon-market">The Night Menu</option>
+          <option value="late-checkout">Slow Mornings</option>
+        </select>
+      </label>
     </div>
     <section id="places-panel" class="places-panel hidden" aria-label="Places">
       <input id="places-filter" class="sr-only" type="search" tabindex="-1" aria-hidden="true" />
@@ -74,23 +88,32 @@
           <button class="chip" data-view="center-strip" data-lat="36.11415" data-lng="-115.1752" data-zoom="16.5" data-tilt="55" data-heading="-63"><i class="chip-icon resort" aria-hidden="true"></i><span>Bellagio, Paris &amp; Caesars Palace</span><small>Landmarks</small></button>
           <button class="chip" data-view="paris" data-lat="36.11245" data-lng="-115.1718" data-zoom="17.3" data-tilt="58" data-heading="-25"><i class="chip-icon resort" aria-hidden="true"></i><span>Paris & Eiffel Tower</span><small>Landmark</small></button>
           <button class="chip" data-view="caesars" data-lat="36.11655" data-lng="-115.17615" data-zoom="17.0" data-tilt="54" data-heading="-39"><i class="chip-icon resort" aria-hidden="true"></i><span>Caesars Palace &amp; the Colosseum</span><small>Resort</small></button>
+          <button class="chip" data-view="caesars-courtyard" data-studio-model="caesars" data-studio-focus="casino-roofs" data-lat="36.11705" data-lng="-115.17557" data-zoom="17.84" data-tilt="54" data-heading="-65" data-frame-width="915" data-frame-height="720"><i class="chip-icon resort" aria-hidden="true"></i><span>Caesars casino and tower roofs</span><small>Colosseum frontage</small></button>
           <button class="chip" data-view="flamingo" data-lat="36.11667" data-lng="-115.17135" data-zoom="17.25" data-tilt="55" data-heading="65"><i class="chip-icon resort" aria-hidden="true"></i><span>Flamingo Las Vegas</span><small>Resort</small></button>
           <button class="chip" data-view="venetian" data-lat="36.1214" data-lng="-115.1692" data-zoom="16.8" data-tilt="58" data-heading="-15"><i class="chip-icon resort" aria-hidden="true"></i><span>The Venetian & Palazzo</span><small>Resorts</small></button>
           <button class="chip" data-view="palazzo" data-lat="36.12365" data-lng="-115.16795" data-zoom="17.05" data-tilt="54" data-heading="59" data-frame-width="880"><i class="chip-icon resort" aria-hidden="true"></i><span>The Palazzo</span><small>Spring Mountain Road</small></button>
+          <button class="chip" data-view="treasure-island" data-alias="TI Sirens Cove" data-lat="36.12478" data-lng="-115.17116" data-zoom="17.1" data-tilt="37" data-heading="-105" data-frame-width="880"><i class="chip-icon resort" aria-hidden="true"></i><span>Treasure Island</span><small>Sirens' Cove</small></button>
           <button class="chip" data-view="wynn" data-lat="36.12785" data-lng="-115.1649" data-zoom="16.5" data-tilt="49" data-heading="90" data-frame-width="900"><i class="chip-icon resort" aria-hidden="true"></i><span>Wynn & Encore</span><small>North Strip</small></button>
           <button class="chip" data-view="resortsworld" data-lat="36.13450" data-lng="-115.1660" data-zoom="16.65" data-tilt="52" data-heading="10" data-frame-width="870"><i class="chip-icon resort" aria-hidden="true"></i><span>Resorts World</span><small>North Strip</small></button>
           <button class="chip" data-view="circus-circus" data-lat="36.13757" data-lng="-115.1649" data-zoom="16.9" data-tilt="57" data-heading="-23" data-frame-width="880"><i class="chip-icon resort" aria-hidden="true"></i><span>Circus Circus &amp; Adventuredome</span><small>North Strip</small></button>
           <button class="chip" data-view="fontainebleau" data-lat="36.13770" data-lng="-115.15970" data-zoom="16.55" data-tilt="54" data-heading="35" data-frame-width="870"><i class="chip-icon resort" aria-hidden="true"></i><span>Fontainebleau Las Vegas</span><small>North Strip</small></button>
           <button class="chip" data-view="rio" data-lat="36.11738" data-lng="-115.18788" data-zoom="16.95" data-tilt="50" data-heading="10"><i class="chip-icon resort" aria-hidden="true"></i><span>Rio Hotel &amp; Casino</span><small>Off Strip</small></button>
+          <button class="chip" data-view="palms" data-alias="Ivory Tower Fantasy Tower Ghostbar Pearl" data-lat="36.11462" data-lng="-115.19630" data-zoom="16.72" data-tilt="48" data-heading="154" data-frame-width="960" data-frame-height="720"><i class="chip-icon resort" aria-hidden="true"></i><span>Palms Casino Resort</span><small>West Flamingo Road</small></button>
+          <button class="chip" data-view="palms-place" data-alias="SkyTube" data-lat="36.11420" data-lng="-115.19872" data-zoom="17.40" data-tilt="51" data-heading="150" data-frame-width="875" data-frame-height="720"><i class="chip-icon resort" aria-hidden="true"></i><span>Palms Place</span><small>Arville Street</small></button>
           <h3 class="list-heading">Landmarks & venues</h3>
           <button class="chip" data-view="welcome" data-lat="36.0820593" data-lng="-115.1727735" data-zoom="19.1" data-tilt="57" data-heading="0"><i class="chip-icon star" aria-hidden="true"></i><span>Welcome to Las Vegas sign</span><small>Landmark</small></button>
-          <button class="chip" data-view="allegiant" data-lat="36.0908" data-lng="-115.1833" data-zoom="16.9" data-tilt="58" data-heading="-20"><i class="chip-icon star" aria-hidden="true"></i><span>Allegiant Stadium</span><small>Stadium</small></button>
-          <button class="chip" data-view="tmobile" data-lat="36.10283" data-lng="-115.17818" data-zoom="17.2" data-tilt="57" data-heading="-25"><i class="chip-icon star" aria-hidden="true"></i><span>T-Mobile Arena</span><small>The Park</small></button>
+          <button class="chip" data-view="allegiant" data-lat="36.0908" data-lng="-115.1833" data-zoom="16.9" data-tilt="56" data-heading="-123"><i class="chip-icon star" aria-hidden="true"></i><span>Allegiant Stadium</span><small>Stadium</small></button>
+          <button class="chip" data-view="tmobile" data-lat="36.10283" data-lng="-115.17818" data-zoom="17.2" data-tilt="54" data-heading="-106"><i class="chip-icon star" aria-hidden="true"></i><span>T-Mobile Arena</span><small>The Park</small></button>
+          <button class="chip" data-view="park-mgm" data-lat="36.10469" data-lng="-115.17615" data-zoom="17.25" data-tilt="54" data-heading="-104"><i class="chip-icon resort" aria-hidden="true"></i><span>Park MGM</span><small>The Park</small></button>
           <button class="chip" data-view="athletics" data-lat="36.09927" data-lng="-115.170025" data-zoom="17.2" data-tilt="57" data-heading="25"><i class="chip-icon star" aria-hidden="true"></i><span>Athletics ballpark</span><small>Under Construction</small></button>
-          <button class="chip" data-view="sphere" data-lat="36.1213" data-lng="-115.1621" data-zoom="17.1" data-tilt="60" data-heading="-25"><i class="chip-icon star" aria-hidden="true"></i><span>The Sphere</span><small>Live Exosphere</small></button>
-          <button class="chip" data-view="highroller" data-lat="36.1176" data-lng="-115.1683" data-zoom="17.2" data-tilt="60" data-heading="-20"><i class="chip-icon star" aria-hidden="true"></i><span>High Roller</span><small>Observation Wheel</small></button>
-          <button class="chip" data-view="guitar" data-lat="36.121145" data-lng="-115.172991" data-zoom="17.0" data-tilt="60" data-heading="-25"><i class="chip-icon star" aria-hidden="true"></i><span>Hard Rock guitar</span><small>Under Construction</small></button>
-          <button class="chip" data-view="strat" data-lat="36.1475" data-lng="-115.1566" data-zoom="16.3" data-tilt="60" data-heading="-15"><i class="chip-icon star" aria-hidden="true"></i><span>The STRAT</span><small>Observation Tower</small></button>
+          <button class="chip" data-view="sphere" data-alias="Exosphere ads" data-lat="36.1213" data-lng="-115.1621" data-zoom="17.30" data-tilt="57" data-heading="78" data-frame-width="880"><i class="chip-icon star" aria-hidden="true"></i><span>The Sphere</span><small>Live Exosphere</small></button>
+          <button class="chip" data-view="highroller" data-alias="LINQ Observation Wheel" data-lat="36.11762" data-lng="-115.16857" data-zoom="16.78" data-tilt="47" data-heading="-78" data-frame-width="880"><i class="chip-icon star" aria-hidden="true"></i><span>High Roller</span><small>Observation Wheel</small></button>
+          <button class="chip" data-view="grand-prix" data-alias="F1 Formula 1 Pit Building Paddock" data-lat="36.10992" data-lng="-115.16195" data-zoom="16.83" data-tilt="47" data-heading="-58" data-frame-width="900"><i class="chip-icon star" aria-hidden="true"></i><span>Grand Prix Plaza</span><small>Formula 1 Pit Building</small></button>
+          <button class="chip" data-view="guitar" data-alias="The Mirage Guitar Hotel" data-lat="36.121145" data-lng="-115.17357" data-zoom="16.95" data-tilt="59" data-heading="-23" data-top-padding="0.37" data-frame-height="720" data-frame-width="900"><i class="chip-icon star" aria-hidden="true"></i><span>Hard Rock guitar</span><small>Under Construction</small></button>
+          <button class="chip" data-view="trump" data-lat="36.129589" data-lng="-115.172648" data-zoom="17.12" data-tilt="57" data-heading="-39"><i class="chip-icon resort" aria-hidden="true"></i><span>Trump International Hotel</span><small>Fashion Show Drive</small></button>
+          <button class="chip" data-view="fashion-show" data-lat="36.12698" data-lng="-115.16849" data-zoom="17.22" data-tilt="54" data-heading="9"><i class="chip-icon star" aria-hidden="true"></i><span>Fashion Show &amp; Wynn displays</span><small>Spring Mountain Road</small></button>
+          <button class="chip" data-view="encore-marquee" data-lat="36.1302537" data-lng="-115.1660208" data-zoom="22.34" data-tilt="82" data-heading="17.5" data-top-padding="0.65" data-frame-height="720"><i class="chip-icon star" aria-hidden="true"></i><span>Encore marquee &amp; Zouk display</span><small>Northbound</small></button>
+          <button class="chip" data-view="strat" data-alias="Stratosphere Tower SkyPod" data-lat="36.14925" data-lng="-115.15699" data-zoom="16.0" data-tilt="56" data-heading="-33" data-frame-width="850" data-frame-height="700"><i class="chip-icon star" aria-hidden="true"></i><span>The STRAT</span><small>Stratosphere Tower</small></button>
           <button class="chip" data-view="fremont" data-lat="36.1707" data-lng="-115.1439" data-zoom="17.0" data-tilt="58" data-heading="295"><i class="chip-icon star" aria-hidden="true"></i><span>Fremont Street</span><small>Downtown</small></button>
           <h3 class="list-heading">Streets & bridges</h3>
           <button class="chip" data-view="tropicana-lanes" data-lat="36.10064" data-lng="-115.17305" data-zoom="19.05" data-tilt="24" data-heading="-175" data-frame-width="880"><i class="chip-icon road" aria-hidden="true"></i><span>Las Vegas Boulevard &amp; Tropicana Avenue</span><small>Street Lanes</small></button>
@@ -100,16 +123,18 @@
           <button class="chip" data-view="sahara-lanes" data-lat="36.14367" data-lng="-115.15740" data-zoom="19.05" data-tilt="0" data-heading="0" data-frame-width="880"><i class="chip-icon road" aria-hidden="true"></i><span>Las Vegas Boulevard &amp; Sahara Avenue</span><small>Street Lanes</small></button>
           <button class="chip" data-view="bridges" data-lat="36.10035" data-lng="-115.1728" data-zoom="18.2" data-tilt="72" data-heading="0"><i class="chip-icon road" aria-hidden="true"></i><span>South Strip pedestrian bridges</span><small>Street Level</small></button>
           <button class="chip" data-view="strip-horizon" data-lat="36.10536" data-lng="-115.172793" data-zoom="22.22" data-tilt="75.5" data-heading="0"><i class="chip-icon road" aria-hidden="true"></i><span>Street-level Strip skyline</span><small>Northbound</small></button>
+          <button class="chip" data-view="flamingo-approach" data-lat="36.1125928" data-lng="-115.1728086" data-zoom="22.42" data-tilt="82" data-heading="0.5" data-top-padding="0.49" data-frame-height="720"><i class="chip-icon road" aria-hidden="true"></i><span>Bellagio–Paris northbound</span><small>Flamingo skyline</small></button>
           <button class="chip" data-view="i15" data-lat="36.1004" data-lng="-115.1828" data-zoom="16.7" data-tilt="65" data-heading="-25"><i class="chip-icon road" aria-hidden="true"></i><span>I-15 & Tropicana interchange</span><small>Freeway Bridges</small></button>
           <button class="chip" data-view="tropicana-flyover" data-lat="36.10036" data-lng="-115.18065" data-zoom="17.85" data-tilt="62" data-heading="-7" data-frame-width="880"><i class="chip-icon road" aria-hidden="true"></i><span>Tropicana flyover &amp; Joey Bishop Drive</span><small>Freeway Bridges</small></button>
           <button class="chip" data-view="airport-bridges" data-lat="36.08775" data-lng="-115.14436" data-zoom="17.8" data-tilt="60" data-heading="12" data-frame-width="880"><i class="chip-icon road" aria-hidden="true"></i><span>Airport Connector &amp; Terminal 3 flyovers</span><small>Airport Roads</small></button>
           <button class="chip" data-view="flamingo-bridge" data-lat="36.1147" data-lng="-115.1823" data-zoom="17.1" data-tilt="65" data-heading="-20"><i class="chip-icon road" aria-hidden="true"></i><span>Flamingo over I-15</span><small>Freeway Bridge</small></button>
           <button class="chip" data-view="aria-tram" data-lat="36.1072" data-lng="-115.1762" data-zoom="18.2" data-tilt="66" data-heading="-20"><i class="chip-icon road" aria-hidden="true"></i><span>ARIA tram & valet drives</span><small>Rail Clearance</small></button>
           <button class="chip" data-view="valets" data-lat="36.1126" data-lng="-115.1762" data-zoom="18.4" data-tilt="66" data-heading="-45"><i class="chip-icon road" aria-hidden="true"></i><span>Resort Valet Porte-Cochères</span><small>Drive-Through Canopies</small></button>
-          <button class="chip" data-view="blvd" data-lat="36.1066" data-lng="-115.1722" data-zoom="18.0" data-tilt="62" data-heading="75"><i class="chip-icon road" aria-hidden="true"></i><span>In-N-Out, Adidas, Netflix & Lululemon</span><small>Blvd East Strip</small></button>
+          <button class="chip" data-view="blvd" data-alias="ARIA shops ABC Stores H&M JD Sports In-N-Out Adidas Netflix Lululemon Puma Pandora" data-lat="36.10627" data-lng="-115.17234" data-zoom="18.17" data-tilt="55" data-heading="81" data-frame-width="920" data-frame-height="720"><i class="chip-icon road" aria-hidden="true"></i><span>BLVD Las Vegas storefronts</span><small>Across from ARIA and Park MGM</small></button>
+          <button class="chip" data-view="showcase" data-alias="Target Burlington Ross Coca-Cola M&M Hard Rock Cafe Denny’s" data-lat="36.10384" data-lng="-115.17233" data-zoom="18.40" data-tilt="56" data-heading="73" data-frame-width="900" data-frame-height="720"><i class="chip-icon road" aria-hidden="true"></i><span>Showcase Mall storefronts</span><small>Across from New York–New York</small></button>
       </div>
       <p id="places-empty" class="empty-state hidden">No matching places.</p>
-      <a id="landmark-studio-link" class="studio-link" href="./landmark-studio.html">Landmark Studio <span>Inspect and download 3D models ↗</span></a>
+      <a class="studio-link" data-studio-link href="./landmark-studio.html">Landmark Studio <span>Inspect and download 3D models ↗</span></a>
       <button id="places-close" class="sr-only" tabindex="-1">Close places</button>
     </section>
   </header>
@@ -140,6 +165,11 @@
         <button id="toggle-traffic-btn" class="mode-btn switch" aria-pressed="false"><span class="label">Google live traffic</span><span class="state">OFF</span></button>
       </div>
       <button id="reset-strip-btn" class="row-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 3v18M16 3v18M12 4v3M12 10.5v3M12 17v3"/></svg>Inspect lane markings</button>
+      <a class="row-btn studio-row" data-studio-link href="./landmark-studio.html">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 2 9 5v10l-9 5-9-5V7l9-5Zm-9 5 9 5 9-5m-9 5v10"/></svg>
+        <span>Inspect buildings<small>Landmark Studio</small></span>
+        <span class="studio-arrow" aria-hidden="true">›</span>
+      </a>
       <button id="api-key-btn" class="row-btn subtle" title="Map settings"><span id="engine-badge-dot" class="status-dot ok"></span><span id="engine-badge-text">Google map settings</span></button>
     </div>
   </div>

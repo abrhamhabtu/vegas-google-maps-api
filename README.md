@@ -10,7 +10,7 @@ npm start
 ## Explore
 
 - **Places** opens the searchable landmark menu: Bellagio fountains, Paris/Eiffel Tower, Sphere, Luxor, Allegiant Stadium, T-Mobile Arena, Athletics ballpark construction, Hard Rock guitar construction, High Roller, Resorts World, Wynn/Encore, and more.
-- **Places → Landmark Studio** lets you orbit 15 models on their own and download a metre-scale `.glb` for Blender, Three.js, or another project. See the [model notes](docs/center-strip-models.md) for sources and export details.
+- **Map layers → Inspect buildings** (directly below **Inspect lane markings**) opens **Landmark Studio**. Orbit 16 models, including the STRAT, and download a metre-scale `.glb` for another project. The Studio is also linked from Places. See the [model notes](docs/center-strip-models.md) for sources and export details.
 - **Day / Sunset / Night** smoothly changes building lighting, windows, LEDs, fountain lighting and the map's brightness.
 - **Layers** controls buildings, detailed streets/bridges, landmark badges, Google satellite imagery and traffic.
 - **Street lanes** returns to the original MGM Road / Bruno Mars Drive intersection in unobstructed 2D.

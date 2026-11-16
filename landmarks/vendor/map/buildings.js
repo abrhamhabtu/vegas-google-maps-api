@@ -34,6 +34,18 @@ export const RESORT_LOOKS = [
         low: { tint: '#c6b7a4', roof: '#a6aab8', k: 0.68, glow: '#ffe2b7', glowK: 0.7 }
     },
     {
+        re: /^(Caesars Palace Hotel and Casino|The Forum Shops at Caesars)$/i,
+        tint: '#ded1bb',
+        k: 0.78,
+        style: Style.Pilasters,
+        glow: '#ffdfae',
+        glowK: 0.64,
+        roof: '#b7aa9c',
+        // Use the existing clearance shader with dressed stone instead of the
+        // generic office strips that used to run around the casino base.
+        low: { style: Style.Pilasters, k: 0.88 }
+    },
+    {
         re: /caesars|augustus|octavius|palace tower|forum tower|nobu/i,
         tint: '#f4efe4',
         k: 0.72,
@@ -89,7 +101,8 @@ export const RESORT_LOOKS = [
         style: 7,
         glow: '#ff7a6a',
         glowK: 1.15,
-        roof: '#e7c9a0'
+        roof: '#e7c9a0',
+        low: { tint: '#bc988d', roof: '#a5a0ac', k: 0.66, glow: '#ffd3b0', glowK: 0.48 }
     },
     {
         re: /paris/i,
@@ -380,7 +393,8 @@ export const RESORT_LOOKS = [
         re: /\bstrat\b|stratosphere/i,
         tint: '#e9edf3',
         k: 0.45,
-        style: 2
+        style: 2,
+        low: { tint: '#b7b8bf', roof: '#8f95a5', k: 0.58, glow: '#c9c6dc', glowK: 0.17 }
     },
     {
         re: /luxor/i,
@@ -458,12 +472,6 @@ const HERO_TOWERS = [
         100
     ],
     [
-        -146,
-        1285,
-        25,
-        90
-    ],
-    [
         14,
         980,
         24,
@@ -477,13 +485,6 @@ const HERO_TOWERS = [
     ]
 ];
 const OPEN_LIMIT = 33;
-const SKIP_AT = [
-    [
-        36.10283,
-        -115.17818,
-        96
-    ]
-];
 const POS_LOOKS = [];
 export const landmarkFootprints = [];
 // Hand-built resorts register the footprints they replace before the generic pass.
@@ -835,10 +836,6 @@ export function buildBuildings(data, valets) {
             z
         });
     }
-    const skipAt = SKIP_AT.map(([la, lo, r])=>[
-            ...latLonToXZ(ORIGIN, la, lo),
-            r
-        ]);
     const posLooks = POS_LOOKS.map(([la, lo, r, n, h])=>[
             ...latLonToXZ(ORIGIN, la, lo),
             r,
@@ -862,7 +859,6 @@ export function buildBuildings(data, valets) {
         const area = Math.abs(ringArea(ring));
         const c = centroid(ring);
         if (HERO_TOWERS.some(([x, z, r, minH])=>b.h >= minH && Math.hypot(c[0] - x, c[1] - z) < r)) continue;
-        if (skipAt.some(([x, z, r])=>Math.hypot(c[0] - x, c[1] - z) < r)) continue;
         if (owned.some((poly)=>inside(c, poly))) continue;
         const pos = posLooks.find(([x, z, r])=>Math.hypot(c[0] - x, c[1] - z) < r);
         let h = b.h;

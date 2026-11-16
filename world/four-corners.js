@@ -1,5 +1,5 @@
 /**
- * Hand-built models for the Flamingo Road corner ("Four Corners"): Bellagio, Caesars Palace,
+ * Hand-built models for the Flamingo Road corner ("Four Corners"): Bellagio,
  * Paris Las Vegas and its Eiffel Tower. Built with docs/landmark-rebuild-playbook.md against
  * Apple Maps night references. Towers are claimed in heroOwned; podiums stay with the city pipeline.
  */
@@ -185,125 +185,6 @@ function buildConservatory(data) {
   const frame = facade(MODE.stone, { color: '#c4c2ab', roof: '#bbc1b5', floodK: 0.44 });
   group.add(walls.mesh(cream, 'Conservatory arcade'), roof.mesh(glass, 'Conservatory glass'), trim.mesh(frame, 'Conservatory roof ribs'));
   heroOwned.add(b);
-  return group;
-}
-
-// ──────────────────────────────── Caesars Palace ────────────────────────────────
-const CAESARS = [
-  [/^palace tower$/i, 'gable'],
-  [/^augustus tower$/i, 'gable'],
-  [/^octavius tower$/i, 'gable'],
-  [/^forum tower$/i, 'gable'],
-  [/^julius tower$/i, 'flat'],
-  [/^julius tower extension$/i, 'flat'],
-  [/^nobu hotel at caesars palace$/i, 'gable'],
-];
-function buildCaesars(data) {
-  const out = new THREE.Group();
-  out.name = 'Caesars Palace';
-  const walls = new Soup(), roofs = new Soup(), flats = new Soup(), ends = new Soup(), rail = new Soup();
-  const signs = [], theatre = new Soup(), theatreRoof = new Soup();
-  CAESARS.forEach(([re, roof], i) => {
-    const b = data.buildings.find(x => re.test(x.name ?? '') && !x.part);
-    if (!b) return;
-    heroOwned.add(b);
-    const ring = clean(b.pts), h = b.h, seed = hash(i * 23 + 11) * 40;
-    const plinth = Math.min(17, h * 0.23);
-    arcadeStack(walls, rail, ring, 0, [
-      [plinth, true], [plinth + 5.1, false], [h - 11, false], [h - 8.3, false], [h, true],
-    ], seed, 0.74);
-    cornice(rail, ring, h + 0.8, 0.34, 0.8);
-    flats.cap(ring, h + 0.05);
-    if (roof === 'gable') {
-      // The long roof has two pedimented wings and a raised center terrace.
-      const r = obb(ring), shrink = Math.min(4.5, r.d * 0.14);
-      const g = { ...r, w: r.w - shrink * 2, d: r.d - shrink * 2 };
-      if (g.w > 76) {
-        const endWidth = g.w * 0.23, move = (g.w - endWidth) / 2;
-        for (const side of [-1, 1]) {
-          const end = { ...g, cx: g.cx + side * move * g.ax, cz: g.cz + side * move * g.az, w: endWidth };
-          roofs.gable(end, h + 1.15, Math.min(5.5, end.d * 0.22), WHITE, [h + 7, seed, 0, 0], ends, [h + 7, seed, 0, h]);
-        }
-        const mid = { ...g, w: g.w - endWidth * 2, d: g.d * 0.83 };
-        rail.box(mid.cx, h, mid.cz, mid.w, 2.3, mid.d, mid.ax, mid.az);
-        roofs.gable(mid, h + 2.3, Math.min(4.7, mid.d * 0.2), WHITE, [h + 7, seed, 0, 0], ends, [h + 7, seed, 0, h]);
-        signs.push({ r, h });
-      } else {
-        roofs.gable(g, h + 0.9, Math.min(4.7, g.d * 0.21), WHITE, [h + 7, seed, 0, 0], ends, [h + 7, seed, 0, h]);
-      }
-    }
-  });
-  if (!walls.idx.length) return null;
-  const campus = data.buildings.find(b => /^caesars palace hotel and casino$/i.test(b.name ?? ''));
-  // The theatre's curved exterior is part of the mapped casino perimeter.
-  const first = campus?.pts.findIndex(([x, z]) => Math.hypot(x + 15.4, z + 150) < 1);
-  if (first >= 0) {
-    const shell = clean([...campus.pts.slice(first), campus.pts[0]]);
-    const y = campus.h;
-    arcadeStack(theatre, rail, shell, y - 0.15, [[y + 5, true], [y + 12, true], [y + 19, false]], 21, 0.45);
-    roofProfile(theatreRoof, shell, y + 19.05, 1.65, 2.9);
-    const [x, z] = centroid(shell);
-    out.add(sign('THE COLOSSEUM', 18.4, 2.8, 7.1, y + 15.3, -184, 1, 0,
-      { font: `600 100px ${SERIF}`, color: '#fff0cb' }));
-    out.add(spill(x + 24, 0.45, z, 57, '#ffe7b4', 0.22));
-  }
-  const marble = facade(MODE.arcade, { color: '#f2e6d8', glass: '#3c5275', flood: '#ffe3bc', floodK: 1.19, bay: 4.9, pilasterW: 0.34, rate: 0.025 });
-  const pediment = facade(MODE.stone, { color: '#f0e7d8', roof: '#acb6c3', flood: '#fff0d6', floodK: 0.77, self: 0.12 });
-  const terracotta = sheen('#a9807e', { refl: 0.12, spec: 0.36, glow: '#be9694', glowK: 0.23, baseGlow: 0.05 });
-  const leads = facade(MODE.stone, { color: '#a1a7b1', roof: '#788297' });
-  const edging = facade(MODE.stone, { color: '#f4eadd', roof: '#aeb6c3', flood: '#fff1d6', floodK: 0.91, self: 0.13 });
-  const arenaStone = facade(MODE.arcade, { color: '#e9dcca', glass: '#415776', flood: '#ffdfbd', floodK: 0.98, bay: 5.5, pilasterW: 0.43, rate: 0.06 });
-  for (const m of [walls.mesh(marble, 'Caesars towers'), roofs.mesh(terracotta, 'Caesars roofs'), ends.mesh(pediment, 'Caesars pediments'),
-    flats.mesh(leads, 'Caesars flat roofs'), rail.mesh(edging, 'Caesars cornices'), theatre.mesh(arenaStone, 'Colosseum arcade'),
-    theatreRoof.mesh(leads, 'Colosseum roof')]) if (m) out.add(m);
-
-  // wordmarks on the long faces of the two biggest towers, facing the Strip side
-  const style = { font: `500 110px ${SERIF}`, color: '#fff4dc', background: '#3a2f2a' };
-  for (const { r, h } of signs.slice(0, 2)) {
-    const nx = -r.az, nz = r.ax, toward = nx * 0.8 + nz * 0.6 > 0 ? 1 : -1; // the long face toward the Strip and Bellagio
-    const x = r.cx + nx * toward * (r.d / 2 + 0.7), z = r.cz + nz * toward * (r.d / 2 + 0.7);
-    out.add(sign('CAESARS PALACE', Math.min(46, r.w * 0.45), 4.4, x, h - 5.5, z, nx * toward, nz * toward, style));
-  }
-  out.add(spill(-150, 0.45, 20, 260, '#fff0d4', 0.24));
-  const wash = halo(260, '#fff2da', 0.1);
-  wash.position.set(-150, 60, 30);
-  out.add(wash);
-  const pools = buildCaesarsPools(data);
-  if (pools) out.add(pools);
-  return out;
-}
-
-function buildCaesarsPools(data) {
-  const water = new Soup(), coping = new Soup();
-  const poolNames = /^(venus|temple|neptune|apollo|bacchus|fortuna|jupiter) pool$/i;
-  let temple;
-  for (const body of data.areas) {
-    if (body.k !== 'water' || !poolNames.test(body.name ?? '')) continue;
-    const c = centroid(body.pts);
-    if (c[0] < -350 || c[0] > -165 || c[1] < -100 || c[1] > 80) continue;
-    const ring = clean(body.pts);
-    water.cap(ring, 0.24);
-    cornice(coping, ring, 0.36, 0.62, 0.28);
-    if (body.name === 'Temple Pool') temple = c;
-  }
-  if (!water.idx.length) return null;
-  const group = new THREE.Group();
-  group.name = 'Caesars pool court';
-  const stone = facade(MODE.stone, { color: '#d7cbba', roof: '#d7cbba', flood: '#ffe6b9', floodK: 0.66 });
-  const blue = sheen('#3b7ca7', { refl: 0.17, spec: 0.52, glow: '#315fa7', glowK: 0.37 });
-  group.add(water.mesh(blue, 'Caesars pools'), coping.mesh(stone, 'Pool coping'));
-  if (temple) {
-    const [x, z] = temple;
-    const cap = new Soup(), columns = new Soup(), r = 5;
-    cap.prism(ellipse(x, z, r, r, 24), 0, 0.74);
-    for (let i = 0; i < 8; i++) {
-      const a = i * Math.PI / 4;
-      columns.prism(ellipse(x + 3.85 * Math.cos(a), z + 3.85 * Math.sin(a), 0.44, 0.44, 8), 0.74, 7.55);
-    }
-    cap.prism(ellipse(x, z, r, r, 24), 7.45, 8.2);
-    group.add(cap.mesh(stone, 'Temple pool pavilion'), columns.mesh(stone, 'Pavilion columns'),
-      mesh(new THREE.SphereGeometry(4.65, 22, 10, 0, 2 * Math.PI, 0, Math.PI / 2).scale(1, 0.57, 1), blue, x, 8.2, z));
-  }
   return group;
 }
 
@@ -521,7 +402,7 @@ function buildEiffel(data) {
 export function buildFourCorners(data) {
   const group = new THREE.Group();
   group.name = 'Four Corners resorts';
-  for (const build of [buildBellagio, buildCaesars, buildParis, buildEiffel]) {
+  for (const build of [buildBellagio, buildParis, buildEiffel]) {
     const model = build(data);
     if (model) group.add(model);
   }

@@ -18,12 +18,13 @@ import { buildSigns } from '../landmarks/vendor/landmarks/signs.js';
 import { buildRailways } from './railways.js';
 import { buildTropicanaTrio } from './tropicana-trio.js';
 import { buildFourCorners } from './four-corners.js';
-import { buildWynnTI } from './wynn-ti.js';
+import { buildWynn } from './wynn-ti.js';
 import { buildRio } from './rio.js';
 import { buildNorthStrip } from './north-strip.js';
 import { buildLuxor } from './luxor.js';
 import { buildMandalayBay } from './mandalay-bay.js';
 import { stripModels } from './landmark-models.js';
+import { isRialtoBridge } from './venetian-palazzo.js';
 
 const THREE = window.THREE;
 
@@ -61,8 +62,8 @@ export async function buildCity(data, engine) {
   await engine.yield();
   // Must run before buildBuildings: these claim the tower footprints they model by hand.
   stage('hero resorts', () => {
-    buildings.add(buildTropicanaTrio(specialData, graph), buildFourCorners(specialData), buildWynnTI(specialData));
-    buildings.add(buildRio(specialData, graph), buildNorthStrip(specialData, graph));
+    buildings.add(buildTropicanaTrio(specialData, graph), buildFourCorners(specialData), buildWynn(specialData));
+    buildings.add(buildRio(specialData, graph), buildNorthStrip(specialData, graph, engine));
     buildings.add(buildLuxor(specialData, graph), buildMandalayBay(specialData, graph));
     for (const item of stripModels) buildings.add(item.build(specialData, undefined, engine, graph));
   });
@@ -84,7 +85,8 @@ export async function buildCity(data, engine) {
   engine.reveal?.('roads');
   await engine.yield();
   engine.progress('Opening bridges…', 0.85);
-  detail.add(stage('skybridges', () => buildSkybridges(data, graph)), stage('railways', () => buildRailways(data, graph, engine)));
+  const genericBridgeData = { ...data, walks: data.walks.filter(w => !isRialtoBridge(w)) };
+  detail.add(stage('skybridges', () => buildSkybridges(genericBridgeData, graph)), stage('railways', () => buildRailways(data, graph, engine)));
   await engine.yield();
   engine.progress('Bringing the city to life…', 0.93);
   detail.add(stage('trees', () => buildTrees(data, graph)));

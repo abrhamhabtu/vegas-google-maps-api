@@ -53,6 +53,14 @@ const art = {
     <path d="M3 35l10-2 10 5 20-4v12H3z" fill="#e1dfd8"/>
     <path d="M12 38l7 2-1 3-8-2zm14 2 7-2 2 3-7 2z" fill="#66aacc"/>
     <path d="M22 39l6 2-6 2-5-2z" fill="#f7f2e6"/>`,
+  strat: `
+    <path d="M8 38l9-3 11 1 11 4v6H8Z" fill="#627597"/>
+    <path d="M15 43c3-8 7-18 5-25h2c2 9-1 17-3 25zm12 0c-2-9-5-17-3-25h2c-1 9 3 18 5 25z" fill="#c4d8ef"/>
+    <path d="M21 43q2-12 1-25h2q-1 13 1 25z" fill="#728cb0"/>
+    <path d="M13 13h20l-3 6-4 3h-6l-4-3z" fill="#718faa" stroke="#cbdff1" stroke-width="1"/>
+    <path d="m18 17 4 4 4-4 3 2m-13 0 4-3 5 5 5-4" fill="none" stroke="#f0f5ff" stroke-width=".8"/>
+    <path d="M14 13l4-4h10l4 4z" fill="#405976" stroke="#a1b9d0" stroke-width="1"/>
+    <path d="M22 9l1-7 1 7z" fill="#ff5e69"/>`,
 };
 
 export function landmarkBadgeArt(id) {

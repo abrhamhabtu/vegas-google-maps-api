@@ -31,11 +31,13 @@ function compatibleMaterial(source, textured) {
   const map = u.uMap?.value?.image ? u.uMap.value : null;
   const mode = u.uMode?.value;
   const isGlass = [MODE.glass, MODE.curtainWall, MODE.slopedGlass, MODE.goldGlass, MODE.flamingo, MODE.ribbon].includes(mode);
-  const pattern = textured && mode !== undefined && mode !== MODE.stone
+  const opacity = u.uOpacity?.value ?? 1;
+  const pattern = textured && mode !== undefined && mode !== MODE.stone && mode !== MODE.towerConcrete
     ? windowPattern(mode, color, u.uWinDark?.value ?? new THREE.Color('#576773')) : null;
   const wall = new THREE.MeshStandardMaterial({
     color: pattern ? 0xffffff : color, map: map || pattern, vertexColors: source.vertexColors,
     side: source.side, roughness: isGlass ? 0.43 : 0.78, metalness: isGlass ? 0.15 : 0.02,
+    transparent: opacity < 1, opacity, depthWrite: source.depthWrite,
   });
   wall.name = source.name || 'Exterior finish';
   const roof = u.uRoof?.value && textured

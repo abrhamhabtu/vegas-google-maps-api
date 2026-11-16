@@ -39,7 +39,8 @@ export function createMapControls(map, getFleet) {
   function options(view) {
     const center = toLngLat(view.x, view.z);
     return { center, zoom: Math.max(11, Math.min(23.5, distanceToZoom(view.dist, map.getCanvas().clientHeight, center[1]))),
-      pitch: Math.min(81, view.pitch / D), bearing: -view.yaw / D };
+      pitch: Math.min(81, view.pitch / D), bearing: -view.yaw / D,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 } };
   }
   Object.assign(controls.cur, read());
   Object.assign(controls.goal, controls.cur);
