@@ -46,7 +46,14 @@ function closing(paths) {
 // Collect only flat faces. Preserve the original geometry outside the review
 // bounds, including the portion of a triangle that straddles an end of the section.
 function collect(layer, blocks, section, ringsFor) {
-  for (const soup of layer.m.values()) {
+  const size = layer.size || 1400;
+  for (const [key, soup] of layer.m.entries()) {
+    const comma = key.indexOf(',');
+    if (comma > 0) {
+      const cx = Number(key.slice(0, comma)) * size;
+      const cz = Number(key.slice(comma + 1)) * size;
+      if (cx + size + 500 < west || cx - 500 > east || cz + size + 500 < north || cz - 500 > south) continue;
+    }
     const { pos, idx } = soup;
     const keep = [], outside = [];
     for (let i = 0; i < idx.length; i += 3) {

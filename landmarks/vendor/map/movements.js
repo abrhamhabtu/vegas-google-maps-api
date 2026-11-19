@@ -653,25 +653,33 @@ function roundCorners(line, keepHeight) {
     const passes = keepHeight ? 12 : 26;
     for(let k = 0; k < passes; k++)relax(null);
     const TARGET = 6.5, spacing = line.length / n, reach = Math.ceil(7 / spacing), hot = new Uint8Array(n + 1);
-    // Only points whose 3-point stencil (i-2, i, i+2) moved in the last relax can change curvature,
-    // so after the first full scan each pass rechecks just those. Same result, far fewer scans.
     const check = new Uint8Array(n + 1).fill(1);
+    let scanLo = hold + 2, scanHi = n - hold - 2;
     for(let k = 0; k < 400; k++){
         hot.fill(0);
-        let any = false;
-        for(let i = hold + 2; i <= n - hold - 2; i++){
+        let any = false, minH = n, maxH = 0;
+        for(let i = scanLo; i <= scanHi; i++){
             if (!check[i]) continue;
             const ax = xs[i - 2], az = zs[i - 2], bx = xs[i], bz = zs[i], cx = xs[i + 2], cz = zs[i + 2];
-            const area = Math.abs((bx - ax) * (cz - az) - (bz - az) * (cx - ax)) / 2;
-            if (area < 1e-5) continue;
-            if (Math.hypot(bx - ax, bz - az) * Math.hypot(cx - bx, cz - bz) * Math.hypot(ax - cx, az - cz) / (4 * area) < TARGET) {
+            const area2 = Math.abs((bx - ax) * (cz - az) - (bz - az) * (cx - ax));
+            if (area2 < 2e-5) continue;
+            const abx = bx - ax, abz = bz - az, bcx = cx - bx, bcz = cz - bz, cax = ax - cx, caz = az - cz;
+            const rhs = 2 * area2 * TARGET;
+            if ((abx * abx + abz * abz) * (bcx * bcx + bcz * bcz) * (cax * cax + caz * caz) < rhs * rhs) {
                 any = true;
-                for(let j = Math.max(1, i - reach); j <= Math.min(n - 1, i + reach); j++)hot[j] = 1;
+                const j0 = Math.max(1, i - reach), j1 = Math.min(n - 1, i + reach);
+                if (j0 < minH) minH = j0;
+                if (j1 > maxH) maxH = j1;
+                for(let j = j0; j <= j1; j++) hot[j] = 1;
             }
         }
         if (!any) break;
         relax(hot);
-        for(let i = 0; i <= n; i++)check[i] = hot[i] || i >= 2 && hot[i - 2] || i + 2 <= n && hot[i + 2] ? 1 : 0;
+        const cLo = Math.max(hold + 2, minH - 2), cHi = Math.min(n - hold - 2, maxH + 2);
+        check.fill(0, scanLo, scanHi + 1);
+        for(let i = cLo; i <= cHi; i++) check[i] = hot[i] || hot[i - 2] || hot[i + 2] ? 1 : 0;
+        scanLo = cLo;
+        scanHi = cHi;
     }
     const pts = [];
     for(let i = 0; i <= n; i++)pts.push([

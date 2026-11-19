@@ -86,6 +86,8 @@ import { STRIP_PAVEMENT, hasPavedStripMedian, planStripStreets } from '../../../
 import { inSouthStrip, isSouthStripMedian, isSouthStripMedianOpening, isSouthStripMedianOpeningLane, isSouthStripTurn, junctionOutline,
     roundSouthStripRoad } from '../../../world/south-strip-roads.mjs';
 import { finishSouthStripPavement } from '../../../world/south-strip-pavement.mjs';
+import { finishParisDrivePavement } from '../../../world/paris-drive-roads.mjs';
+import { finishBellagioDrivePavement } from '../../../world/bellagio-drive-roads.mjs';
 const ELEV = 0.4;
 const WALK_HEIGHT = 0.11;
 const CURB_HEIGHT = 0.17;
@@ -207,10 +209,25 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
     // a fine grid over everything it can answer "yes" for (its lateral extent padded by PAD), so a
     // query reads a single cell. Margins above PAD fall back to the original 3x3 coarse scan.
     const PAD = 4, FINE = 8;
-    const fineCells = (corners, add)=>{
-        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-        for (const [x, z] of corners){ x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
-        for(let i = Math.floor(x0 / FINE); i <= Math.floor(x1 / FINE); i++)for(let j = Math.floor(z0 / FINE); j <= Math.floor(z1 / FINE); j++)add(cellKey(i, j));
+    const finePush = (fine, x0, z0, x1, z1, entry)=>{
+        const i0 = Math.floor(x0 / FINE), i1 = Math.floor(x1 / FINE);
+        const j0 = Math.floor(z0 / FINE), j1 = Math.floor(z1 / FINE);
+        for(let i = i0; i <= i1; i++)for(let j = j0; j <= j1; j++){
+            const key = cellKey(i, j);
+            let list = fine.get(key);
+            if (!list) fine.set(key, list = []);
+            list.push(entry);
+        }
+    };
+    const finePushConn = (fine, x0, z0, x1, z1, ax, az, dx, dz, invL2, hw)=>{
+        const i0 = Math.floor(x0 / FINE), i1 = Math.floor(x1 / FINE);
+        const j0 = Math.floor(z0 / FINE), j1 = Math.floor(z1 / FINE);
+        for(let i = i0; i <= i1; i++)for(let j = j0; j <= j1; j++){
+            const key = cellKey(i, j);
+            let list = fine.get(key);
+            if (!list) fine.set(key, list = []);
+            list.push(ax, az, dx, dz, invL2, hw);
+        }
     };
     // the widest lateral range boundary i can reach anywhere along e (tapers ease monotonically)
     const boundaryRange = (e, i)=>{
@@ -224,62 +241,78 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             if (!pred(m)) continue;
             const [ml0, ml1] = extents(m), mW = m.lanes.length * m.laneWidth;
             const lAdd = ml0, rAdd = ml1 - mW;
-            const latLo = boundaryRange(m, 0)[0] + lAdd - PAD, latHi = boundaryRange(m, m.lanes.length)[1] + rAdd + PAD;
-            for(let i = 0; i < m.ref.pts.length - 1; i++){
-                const a = m.ref.pts[i], b = m.ref.pts[i + 1];
-                const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / (cell * 0.5)));
+            const tapered = !!(m.jointStart && m.taperStart || m.jointEnd && m.taperEnd);
+            const mId = m.id, wayId = m.way.id;
+            const twinWayId = m.twin !== undefined ? g.edges[m.twin].way.id : -1;
+            const nLanes = m.lanes.length;
+            const latLo = boundaryRange(m, 0)[0] + lAdd - PAD, latHi = boundaryRange(m, nLanes)[1] + rAdd + PAD;
+            const pts = m.ref.pts, ys = m.ref.y, cum = m.ref.cum;
+            for(let i = 0; i < pts.length - 1; i++){
+                const a = pts[i], b = pts[i + 1];
+                const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+                if (L < 1e-4) continue;
+                const invL = 1 / L, hx = dx * invL, hz = dz * invL, nx = -hz, nz = hx;
+                const entry = {
+                    m, mId, wayId, twinWayId, nLanes,
+                    ux: a[0], uz: a[1], hx, hz, L, invL,
+                    y0: ys[i], dy: ys[i + 1] - ys[i], cum0: cum[i],
+                    lAdd, rAdd, tapered, flat0: lAdd, flat1: mW + rAdd,
+                };
+                const n = Math.max(1, Math.ceil(L / (cell * 0.5)));
                 for(let k = 0; k <= n; k++){
-                    const x = a[0] + (b[0] - a[0]) * k / n, z = a[1] + (b[1] - a[1]) * k / n;
+                    const x = a[0] + dx * k / n, z = a[1] + dz * k / n;
                     const key = cellKey(Math.floor(x / cell), Math.floor(z / cell));
                     let list = grid.get(key);
                     if (!list) grid.set(key, list = []);
-                    if (!list.length || list[list.length - 1][0] !== m || list[list.length - 1][1] !== i) list.push([
-                        m,
-                        i,
-                        lAdd,
-                        rAdd
-                    ]);
+                    if (!list.length || list[list.length - 1] !== entry) list.push(entry);
                 }
-                if (L < 1e-4) continue;
-                const hx = (b[0] - a[0]) / L, hz = (b[1] - a[1]) / L, nx = -hz, nz = hx, entry = [m, i, lAdd, rAdd];
-                const at = (s, t)=>[a[0] + hx * s + nx * t, a[1] + hz * s + nz * t];
-                fineCells([at(-1.2, latLo), at(L + 1.2, latLo), at(L + 1.2, latHi), at(-1.2, latHi)], (key)=>{
-                    let list = fine.get(key);
-                    if (!list) fine.set(key, list = []);
-                    list.push(entry);
-                });
+                const ax0 = a[0] - hx * 1.2 + nx * latLo, az0 = a[1] - hz * 1.2 + nz * latLo;
+                const ax1 = a[0] + hx * (L + 1.2) + nx * latLo, az1 = a[1] + hz * (L + 1.2) + nz * latLo;
+                const ax2 = a[0] + hx * (L + 1.2) + nx * latHi, az2 = a[1] + hz * (L + 1.2) + nz * latHi;
+                const ax3 = a[0] - hx * 1.2 + nx * latHi, az3 = a[1] - hz * 1.2 + nz * latHi;
+                finePush(
+                    fine,
+                    Math.min(ax0, ax1, ax2, ax3), Math.min(az0, az1, az2, az3),
+                    Math.max(ax0, ax1, ax2, ax3), Math.max(az0, az1, az2, az3),
+                    entry
+                );
             }
         }
-        const hit = (x, z, low, high, margin, excludeWayId, excludeEdgeId, m, seg, lAdd, rAdd)=>{
-            if (m.id === excludeEdgeId) return false;
-            if (excludeWayId !== undefined && (m.way.id === excludeWayId || m.twin !== undefined && g.edges[m.twin].way.id === excludeWayId)) return false;
-            const u = m.ref.pts[seg], v = m.ref.pts[seg + 1];
-            const dx = v[0] - u[0], dz = v[1] - u[1], L = Math.hypot(dx, dz);
-            if (L < 1e-4) return false;
-            const hx = dx / L, hz = dz / L, nx = -hz, nz = hx;
-            const along = (x - u[0]) * hx + (z - u[1]) * hz;
-            if (along < -1.2 || along > L + 1.2) return false;
-            const t = Math.max(0, Math.min(1, along / L));
-            const my = m.ref.y[seg] + (m.ref.y[seg + 1] - m.ref.y[seg]) * t;
+        const hit = (x, z, low, high, margin, excludeWayId, excludeEdgeId, s)=>{
+            if (s.mId === excludeEdgeId) return false;
+            if (excludeWayId !== undefined && (s.wayId === excludeWayId || s.twinWayId === excludeWayId)) return false;
+            const rx = x - s.ux, rz = z - s.uz;
+            const along = rx * s.hx + rz * s.hz;
+            if (along < -1.2 || along > s.L + 1.2) return false;
+            let t = along * s.invL;
+            if (t < 0) t = 0; else if (t > 1) t = 1;
+            const my = s.y0 + s.dy * t;
             if (my < low || my > high) return false;
-            const lat = (x - u[0]) * nx + (z - u[1]) * nz;
-            const s = m.ref.cum[seg] + t * L;
-            const leftB = boundaryAt(m, 0, s) + lAdd - margin;
-            const rightB = boundaryAt(m, m.lanes.length, s) + rAdd + margin;
+            const lat = -rx * s.hz + rz * s.hx;
+            if (!s.tapered) return lat >= s.flat0 - margin && lat <= s.flat1 + margin;
+            const st = s.cum0 + t * s.L;
+            const leftB = boundaryAt(s.m, 0, st) + s.lAdd - margin;
+            const rightB = boundaryAt(s.m, s.nLanes, st) + s.rAdd + margin;
             return lat >= leftB && lat <= rightB;
         };
         return (x, z, y, margin, excludeWayId, excludeEdgeId)=>{
             const low = typeof y === 'number' ? y - levelTolerance : y[0];
             const high = typeof y === 'number' ? y + levelTolerance : y[1];
             if (margin <= PAD) {
-                for (const [m, seg, lAdd, rAdd] of fine.get(cellKey(Math.floor(x / FINE), Math.floor(z / FINE))) ?? []){
-                    if (hit(x, z, low, high, margin, excludeWayId, excludeEdgeId, m, seg, lAdd, rAdd)) return true;
+                const list = fine.get(cellKey(Math.floor(x / FINE), Math.floor(z / FINE)));
+                if (!list) return false;
+                for (let i = 0, len = list.length; i < len; i++){
+                    if (hit(x, z, low, high, margin, excludeWayId, excludeEdgeId, list[i])) return true;
                 }
                 return false;
             }
             const cx = Math.floor(x / cell), cz = Math.floor(z / cell);
-            for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [m, seg, lAdd, rAdd] of grid.get(cellKey(cx + a, cz + b)) ?? []){
-                if (hit(x, z, low, high, margin, excludeWayId, excludeEdgeId, m, seg, lAdd, rAdd)) return true;
+            for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++){
+                const list = grid.get(cellKey(cx + a, cz + b));
+                if (!list) continue;
+                for (let i = 0, len = list.length; i < len; i++){
+                    if (hit(x, z, low, high, margin, excludeWayId, excludeEdgeId, list[i])) return true;
+                }
             }
             return false;
         };
@@ -293,41 +326,51 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         for (const k of g.lanes){
             if (!k.connector || k.line.pts.length < 2 || k.line.y.some((v)=>v > 2.0)) continue;
             const hw = (k.width ?? 3.5) * 0.5;
-            for(let i = 0; i < k.line.pts.length - 1; i++){
-                const a = k.line.pts[i], b = k.line.pts[i + 1];
-                const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / (cell * 0.5)));
+            const pts = k.line.pts;
+            for(let i = 0; i < pts.length - 1; i++){
+                const a = pts[i], b = pts[i + 1];
+                const dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1, invL2 = 1 / L2;
+                const L = Math.sqrt(L2), n = Math.max(1, Math.ceil(L / (cell * 0.5)));
+                const seen = new Set();
                 for(let j = 0; j <= n; j++){
-                    const x = a[0] + (b[0] - a[0]) * j / n, z = a[1] + (b[1] - a[1]) * j / n;
+                    const x = a[0] + dx * j / n, z = a[1] + dz * j / n;
                     const key = cellKey(Math.floor(x / cell), Math.floor(z / cell));
+                    if (seen.has(key)) continue;
+                    seen.add(key);
                     let list = grid.get(key);
                     if (!list) grid.set(key, list = []);
-                    if (!list.length || list[list.length - 1][0] !== k || list[list.length - 1][1] !== i) list.push([
-                        k,
-                        i,
-                        hw
-                    ]);
+                    list.push(a[0], a[1], dx, dz, invL2, hw);
                 }
-                const r = hw + PAD, entry = [k, i, hw];
-                fineCells([[Math.min(a[0], b[0]) - r, Math.min(a[1], b[1]) - r], [Math.max(a[0], b[0]) + r, Math.max(a[1], b[1]) + r]], (key)=>{
-                    let list = fine.get(key);
-                    if (!list) fine.set(key, list = []);
-                    list.push(entry);
-                });
+                const r = hw + PAD;
+                finePushConn(
+                    fine,
+                    Math.min(a[0], b[0]) - r, Math.min(a[1], b[1]) - r,
+                    Math.max(a[0], b[0]) + r, Math.max(a[1], b[1]) + r,
+                    a[0], a[1], dx, dz, invL2, hw
+                );
             }
         }
-        const near = (x, z, margin, k, seg, hw)=>{
-            const u = k.line.pts[seg], v = k.line.pts[seg + 1];
-            const dx = v[0] - u[0], dz = v[1] - u[1], L2 = dx * dx + dz * dz || 1;
-            const t = Math.max(0, Math.min(1, ((x - u[0]) * dx + (z - u[1]) * dz) / L2));
-            return Math.hypot(x - (u[0] + dx * t), z - (u[1] + dz * t)) <= hw + margin;
+        const scan = (list, x, z, margin)=>{
+            for (let i = 0, len = list.length; i < len; i += 6){
+                const ux = list[i], uz = list[i + 1], dx = list[i + 2], dz = list[i + 3];
+                let t = ((x - ux) * dx + (z - uz) * dz) * list[i + 4];
+                if (t < 0) t = 0; else if (t > 1) t = 1;
+                const ex = x - (ux + dx * t), ez = z - (uz + dz * t);
+                const r = list[i + 5] + margin;
+                if (ex * ex + ez * ez <= r * r) return true;
+            }
+            return false;
         };
         return (x, z, margin = 0.2)=>{
             if (margin <= PAD) {
-                for (const [k, seg, hw] of fine.get(cellKey(Math.floor(x / FINE), Math.floor(z / FINE))) ?? [])if (near(x, z, margin, k, seg, hw)) return true;
-                return false;
+                const list = fine.get(cellKey(Math.floor(x / FINE), Math.floor(z / FINE)));
+                return list ? scan(list, x, z, margin) : false;
             }
             const cx = Math.floor(x / cell), cz = Math.floor(z / cell);
-            for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [k, seg, hw] of grid.get(cellKey(cx + a, cz + b)) ?? [])if (near(x, z, margin, k, seg, hw)) return true;
+            for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++){
+                const list = grid.get(cellKey(cx + a, cz + b));
+                if (list && scan(list, x, z, margin)) return true;
+            }
             return false;
         };
     })();
@@ -338,62 +381,84 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
     const medGrid = new Map();
     for (const m of g.edges){
         if (m.internal || m.cls === 'service') continue;
-        for(let i = 0; i < m.ref.pts.length - 1; i++){
-            const a = m.ref.pts[i], b = m.ref.pts[i + 1];
-            const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 20));
+        const pts = m.ref.pts, ys = m.ref.y, cum = m.ref.cum;
+        const tapered = !!(m.jointStart && m.taperStart || m.jointEnd && m.taperEnd);
+        const nLanes = m.lanes.length, mW = nLanes * m.laneWidth;
+        const isLinkM = /_link$/.test(m.way.hw);
+        for(let i = 0; i < pts.length - 1; i++){
+            const a = pts[i], b = pts[i + 1];
+            const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+            if (L < 1e-4) continue;
+            const invL = 1 / L, mhx = dx * invL, mhz = dz * invL;
+            const entry = {
+                m, mId: m.id, wayId: m.way.id, nLanes, isLinkM,
+                ux: a[0], uz: a[1], mhx, mhz, mnx: -mhz, mnz: mhx, L, invL,
+                y0: ys[i], dy: ys[i + 1] - ys[i], cum0: cum[i],
+                tapered, flat0: -0.15, flat1: mW + 0.15,
+            };
+            const n = Math.max(1, Math.ceil(L / 20));
             for(let k = 0; k <= n; k++){
-                const x = a[0] + (b[0] - a[0]) * k / n, z = a[1] + (b[1] - a[1]) * k / n;
+                const x = a[0] + dx * k / n, z = a[1] + dz * k / n;
                 const key = cellKey(Math.floor(x / 40), Math.floor(z / 40));
                 let list = medGrid.get(key);
                 if (!list) medGrid.set(key, list = []);
-                if (!list.length || list[list.length - 1][0] !== m || list[list.length - 1][1] !== i) list.push([
-                    m,
-                    i
-                ]);
+                if (!list.length || list[list.length - 1] !== entry) list.push(entry);
             }
         }
     }
     const medianProfileAt = (e, x, z, hx, hz, y, refined)=>{
         const lx = hz, lz = -hx;
-        let bestT = 34, bestM = null, bestHd = 0, bestDir;
+        let bestT = 34, bestM = null, bestHd = 0, bestDirX = 0, bestDirZ = 0, bestIsLink = false;
+        const eId = e.id, eWayId = e.way.id, eTwin = e.twin, ePrev = e.prev, eNext = e.next;
         const cx = Math.floor(x / 40), cz = Math.floor(z / 40);
-        for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [m, seg] of medGrid.get(cellKey(cx + a, cz + b)) ?? []){
-            if (m.id === e.id || m.way.id === e.way.id || m.twin === e.id || m.id === e.prev || m.id === e.next) continue;
-            const u = m.ref.pts[seg], v = m.ref.pts[seg + 1];
-            const dx = v[0] - u[0], dz = v[1] - u[1], L = Math.hypot(dx, dz);
-            if (L < 1e-4) continue;
-            const mhx = dx / L, mhz = dz / L, mnx = -mhz, mnz = mhx;
-            const den = lx * mnx + lz * mnz;
-            if (Math.abs(den) < 0.35) continue;
-            const tRef = ((u[0] - x) * mnx + (u[1] - z) * mnz) / den;
-            const along = (x + lx * tRef - u[0]) * mhx + (z + lz * tRef - u[1]) * mhz;
-            if (along < -2.0 || along > L + 2.0) continue;
-            const s = m.ref.cum[seg] + Math.max(0, Math.min(L, along));
-            const grade = m.ref.y[seg] + (m.ref.y[seg + 1] - m.ref.y[seg]) * (s - m.ref.cum[seg]) / L;
-            if (Math.abs(y - grade) > 0.7) continue;
-            const b0 = boundaryAt(m, 0, s) - 0.15, b1 = boundaryAt(m, m.lanes.length, s) + 0.15;
-            const t0 = tRef + b0 / den, t1 = tRef + b1 / den;
-            const tNear = Math.min(t0, t1), tFar = Math.max(t0, t1);
-            if (tNear <= 0.15 && tFar >= -0.15) return;
-            if (tNear > 0.15 && tNear < bestT) {
-                bestT = tNear;
-                bestM = m;
-                bestHd = hx * mhx + hz * mhz;
-                bestDir = [mhx, mhz];
+        for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++){
+            const list = medGrid.get(cellKey(cx + a, cz + b));
+            if (!list) continue;
+            for (let idx = 0, len = list.length; idx < len; idx++){
+                const s = list[idx];
+                if (s.mId === eId || s.wayId === eWayId || s.mId === eTwin || s.mId === ePrev || s.mId === eNext) continue;
+                const den = lx * s.mnx + lz * s.mnz;
+                if (Math.abs(den) < 0.35) continue;
+                const invDen = 1 / den;
+                const tRef = ((s.ux - x) * s.mnx + (s.uz - z) * s.mnz) * invDen;
+                const along = (x + lx * tRef - s.ux) * s.mhx + (z + lz * tRef - s.uz) * s.mhz;
+                if (along < -2.0 || along > s.L + 2.0) continue;
+                let clamped = along;
+                if (clamped < 0) clamped = 0; else if (clamped > s.L) clamped = s.L;
+                const grade = s.y0 + s.dy * clamped * s.invL;
+                if (Math.abs(y - grade) > 0.7) continue;
+                let b0, b1;
+                if (!s.tapered) {
+                    b0 = s.flat0; b1 = s.flat1;
+                } else {
+                    const st = s.cum0 + clamped;
+                    b0 = boundaryAt(s.m, 0, st) - 0.15;
+                    b1 = boundaryAt(s.m, s.nLanes, st) + 0.15;
+                }
+                const t0 = tRef + b0 * invDen, t1 = tRef + b1 * invDen;
+                const tNear = t0 < t1 ? t0 : t1, tFar = t0 < t1 ? t1 : t0;
+                if (tNear <= 0.15 && tFar >= -0.15) return;
+                if (tNear > 0.15 && tNear < bestT) {
+                    bestT = tNear;
+                    bestM = s.m;
+                    bestIsLink = s.isLinkM;
+                    bestHd = hx * s.mhx + hz * s.mhz;
+                    bestDirX = s.mhx;
+                    bestDirZ = s.mhz;
+                }
             }
         }
-        if (!bestM || bestT < 0.35 || bestT > 21 || /_link$/.test(bestM.way.hw) || bestHd >= -0.65 || !bestM.oneway) return;
+        if (!bestM || bestT < 0.35 || bestT > 21 || bestIsLink || bestHd >= -0.65 || !bestM.oneway) return;
         if (e.way.name ? bestM.way.name !== e.way.name : bestM.way.name || bestM.cls !== e.cls) return;
         // Use one carriageway as the reference for the entire divider. Opposing
         // halves otherwise leave seams where their splits and tapers differ.
-        const [ux, uz] = bestDir;
-        const dx = hx - ux, dz = hz - uz;
+        const dx = hx - bestDirX, dz = hz - bestDirZ;
         if ((Math.abs(dx) >= Math.abs(dz) ? dx : dz) <= 0) return;
         const [from, to] = widestClearSpan(bestT, (d)=>{
             if (d < 0.13 || d > bestT - 0.13) return true;
             const px = x + lx * d, pz = z + lz * d;
-            return onAnyNonServiceRoad(px, pz, y, 0.14, e.way.id, e.id) ||
-                onLinkOrSvcCarriageway(px, pz, y, 0.14, e.way.id, e.id) ||
+            return onAnyNonServiceRoad(px, pz, y, 0.14, eWayId, eId) ||
+                onLinkOrSvcCarriageway(px, pz, y, 0.14, eWayId, eId) ||
                 (y < 1.5 && onConnector(px, pz, 0.2));
         });
         return { width: bestT + 0.08, from, to };
@@ -509,6 +574,13 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             const cut0 = edgeCut(e, true), cut1 = e.ref.length - edgeCut(e, false);
             const outer = rightRoad;
             const byRamp = e.rampJoin || g.edges[e.prev]?.joinAcross || g.edges[e.next]?.joinAcross;
+            const outerOpen = (d)=>{
+                const q = atStation(e, outer, d), nx = -q.hz, nz = q.hx;
+                if (onAnyNonServiceRoad(q.x + nx * 0.42, q.z + nz * 0.42, q.y, 0.10, e.way.id, e.id)) return false;
+                if (onLinkOrSvcCarriageway(q.x + nx * 0.85, q.z + nz * 0.85, q.y, 0.10, e.way.id, e.id)) return false;
+                if (q.y <= 1.5 && onConnector(q.x + nx * 0.65, q.z + nz * 0.65, 0.08)) return false;
+                return true;
+            };
             const outerClear = (d)=>{
                 const q = atStation(e, outer, d), nx = -q.hz, nz = q.hx;
                 if (onAnyNonServiceRoad(q.x + nx * 0.42, q.z + nz * 0.42, q.y, 0.10, e.way.id, e.id)) return 0;
@@ -516,17 +588,25 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 if (q.y <= 1.5 && onConnector(q.x + nx * 0.65, q.z + nz * 0.65, 0.08)) return 0;
                 if (air) return sw;
                 // Trim sidewalk width smoothly so slabs never jut over angled driveways, plazas or ramps
-                for (let w = 0.5; w <= sw + 0.15; w += 0.35) {
+                for (let w = 0.55; w <= sw + 0.15; w += 0.65) {
                     const px = q.x + nx * w, pz = q.z + nz * w;
                     if (onAnyNonServiceRoad(px, pz, q.y, 0.18, e.way.id, e.id) ||
                         onLinkOrSvcCarriageway(px, pz, q.y, 0.22, e.way.id, e.id) ||
                         onConnector(px, pz, 0.18)) {
+                        // Refine midpoint for crisp curb clearance without scanning every 0.35m when open
+                        const mid = w - 0.32;
+                        const mx = q.x + nx * mid, mz = q.z + nz * mid;
+                        if (mid >= 0.5 && (onAnyNonServiceRoad(mx, mz, q.y, 0.18, e.way.id, e.id) ||
+                            onLinkOrSvcCarriageway(mx, mz, q.y, 0.22, e.way.id, e.id) ||
+                            onConnector(mx, mz, 0.18))) {
+                            return Math.max(0.25, mid - 0.32);
+                        }
                         return Math.max(0.25, w - 0.35);
                     }
                 }
                 return sw;
             };
-            const oSpans = clearSpans(cut0, cut1, 0.9, (d)=>outerClear(d) > 0.2);
+            const oSpans = clearSpans(cut0, cut1, 0.9, outerOpen);
             for (const [s0, s1] of oSpans){
                 const piece = sliceStations(e, outer, s0, s1);
                 if (isLink) {
@@ -599,9 +679,9 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 }
                 return profiles.get(d);
             };
-            const mSpans = clearSpans(cut0, e.ref.length - cut1, 1.2, (d)=>!!profileAt(d));
+            const mSpans = clearSpans(cut0, e.ref.length - cut1, 1.4, (d)=>!!profileAt(d));
             for (const [s0, s1] of mSpans){
-                const length = s1 - s0, steps = Math.max(2, Math.ceil(length / 0.65));
+                const length = s1 - s0, steps = Math.max(2, Math.ceil(length / 1.15));
                 const stations = Array.from({ length: steps + 1 }, (_, i)=>i === steps ? s1 : s0 + length * i / steps);
                 for (const d of e.ref.cum) if (d > s0 + 0.01 && d < s1 - 0.01) stations.push(d);
                 stations.sort((a,b)=>a-b);
@@ -1418,6 +1498,10 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
     }
     await finishSouthStripPavement({ major, asphalt, service, aisle, slipPavement, sidewalk, concreteMedians,
         medians, medianPaving, medianPlanting, frontagePlanting, curb, paint, paintDim, paintYellow, reviewedAisles, parkingBase }, pause);
+    finishParisDrivePavement({ major, asphalt, service, slipPavement, sidewalk, concreteMedians,
+        medians, medianPaving, medianPlanting, frontagePlanting, curb, curbFaces, paint, paintDim, paintYellow });
+    finishBellagioDrivePavement({ major, asphalt, service, slipPavement, sidewalk, concreteMedians,
+        medians, medianPaving, medianPlanting, frontagePlanting, curb, curbFaces, paint, paintDim, paintYellow });
     const add = (arr)=>arr.forEach((m)=>group.add(m));
     const roadMat = surfaceMaterial('road', { grain: 0.16, weathering: 0.08, corridor: STRIP_PAVEMENT });
     const serviceMat = surfaceMaterial('service', {

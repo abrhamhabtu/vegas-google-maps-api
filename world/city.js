@@ -25,6 +25,7 @@ import { buildLuxor } from './luxor.js';
 import { buildMandalayBay } from './mandalay-bay.js';
 import { stripModels } from './landmark-models.js';
 import { isRialtoBridge } from './venetian-palazzo.js';
+import { buildBellagioArchitecture, isBellagioSkybridgeWalk } from './bellagio-drive-roads.mjs';
 
 const THREE = window.THREE;
 
@@ -85,8 +86,12 @@ export async function buildCity(data, engine) {
   engine.reveal?.('roads');
   await engine.yield();
   engine.progress('Opening bridges…', 0.85);
-  const genericBridgeData = { ...data, walks: data.walks.filter(w => !isRialtoBridge(w)) };
-  detail.add(stage('skybridges', () => buildSkybridges(genericBridgeData, graph)), stage('railways', () => buildRailways(data, graph, engine)));
+  const genericBridgeData = { ...data, walks: data.walks.filter(w => !isRialtoBridge(w) && !isBellagioSkybridgeWalk(w)) };
+  detail.add(
+    stage('skybridges', () => buildSkybridges(genericBridgeData, graph)),
+    stage('bellagio-arch', () => buildBellagioArchitecture()),
+    stage('railways', () => buildRailways(data, graph, engine)),
+  );
   await engine.yield();
   engine.progress('Bringing the city to life…', 0.93);
   detail.add(stage('trees', () => buildTrees(data, graph)));

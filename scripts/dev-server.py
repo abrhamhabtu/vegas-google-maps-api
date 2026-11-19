@@ -16,6 +16,7 @@ import socket
 import socketserver
 import subprocess
 import sys
+import threading
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COMPRESSIBLE = {'.json', '.js', '.mjs', '.css', '.html', '.svg', '.txt', '.md', '.map'}
@@ -29,7 +30,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=ROOT, **kwargs)
 
     def end_headers(self):
-        self.send_header('Cache-Control', 'no-cache')
+        # Allow browser disk-cache hits for large immutable data/vendor payloads on reload.
+        if self.path.startswith(('/landmarks/footprints.json', '/landmarks/vendor/clipper/')):
+            self.send_header('Cache-Control', 'public, max-age=3600')
+        else:
+            self.send_header('Cache-Control', 'no-cache')
         super().end_headers()
 
     def log_message(self, fmt, *args):  # quieter: only errors
@@ -63,7 +68,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             cached = _gz_cache.get(path)
             if not cached or cached[0] != etag:
                 with open(path, 'rb') as f:
-                    cached = (etag, gzip.compress(f.read(), compresslevel=6))
+                    cached = (etag, gzip.compress(f.read(), compresslevel=4))
                 _gz_cache[path] = cached
             body = cached[1]
         else:
@@ -110,7 +115,22 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
 
 
+def prewarm_cache():
+    """Pre-gzip landmarks/footprints.json in the background so first page load never stalls."""
+    target = os.path.join(ROOT, 'landmarks', 'footprints.json')
+    if not os.path.isfile(target):
+        return
+    try:
+        stat = os.stat(target)
+        etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+        with open(target, 'rb') as f:
+            _gz_cache[target] = (etag, gzip.compress(f.read(), compresslevel=4))
+    except OSError:
+        pass
+
+
 if __name__ == '__main__':
+    threading.Thread(target=prewarm_cache, daemon=True).start()
     port = int(sys.argv[1] if len(sys.argv) > 1 else os.environ.get('PORT', 8080))
     with Server(('', port), Handler) as server:
         print('Vegas map is being served at:')

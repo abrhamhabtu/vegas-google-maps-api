@@ -50,7 +50,7 @@ window.setupMapChrome = function({ getMap, getLayer }) {
   byId('places-close').addEventListener('click', () => closePanels(true));
   byId('layers-close').addEventListener('click', () => closePanels(true));
   document.addEventListener('pointerdown', event => {
-    const inside = [sheet, layers, layersButton].some(element => element.contains(event.target));
+    const inside = [sheet, layers, layersButton, byId('rail-layers-btn')].some(element => element?.contains(event.target));
     if (!inside && event.target.closest?.('.map-stage, #labels')) closePanels();
     else if (!inside && !layers.classList.contains('hidden') && !event.target.closest?.('.top-controls')) closePanels();
   });
@@ -221,7 +221,138 @@ window.setupMapChrome = function({ getMap, getLayer }) {
   const moveOptions = () => ({ duration: reducedMotion.matches ? 0 : 350 });
   byId('map-zoom-in').addEventListener('click', () => getMap()?.zoomIn(moveOptions()));
   byId('map-zoom-out').addEventListener('click', () => getMap()?.zoomOut(moveOptions()));
-  byId('cam-north').addEventListener('click', () => getMap()?.resetNorth(moveOptions()));
+
+  // Right-rail Layers & Recenter buttons
+  byId('rail-layers-btn')?.addEventListener('click', () => togglePanel(layers, layersButton));
+  byId('cam-recenter')?.addEventListener('click', () => {
+    const activeChip = document.querySelector('#landmark-chips .chip.active')
+      || document.querySelector('#landmark-chips .chip[data-view="bellagio"]');
+    if (activeChip) activeChip.click();
+  });
+
+  // 2D / 3D button in the Apple Maps right rail (shows the mode you switch TO, just like Apple Maps)
+  const dimBtn = byId('view-dim-toggle');
+  const pitchTrack = byId('pitch-slider-track');
+  const pitchThumb = byId('pitch-slider-thumb');
+  const MAX_PITCH = 75;
+  function syncPitchUI() {
+    const map = getMap();
+    if (!map) return;
+    const pitch = Math.max(0, Math.min(MAX_PITCH, map.getPitch()));
+    const is3D = pitch > 10;
+    if (dimBtn) {
+      dimBtn.textContent = is3D ? '2D' : '3D';
+      dimBtn.setAttribute('aria-pressed', String(is3D));
+    }
+    if (pitchThumb && pitchTrack) {
+      // Top = 75° (deep 3D), Bottom = 0° (flat 2D) — matches Apple Maps vertical tilt rail
+      const pct = 1 - pitch / MAX_PITCH;
+      const topPx = 13 + pct * 48;
+      pitchThumb.style.top = `${topPx.toFixed(1)}px`;
+      pitchTrack.setAttribute('aria-valuenow', String(Math.round(pitch)));
+    }
+  }
+  dimBtn?.addEventListener('click', () => {
+    const map = getMap();
+    if (!map) return;
+    if (map.getPitch() > 10) byId('mode-lanes-btn').click();
+    else byId('mode-3d-btn').click();
+  });
+  if (pitchTrack) {
+    let pitchDrag = null;
+    const applyPitchFromY = clientY => {
+      const map = getMap();
+      if (!map) return;
+      const rect = pitchTrack.getBoundingClientRect();
+      const t = Math.max(0, Math.min(1, (clientY - (rect.top + 13)) / 48));
+      const nextPitch = (1 - t) * MAX_PITCH;
+      getLayer()?.stopFollowing?.();
+      map.setPitch(nextPitch);
+      syncPitchUI();
+    };
+    pitchTrack.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      pitchDrag = event.pointerId;
+      pitchTrack.classList.add('dragging');
+      pitchTrack.setPointerCapture?.(event.pointerId);
+      applyPitchFromY(event.clientY);
+    });
+    pitchTrack.addEventListener('pointermove', event => {
+      if (pitchDrag !== event.pointerId) return;
+      applyPitchFromY(event.clientY);
+    });
+    const endPitch = event => {
+      if (pitchDrag !== event.pointerId) return;
+      pitchDrag = null;
+      pitchTrack.classList.remove('dragging');
+    };
+    pitchTrack.addEventListener('pointerup', endPitch);
+    pitchTrack.addEventListener('pointercancel', endPitch);
+    pitchTrack.addEventListener('keydown', event => {
+      const map = getMap();
+      if (!map) return;
+      if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
+        map.easeTo({ pitch: Math.min(MAX_PITCH, map.getPitch() + 10), duration: 180 });
+        event.preventDefault();
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
+        map.easeTo({ pitch: Math.max(0, map.getPitch() - 10), duration: 180 });
+        event.preventDefault();
+      }
+    });
+  }
+
+  // Interactive Apple Maps Compass: drag left/right to rotate bearing smoothly, click to snap North!
+  const compassBtn = byId('cam-north');
+  const compassNeedle = byId('compass-needle');
+  const compassCardinal = byId('compass-cardinal');
+  const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  function syncCompassUI() {
+    const map = getMap();
+    if (!map) return;
+    const bearing = map.getBearing();
+    if (compassNeedle) compassNeedle.style.transform = `rotate(${-bearing}deg)`;
+    if (compassCardinal) {
+      const norm = ((bearing % 360) + 360) % 360;
+      compassCardinal.textContent = CARDINALS[Math.round(norm / 45) % 8];
+    }
+  }
+  {
+    let compassDrag = null;
+    compassBtn.addEventListener('pointerdown', event => {
+      const map = getMap();
+      if (!map) return;
+      compassDrag = { id: event.pointerId, startX: event.clientX, startBearing: map.getBearing(), moved: false };
+      compassBtn.setPointerCapture?.(event.pointerId);
+    });
+    compassBtn.addEventListener('pointermove', event => {
+      if (!compassDrag || compassDrag.id !== event.pointerId) return;
+      const dx = event.clientX - compassDrag.startX;
+      if (Math.abs(dx) > 4) {
+        compassDrag.moved = true;
+        compassBtn.classList.add('dragging');
+      }
+      if (!compassDrag.moved) return;
+      getLayer()?.stopFollowing?.();
+      getMap()?.setBearing(compassDrag.startBearing + dx * 0.72);
+      syncCompassUI();
+    });
+    const endCompass = event => {
+      if (!compassDrag || compassDrag.id !== event.pointerId) return;
+      const wasDrag = compassDrag.moved;
+      compassDrag = null;
+      compassBtn.classList.remove('dragging');
+      if (!wasDrag) getMap()?.resetNorth(moveOptions());
+    };
+    compassBtn.addEventListener('pointerup', endCompass);
+    compassBtn.addEventListener('pointercancel', endCompass);
+    // Keyboard activation (Enter/Space) still resets north
+    compassBtn.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        getMap()?.resetNorth(moveOptions());
+      }
+    });
+  }
 
   function syncPressed() {
     for (const id of ['mode-lanes-btn', 'mode-3d-btn', 'toggle-bldg-btn', 'toggle-satellite-btn', 'toggle-traffic-btn']) {
@@ -248,7 +379,7 @@ window.setupMapChrome = function({ getMap, getLayer }) {
     if (event.altKey || event.ctrlKey || event.metaKey || /INPUT|SELECT|TEXTAREA/.test(event.target.tagName) || event.target.isContentEditable) return;
     switch (event.key.toLowerCase()) {
       case 't': setTheme(nextTheme()); break;
-      case 'n': byId('cam-north').click(); break;
+      case 'n': getMap()?.resetNorth(moveOptions()); break;
       case 'd': byId(getMap()?.getPitch() > 10 ? 'mode-lanes-btn' : 'mode-3d-btn').click(); break;
       case 'p': placesButton.click(); break;
       case 'l': layersButton.click(); break;
@@ -280,8 +411,11 @@ window.setupMapChrome = function({ getMap, getLayer }) {
   function onMapReady() {
     const map = getMap();
     map.scrollZoom.setWheelZoomRate(1 / 600);
-    map.on('rotate', () => { byId('compass-needle').style.transform = `rotate(${-map.getBearing()}deg)`; });
+    map.on('rotate', syncCompassUI);
+    map.on('pitch', syncPitchUI);
     map.on('dragstart', () => getLayer()?.stopFollowing?.());
+    syncCompassUI();
+    syncPitchUI();
     setTheme(hash.get('theme') || 'day');
     const view = hash.get('view');
     const chip = [...document.querySelectorAll('#landmark-chips .chip')].find(item => item.dataset.view === view);

@@ -13,6 +13,36 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 window.VEGAS_ROAD_WORLD_ENABLED = true;
 document.documentElement.classList.add('world-enabled');
 
+// Kick off the 12 MB city snapshot fetch + JSON parse + decode immediately at module load,
+// overlapping with MapLibre WebGL initialization instead of waiting for map.on('load').
+const preloadedSnapshotPromise = fetch('landmarks/footprints.json')
+  .then(response => {
+    if (!response.ok) throw new Error(`City data: HTTP ${response.status}`);
+    return response.json();
+  })
+  .then(raw => {
+    performance.mark('scene:json parsed');
+    if (raw.origin.lat !== ORIGIN.lat || raw.origin.lon !== ORIGIN.lon) {
+      throw new Error('City coordinate origin does not match the map.');
+    }
+    const data = decode(raw);
+    performance.mark('scene:decoded');
+    return data;
+  })
+  .catch(() => null);
+
+// Sub-millisecond cooperative yield (avoids 4 ms+ nested setTimeout browser clamping during road build).
+const fastYield = (() => {
+  if (typeof window.scheduler?.yield === 'function') return () => window.scheduler.yield();
+  if (typeof MessageChannel !== 'undefined') {
+    const channel = new MessageChannel();
+    const queue = [];
+    channel.port1.onmessage = () => { const fn = queue.shift(); if (fn) fn(); };
+    return () => new Promise(resolve => { queue.push(resolve); channel.port2.postMessage(null); });
+  }
+  return () => new Promise(resolve => setTimeout(resolve, 0));
+})();
+
 function prepareMaterials(root) {
   root.traverse(object => {
     for (const material of [].concat(object.material || [])) {
@@ -85,7 +115,7 @@ window.createVegasThreeLayer = function() {
     progress: (text, fraction) => status(text, 'loading', fraction),
     attach,
     reveal,
-    yield: () => window.scheduler?.yield?.() ?? new Promise(resolve => setTimeout(resolve, 0)),
+    yield: fastYield,
     paint: () => new Promise(resolve => {
       if (document.hidden) { setTimeout(resolve, 0); return; }
       const stop = setTimeout(resolve, 150);
@@ -123,14 +153,18 @@ window.createVegasThreeLayer = function() {
     status('Loading Las Vegas…', 'loading', 0.02);
     try {
       abortController = new AbortController();
-      const response = await fetch('landmarks/footprints.json', { signal: abortController.signal });
-      if (!response.ok) throw new Error(`City data: HTTP ${response.status}`);
-      const raw = await response.json();
-      performance.mark('scene:json parsed');
+      let data = await preloadedSnapshotPromise;
       if (disposed) return;
-      if (raw.origin.lat !== ORIGIN.lat || raw.origin.lon !== ORIGIN.lon) throw new Error('City coordinate origin does not match the map.');
-      const data = decode(raw);
-      performance.mark('scene:decoded');
+      if (!data) {
+        const response = await fetch('landmarks/footprints.json', { signal: abortController.signal });
+        if (!response.ok) throw new Error(`City data: HTTP ${response.status}`);
+        const raw = await response.json();
+        performance.mark('scene:json parsed');
+        if (disposed) return;
+        if (raw.origin.lat !== ORIGIN.lat || raw.origin.lon !== ORIGIN.lon) throw new Error('City coordinate origin does not match the map.');
+        data = decode(raw);
+        performance.mark('scene:decoded');
+      }
       await engine.yield();
       if (disposed) return;
       city = await buildCity(data, engine);

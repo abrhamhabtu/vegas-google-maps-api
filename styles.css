@@ -85,7 +85,7 @@ button svg, .search-glyph, .row-btn svg { width: 20px; height: 20px; fill: none;
 .boot {
   position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: hidden;
   background: radial-gradient(120% 90% at 50% 110%, #3b1d5c 0%, #141a33 45%, #070a14 100%);
-  transition: opacity .7s ease, visibility .7s;
+  transition: opacity .32s ease, visibility .32s;
 }
 body:not(.booting) .boot { opacity: 0; visibility: hidden; pointer-events: none; }
 .boot-glow {
@@ -108,29 +108,31 @@ body:not(.booting) .boot { opacity: 0; visibility: hidden; pointer-events: none;
 .boot-bar { margin-top: 18px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .14); overflow: hidden; }
 .boot-bar i { display: block; height: 100%; width: 4%; border-radius: inherit; background: linear-gradient(90deg, #ff9f0a, #ff375f); transition: width .5s ease; }
 
-/* ─── search card / sheet ─── */
+/* ─── search card / sheet (sleek & compact so the 3D Strip stays unobstructed) ─── */
 .sheet {
-  position: fixed; z-index: 20; top: calc(var(--gap) + var(--safe-top)); left: var(--gap); width: 372px;
-  max-height: calc(100dvh - 2 * var(--gap) - 120px); display: flex; flex-direction: column;
-  padding: 8px; border-radius: var(--radius);
+  position: fixed; z-index: 20; top: calc(var(--gap) + var(--safe-top)); left: var(--gap); width: 268px;
+  max-height: calc(100dvh - 2 * var(--gap) - 110px); display: flex; flex-direction: column;
+  padding: 6px; border-radius: 18px; transition: width .22s cubic-bezier(.2, .8, .2, 1);
 }
+.sheet[data-state='open'] { width: 324px; }
 .sheet-grabber { display: none; }
-.search-panel { display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 5px 0 13px; border-radius: 16px; background: var(--fill); flex: none; }
-.search-glyph { color: var(--text-muted); }
-#place-search-input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; font-size: 16px; }
+.search-panel { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 4px 0 11px; border-radius: 12px; background: var(--fill); flex: none; }
+.search-glyph { width: 16px; height: 16px; color: var(--text-muted); }
+#place-search-input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; font-size: 13.5px; }
 #place-search-input::placeholder { color: var(--text-muted); }
 #place-search-input::-webkit-search-cancel-button { -webkit-appearance: none; }
-.places-toggle { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--text-muted); transition: transform .25s, background .15s; }
+.places-toggle { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--text-muted); transition: transform .25s, background .15s; }
+.places-toggle svg { width: 16px; height: 16px; }
 .places-toggle:hover { background: var(--hover); color: var(--text-main); }
 .places-toggle[aria-expanded='true'] { transform: rotate(180deg); }
-.view-caption { display: flex; flex-direction: column; gap: 2px; padding: 12px 10px 6px; flex: none; }
-#sphere-ad-control { display: flex; align-items: center; gap: 9px; margin-top: 6px; font-size: 12px; }
+.view-caption { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 8px; padding: 6px 8px 2px; flex: none; }
+#sphere-ad-control { display: flex; align-items: center; gap: 9px; margin-top: 4px; width: 100%; font-size: 12px; }
 #sphere-ad-control span { white-space: nowrap; }
-#sphere-ad { min-width: 126px; padding: 5px 7px; border: 1px solid currentColor; border-radius: 7px; background: transparent; color: inherit; font: inherit; }
+#sphere-ad { min-width: 126px; padding: 4px 7px; border: 1px solid currentColor; border-radius: 7px; background: transparent; color: inherit; font: inherit; }
 body[data-theme="night"] #sphere-ad { color-scheme: dark; }
-.eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
-#view-title { font-size: 21px; font-weight: 700; letter-spacing: -.025em; line-height: 1.2; }
-#scene-status { font-size: 12.5px; color: var(--text-muted); }
+.eyebrow { display: none; }
+#view-title { font-size: 13px; font-weight: 650; letter-spacing: -.015em; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+#scene-status { font-size: 11px; color: var(--text-muted); white-space: nowrap; flex: none; }
 #scene-status[data-state='ready']::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--switch-on); box-shadow: 0 0 0 3px rgba(52, 199, 89, .2); vertical-align: 0; }
 #scene-status[data-state='error'] { color: #ff453a; }
 #scene-status[data-state='loading']::before { content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 7px; vertical-align: -1px; border-radius: 50%; border: 2px solid var(--fill-strong); border-top-color: var(--accent); animation: spin .8s linear infinite; }
@@ -188,19 +190,77 @@ body[data-theme="night"] #sphere-ad { color-scheme: dark; }
 .studio-arrow { margin-left: auto; color: var(--text-muted); font-size: 22px; }
 .status-dot { width: 8px; height: 8px; background: var(--switch-on); border-radius: 50%; }
 
-/* ─── camera dock ─── */
-.camera-hud { position: fixed; z-index: 15; right: var(--gap); bottom: calc(28px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
-.hud-btn { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: var(--text-main); }
-.hud-btn:hover { background: var(--hover); }
-.view-control { display: flex; gap: 2px; padding: 3px; border-radius: 22px; }
-.view-control .mode-btn { height: 38px; min-width: 44px; padding: 0 12px; border-radius: 19px; font-size: 14px; font-weight: 700; color: var(--text-muted); }
-.view-control .mode-btn.active { background: var(--glass-strong); color: var(--text-main); box-shadow: var(--shadow-soft); }
-.compass { width: 48px; height: 48px; border-radius: 50%; position: relative; display: grid; place-items: center; }
-#compass-needle { position: absolute; inset: 7px; display: block; transition: transform .1s linear; }
-#compass-needle i { position: absolute; left: 50%; top: 0; translate: -50% 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 10px solid #ff3b30; }
-.compass small { font-size: 12px; font-weight: 700; color: var(--text-main); }
-.orbit-control, .zoom-control { display: flex; flex-direction: column; border-radius: 24px; padding: 2px; }
-.zoom-control .hud-btn + .hud-btn { border-top: 1px solid var(--line); border-radius: 0 0 22px 22px; }
+/* ─── Apple Maps–style right-side control rail ─── */
+.camera-hud {
+  position: fixed; z-index: 18; right: var(--gap); top: 50%; transform: translateY(-44%);
+  display: flex; flex-direction: column; gap: 10px; align-items: center;
+}
+.apple-rail-pill {
+  width: 44px; display: flex; flex-direction: column; align-items: center;
+  padding: 3px; border-radius: 22px; gap: 2px;
+}
+.rail-btn {
+  display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%;
+  color: var(--text-main); transition: background .15s, transform .12s, color .15s;
+}
+.rail-btn svg { width: 19px; height: 19px; stroke-width: 2; }
+.rail-btn:hover { background: var(--hover); }
+.rail-btn:active { transform: scale(.93); }
+.rail-btn.accent-icon { color: var(--accent); }
+.rail-btn.dim-btn { font-size: 13px; font-weight: 750; letter-spacing: -.02em; height: 36px; }
+.apple-rail-pill.zoom-control .rail-btn + .rail-btn {
+  position: relative;
+}
+.apple-rail-pill.zoom-control .rail-btn + .rail-btn::before {
+  content: ''; position: absolute; top: -1px; left: 9px; right: 9px; height: 1px; background: var(--line);
+}
+
+/* Vertical Pitch / Tilt Slider inside the 2D/3D pill */
+.pitch-control { padding-bottom: 6px; }
+.pitch-slider-wrap {
+  position: relative; width: 34px; height: 74px; border-radius: 17px;
+  background: var(--fill); display: grid; place-items: center;
+  cursor: ns-resize; touch-action: none; user-select: none; margin-top: 2px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .06);
+}
+.pitch-rail {
+  width: 2.5px; height: 48px; border-radius: 2px; background: var(--text-main); opacity: .78; pointer-events: none;
+}
+.pitch-thumb {
+  position: absolute; left: 50%; top: 14px; width: 11px; height: 11px; border-radius: 50%;
+  transform: translate(-50%, -50%); background: var(--text-main);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .28), 0 0 0 2px var(--glass-strong);
+  pointer-events: none; transition: transform .08s ease;
+}
+.pitch-slider-wrap.dragging .pitch-thumb { transform: translate(-50%, -50%) scale(1.22); background: var(--accent); }
+
+/* Interactive Apple Maps Compass Dial (click for North, drag left/right to rotate!) */
+.compass-dial {
+  width: 44px; height: 44px; border-radius: 50%; position: relative; display: grid; place-items: center;
+  cursor: ew-resize; touch-action: none; user-select: none;
+  transition: transform .14s ease, box-shadow .16s ease;
+}
+.compass-dial:hover { box-shadow: var(--shadow), 0 0 0 2px var(--accent-wash); }
+.compass-dial.dragging { cursor: grabbing; transform: scale(1.06); box-shadow: var(--shadow), 0 0 0 2.5px var(--accent); }
+.compass-ticks {
+  position: absolute; inset: 3px; border-radius: 50%; pointer-events: none;
+  background: repeating-conic-gradient(from -2deg, var(--text-muted) 0deg 4deg, transparent 4deg 30deg);
+  -webkit-mask: radial-gradient(circle, transparent 58%, #000 60%);
+  mask: radial-gradient(circle, transparent 58%, #000 60%);
+  opacity: .38;
+}
+#compass-needle {
+  position: absolute; inset: 2px; display: block; pointer-events: none; will-change: transform;
+}
+#compass-needle i {
+  position: absolute; left: 50%; top: 1px; translate: -50% 0;
+  border-left: 4.5px solid transparent; border-right: 4.5px solid transparent; border-bottom: 8.5px solid #ff3b30;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .22));
+}
+.compass-dial small {
+  position: relative; z-index: 1; font-size: 13px; font-weight: 750; letter-spacing: -.03em; color: var(--text-main);
+  pointer-events: none;
+}
 
 /* ─── hint + build progress ─── */
 .map-hint { position: fixed; z-index: 14; left: 50%; bottom: calc(28px + var(--safe-bottom)); translate: -50% 0; display: flex; align-items: center; gap: 10px; padding: 9px 9px 9px 16px; border-radius: 22px; font-size: 13px; max-width: calc(100vw - 32px); animation: rise .4s ease both; }
@@ -209,17 +269,20 @@ body[data-theme="night"] #sphere-ad { color-scheme: dark; }
 @keyframes spin { to { rotate: 360deg; } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
 
-/* ─── fleet panel: same glass, rounder ─── */
+/* ─── fleet panel: same glass, rounder, crisp spacing for Zoox/Waymo/Tesla/Robovan ─── */
 body #driving-ui .ride, body #driving-ui .dr-pill, body #driving-ui .lab, body #driving-ui .lab-toggle {
   background: var(--glass); border-color: var(--glass-border);
   -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%);
   box-shadow: var(--shadow), inset 0 1px 0 var(--glass-shine);
 }
-body #driving-ui .ride { border-radius: 22px; padding: 8px; left: var(--gap); bottom: calc(28px + var(--safe-bottom)); }
-body #driving-ui .seg { border-radius: 12px; background: var(--fill); }
-body #driving-ui .seg button { border-radius: 9px; min-height: 32px; font-size: 12.5px; }
+body #driving-ui .ride {
+  border-radius: 20px; padding: 6px 8px; width: 344px;
+  left: var(--gap); bottom: calc(18px + var(--safe-bottom));
+}
+body #driving-ui .seg { border-radius: 12px; background: var(--fill); padding: 3px; gap: 3px; }
+body #driving-ui .seg button { border-radius: 9px; min-height: 30px; font-size: 12px; padding: 4px 8px; gap: 5px; flex: 1 1 auto; }
 body #driving-ui .seg button.on { background: var(--glass-strong); }
-body #driving-ui .lab-toggle { border-radius: 20px; }
+body #driving-ui .lab-toggle { border-radius: 20px; bottom: calc(18px + var(--safe-bottom)); }
 body.fleet-hidden #driving-ui { display: none; }
 
 /* ─── legacy robotaxi dock and settings modal (kept for the non-world mode) ─── */
@@ -302,11 +365,9 @@ input[type='checkbox'], input[type='range'] { accent-color: var(--accent); }
   .round-btn { width: 44px; height: 44px; }
   .layer-controls { position: fixed; top: calc(var(--safe-top) + 10px); left: var(--gap); right: calc(var(--gap) + 54px); width: auto; max-height: calc(100dvh - var(--peek) - var(--safe-top) - 30px); overflow-y: auto; }
 
-  .camera-hud { right: var(--gap); bottom: calc(var(--peek) + 14px); gap: 10px; transition: opacity .2s; }
+  .camera-hud { right: var(--gap); top: auto; transform: none; bottom: calc(var(--peek) + 14px); gap: 8px; transition: opacity .2s; }
   .sheet[data-state='half'] ~ .camera-hud, .sheet[data-state='full'] ~ .camera-hud { opacity: 0; pointer-events: none; }
-  .orbit-control, .zoom-control { display: none; }
-  .view-control { flex-direction: column; }
-  .view-control .mode-btn { height: 36px; min-width: 38px; padding: 0 8px; }
+  .apple-rail-pill.zoom-control, .pitch-slider-wrap { display: none; }
 
   .map-hint { bottom: auto; top: calc(var(--safe-top) + 12px); left: var(--gap); right: calc(var(--gap) + 56px); translate: none; justify-content: space-between; }
   

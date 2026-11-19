@@ -1,6 +1,8 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
 import { convexHull } from './geom.js';
 import { isSouthStripRoad, roundSouthStripRoad, southStripLaneCount } from '../../../world/south-strip-roads.mjs';
+import { parisDriveLaneCount, parisDriveTurns } from '../../../world/paris-drive-roads.mjs';
+import { bellagioWayHeights, isBellagioFlattenedBridge } from '../../../world/bellagio-drive-roads.mjs';
 export const CLASS = {
     motorway: 'motorway',
     motorway_link: 'ramp',
@@ -533,14 +535,15 @@ export function buildLaneGraph(data) {
         cuts.push(w.n.length - 1);
         const cls = CLASS[w.hw];
         const mph = w.mph ?? DEFAULT_MPH[cls];
-        const ys = w.y ?? w.pts.map(()=>0);
+        const ys = bellagioWayHeights(w) ?? w.y ?? w.pts.map(()=>0);
         for(let c = 0; c < cuts.length - 1; c++){
             const a = cuts[c], b = cuts[c + 1];
             const pts = w.pts.slice(a, b + 1), y = ys.slice(a, b + 1);
             if (pts.length < 2) continue;
-            const rawTurn = w.ow === 1 ? w.turn ?? w.tf : w.ow === -1 ? w.turn ?? w.tb : undefined;
+            const customTurn = parisDriveTurns(w);
+            const rawTurn = customTurn ?? (w.ow === 1 ? w.turn ?? w.tf : w.ow === -1 ? w.turn ?? w.tb : undefined);
             const turnCount = rawTurn ? rawTurn.split('|').length : undefined;
-            const known = (southStrip ? southStripLaneCount(w) : undefined) ?? w.lanes ?? inheritedLanes.get(w.id);
+            const known = parisDriveLaneCount(w) ?? (southStrip ? southStripLaneCount(w) : undefined) ?? w.lanes ?? inheritedLanes.get(w.id);
             const turnInflatedByEmptyPipe = !!(rawTurn && w.lanes !== undefined && rawTurn.endsWith('||'));
             const total = (turnCount && known && turnCount > known && !turnInflatedByEmptyPipe ? turnCount : known) ?? turnCount ?? (w.ow ? cls === 'service' ? 1 : cls === 'ramp' ? 1 : 2 : cls === 'arterial' ? 4 : 2);
             let laneW = LANE_W[cls];
@@ -552,7 +555,7 @@ export function buildLaneGraph(data) {
                     pts,
                     y,
                     n: total,
-                    turn: w.turn ?? w.tf,
+                    turn: customTurn ?? (w.turn ?? w.tf),
                     from: w.n[a],
                     to: w.n[b]
                 }
@@ -610,7 +613,7 @@ export function buildLaneGraph(data) {
                     explicitTurns: !!d.turn,
                     southStrip,
                     oneway,
-                    elevated: d.y.some((v)=>v > 0.4)
+                    elevated: !isBellagioFlattenedBridge(w) && d.y.some((v)=>v > 0.4)
                 };
                 edges.push(e);
                 made.push(e.id);
@@ -1267,24 +1270,29 @@ export function roadMask(g, withRaised = false) {
         }
         return c;
     };
+    const hitPts = (pts, x, z, r2)=>{
+        for(let k = 0, end = pts.length - 1; k < end; k++){
+            const a = pts[k], b = pts[k + 1], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1;
+            let t = ((x - a[0]) * dx + (z - a[1]) * dz) / L2;
+            if (t < 0) t = 0; else if (t > 1) t = 1;
+            const ex = x - a[0] - dx * t, ez = z - a[1] - dz * t;
+            if (ex * ex + ez * ez < r2) return true;
+        }
+        return false;
+    };
     const test = (x, z, margin = 0.8)=>{
-        for (const h of hullGrid.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? [])if (inHull(h, x, z)) return true;
         const ci = Math.floor(x / CELL), cj = Math.floor(z / CELL);
+        const hulls = hullGrid.get(key(ci, cj));
+        if (hulls) {
+            for (let i = 0; i < hulls.length; i++) if (inHull(hulls[i], x, z)) return true;
+        }
         for(let i = -1; i <= 1; i++)for(let j = -1; j <= 1; j++){
             const cell = grid.get(key(ci + i, cj + j));
             if (!cell) continue;
-            for (const id of cell){
-                const l = ls[id], r = l.width / 2 + margin;
-                for (const pts of l.raw ? [
-                    l.line.pts,
-                    l.raw.pts
-                ] : [
-                    l.line.pts
-                ])for(let k = 0; k + 1 < pts.length; k++){
-                    const a = pts[k], b = pts[k + 1], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1;
-                    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / L2));
-                    if (Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t) < r) return true;
-                }
+            for (let c = 0; c < cell.length; c++){
+                const l = ls[cell[c]], r = l.width * 0.5 + margin, r2 = r * r;
+                if (hitPts(l.line.pts, x, z, r2)) return true;
+                if (l.raw && hitPts(l.raw.pts, x, z, r2)) return true;
             }
         }
         return false;

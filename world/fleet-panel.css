@@ -39,19 +39,19 @@ body.fleet-panel-mounted.fleet-following .map-hint { display: none; }
 #driving-ui .ride {
   position: absolute;
   left: 20px;
-  bottom: max(36px, env(safe-area-inset-bottom));
-  width: 292px;
-  max-width: calc(100vw - 40px);
+  bottom: max(18px, env(safe-area-inset-bottom));
+  width: 344px;
+  max-width: calc(100vw - 96px);
   max-height: calc(100dvh - 196px);
-  padding: 8px;
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   border-radius: 13px;
 }
-#driving-ui .ride-head { display: flex; gap: 4px; align-items: center; flex: none; }
+#driving-ui .ride-head { display: flex; gap: 6px; align-items: center; flex: none; }
 #driving-ui .ride-head .seg { flex: 1; min-width: 0; }
-#driving-ui .ride-fold { width: 24px; height: 32px; display: grid; place-items: center; flex: none; border-radius: 6px; color: var(--fleet-muted); }
+#driving-ui .ride-fold { width: 26px; height: 30px; display: grid; place-items: center; flex: none; border-radius: 8px; color: var(--fleet-muted); }
 #driving-ui .ride-fold svg { width: 12px; height: 12px; transition: transform .18s; }
 #driving-ui .ride.folded .ride-fold svg { transform: rotate(180deg); }
 #driving-ui .ride.folded .ride-body { display: none; }

@@ -383,20 +383,32 @@ export function planIntersections(data, g) {
             const m = g.lanes[lane].movement;
             return m === 'through' ? 3 : m === 'right' ? 2 : 1;
         };
-        for(let i = 0; i < list.length; i++)for(let j = i + 1; j < list.length; j++){
-            const a = g.lanes[list[i]], b = g.lanes[list[j]];
-            if (a.prev[0] === b.prev[0] || a.next[0] === b.next[0]) continue;
-            if (!cross(a.line.pts, b.line.pts)) continue;
-            conflicts++;
-            const [lo, hi] = prio(a.id) <= prio(b.id) ? [
-                a.id,
-                b.id
-            ] : [
-                b.id,
-                a.id
-            ];
-            if (!yieldTo.has(lo)) yieldTo.set(lo, []);
-            yieldTo.get(lo).push(hi);
+        const boxes = list.length > 1 ? list.map((cid)=>{
+            const pts = g.lanes[cid].line.pts;
+            let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+            for (let k = 0; k < pts.length; k++){
+                const px = pts[k][0], pz = pts[k][1];
+                if (px < x0) x0 = px;
+                if (px > x1) x1 = px;
+                if (pz < z0) z0 = pz;
+                if (pz > z1) z1 = pz;
+            }
+            return [x0, x1, z0, z1];
+        }) : [];
+        for(let i = 0; i < list.length; i++){
+            const a = g.lanes[list[i]], ba = boxes[i];
+            for(let j = i + 1; j < list.length; j++){
+                const bb = boxes[j];
+                if (ba[1] < bb[0] || bb[1] < ba[0] || ba[3] < bb[2] || bb[3] < ba[2]) continue;
+                const b = g.lanes[list[j]];
+                if (a.prev[0] === b.prev[0] || a.next[0] === b.next[0]) continue;
+                if (!cross(a.line.pts, b.line.pts)) continue;
+                conflicts++;
+                const [lo, hi] = prio(a.id) <= prio(b.id) ? [a.id, b.id] : [b.id, a.id];
+                let arr = yieldTo.get(lo);
+                if (!arr) yieldTo.set(lo, arr = []);
+                arr.push(hi);
+            }
         }
         const phases = [];
         if (signal) {

@@ -27,7 +27,7 @@ export function dashRuns(start, end, length, gap, phase) {
 // Sample across a median, then refine the boundaries of the widest clear span.
 // This keeps the curb smooth when the next carriageway or turn sweeps past it.
 export function widestClearSpan(width, blocked) {
-  const count = Math.max(2, Math.ceil(width / 0.22));
+  const count = Math.max(2, Math.ceil(width / 0.44));
   let open = !blocked(0);
   let start = 0;
   let best = [0, 0];
