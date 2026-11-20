@@ -6,8 +6,35 @@ import { arrowMarking, dashRuns, zebraBars } from './road-visuals.mjs';
 
 export const BELLAGIO_DRIVE_BOUNDS = [-54.0, 466.0, 121.8, 606.5];
 
-// Ways that were wrongly elevated to +7.2 m in OSM (W Bellagio Dr is ground-level; the ramps dive under it).
-const BELLAGIO_GROUND_WAYS = new Set([789702811, 25718284, 1050182643]);
+// All surface Bellagio Drive & Cosmopolitan driveway ways that OSM/solveRoadElevations wrongly lifted
+// into a floating +5.5..7.2 m viaduct. In real life W Bellagio Dr is smoothly at ground level (y = 0)
+// while the two tunnel branches dive beneath it.
+const BELLAGIO_GROUND_WAYS = new Set([
+  14293119, 25718280, 25718284, 25718286, 311030162, 311030165, 311030166,
+  374989475, 668997704, 789033146, 789702331, 789702808, 789702809, 789702811, 789702813,
+  1014282285, 1030067966, 1035078204, 1035080513, 1041357122, 1050182643, 1234768417,
+]);
+
+// Claim the 4 duplicate OSM building footprints along the Bellagio-Cosmopolitan pedestrian bridge
+// so generic buildBuildings never extrudes a dark-blue shell right through our bespoke skybridge.
+export function claimBellagioBridgeBuildings(data, ownedSet) {
+  for (const b of data.buildings) {
+    if (b.name) continue;
+    const pts = b.pts;
+    if (!pts?.length) continue;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const [x, z] of pts) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+    // Bridge span building (h ~ 7) and the three square pavilion buildings (h ~ 5)
+    if (b.h <= 9 && minX >= -56 && maxX <= 106 && minZ >= 546 && maxZ <= 620) {
+      ownedSet.add(b);
+    }
+  }
+}
 // Underground passage & ramp ways passing beneath W Bellagio Dr / hillside.
 const BELLAGIO_UNDERPASS_WAYS = new Set([374989476, 1002539039, 1002539038, 1002539040]);
 const BELLAGIO_RAMP_DOWN_WAYS = new Map([
@@ -55,7 +82,7 @@ export function bellagioWayHeights(way) {
 }
 
 export function isBellagioFlattenedBridge(way) {
-  return BELLAGIO_GROUND_WAYS.has(way.id);
+  return BELLAGIO_GROUND_WAYS.has(way.id) || BELLAGIO_UNDERPASS_WAYS.has(way.id) || BELLAGIO_RAMP_DOWN_WAYS.has(way.id);
 }
 
 // ───────────────────────── Clipper & Polyline Helpers ─────────────────────────
@@ -742,73 +769,112 @@ export function buildBellagioArchitecture() {
   const group = new THREE.Group();
   group.name = 'Bellagio Drive Architecture';
 
-  const matConcrete = new THREE.MeshStandardMaterial({ color: 0xb9b4ab, roughness: 0.88, metalness: 0.04 });
-  const matConcreteDark = new THREE.MeshStandardMaterial({ color: 0x7b7872, roughness: 0.92, metalness: 0.04 });
-  const matTunnelVoid = new THREE.MeshBasicMaterial({ color: 0x161922 });
-  const matGrass = new THREE.MeshStandardMaterial({ color: 0x8cc86b, roughness: 0.92, metalness: 0.0 });
+  const matConcrete = new THREE.MeshStandardMaterial({ color: 0xbcb7ae, roughness: 0.86, metalness: 0.04 });
+  const matConcreteDark = new THREE.MeshStandardMaterial({ color: 0x7a7772, roughness: 0.92, metalness: 0.04 });
+  const matTunnelVoid = new THREE.MeshBasicMaterial({ color: 0x11151d });
+  const matGrass = new THREE.MeshStandardMaterial({ color: 0x77b25a, roughness: 0.94, metalness: 0.0 });
+  const matTrunk = new THREE.MeshStandardMaterial({ color: 0x7c5f48, roughness: 0.92 });
+  const matCanopy = new THREE.MeshStandardMaterial({ color: 0x6ea854, roughness: 0.86 });
   const matStone = new THREE.MeshStandardMaterial({ color: 0xdfd2be, roughness: 0.78, metalness: 0.04 });
-  const matTerracotta = new THREE.MeshStandardMaterial({ color: 0xd4845e, roughness: 0.68, metalness: 0.06 });
+  const matTerracotta = new THREE.MeshStandardMaterial({ color: 0xd4845e, roughness: 0.66, metalness: 0.06 });
   const matSteel = new THREE.MeshStandardMaterial({ color: 0x565d68, roughness: 0.45, metalness: 0.55 });
   const matGlass = new THREE.MeshStandardMaterial({
     color: 0x8eb8d6, roughness: 0.16, metalness: 0.25, transparent: true, opacity: 0.58,
   });
 
-  // 1. TWO ARCHITECTURAL CONCRETE TUNNEL PORTALS (matching Apple Maps Image 2!)
-  const buildPortal = (x, z, headingRad, width = 6.2, height = 3.2) => {
+  // 1. INTEGRATED CONCRETE TUNNEL PORTALS (flush into the landscaped embankment — zero floating green caps!)
+  const buildPortal = (x, z, headingRad, width = 5.8, height = 2.65) => {
     const p = new THREE.Group();
     p.position.set(x, 0, z);
-    p.rotation.y = -headingRad; // local +X points INTO the tunnel
+    p.rotation.y = -headingRad; // local +X points INTO the underground tunnel
 
     // Dark recessed tunnel interior opening
-    const voidBox = new THREE.Mesh(new THREE.BoxGeometry(4.5, height - 0.15, width - 0.6), matTunnelVoid);
-    voidBox.position.set(2.2, (height - 0.15) / 2, 0);
+    const voidBox = new THREE.Mesh(new THREE.BoxGeometry(5.5, height - 0.1, width - 0.5), matTunnelVoid);
+    voidBox.position.set(2.7, (height - 0.1) / 2, 0);
     p.add(voidBox);
 
-    // Concrete portal headwall lintel + side jambs
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.85, width + 1.4), matConcrete);
-    lintel.position.set(0.15, height + 0.25, 0);
+    // Clean concrete portal headwall lintel + side jambs
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.55, width + 1.1), matConcrete);
+    lintel.position.set(0.15, height + 0.12, 0);
     p.add(lintel);
 
     for (const side of [-1, 1]) {
-      const jamb = new THREE.Mesh(new THREE.BoxGeometry(1.1, height + 0.65, 0.7), matConcrete);
-      jamb.position.set(0.15, (height + 0.65) / 2, side * (width / 2 + 0.35));
+      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.9, height + 0.38, 0.58), matConcrete);
+      jamb.position.set(0.15, (height + 0.38) / 2, side * (width / 2 + 0.28));
       p.add(jamb);
 
-      // Sloped concrete wingwall flaring outward along the cut bank
-      const wing = new THREE.Mesh(new THREE.BoxGeometry(4.8, height * 0.62, 0.45), matConcreteDark);
-      wing.position.set(-2.3, height * 0.31, side * (width / 2 + 0.55));
-      wing.rotation.y = side * -0.14;
+      // Tapered concrete retaining wingwall hugging the cut bank
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(4.6, height * 0.52, 0.38), matConcreteDark);
+      wing.position.set(-2.2, height * 0.26, side * (width / 2 + 0.44));
+      wing.rotation.y = side * -0.11;
       p.add(wing);
     }
 
-    // Lush green sloped grass cap over the concrete headwall
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.55, width + 2.8), matGrass);
-    cap.position.set(2.9, height + 0.85, 0);
-    p.add(cap);
+    // Sloped landscaped earth bank rising smoothly behind the headwall (ties cleanly into W Bellagio Dr)
+    const bank = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.42, width + 1.6), matGrass);
+    bank.position.set(3.4, height + 0.36, 0);
+    bank.rotation.z = -0.14;
+    p.add(bank);
 
     return p;
   };
 
-  // Portal #1: Bellagio underground valet/bus tunnel at (-8.5, 532.4), heading west
-  group.add(buildPortal(-8.5, 532.4, Math.PI - 0.15, 6.2, 3.1));
-  // Portal #2: Underpass going beneath W Bellagio Dr at (4.5, 546.1), heading southwest
-  group.add(buildPortal(4.5, 546.1, Math.PI - 0.58, 6.2, 2.9));
+  // Portal #1: Bellagio underground valet/bus tunnel at (-7.8, 532.3)
+  group.add(buildPortal(-7.8, 532.3, Math.PI - 0.16, 5.8, 2.65));
+  // Portal #2: Underpass passing beneath W Bellagio Dr at (4.8, 546.0)
+  group.add(buildPortal(4.8, 546.0, Math.PI - 0.56, 5.8, 2.55));
 
-  // Softly sculpted lush green landscaped hillside mounds behind/over the portals (Apple Maps Image 2!)
-  const addBerm = (x, z, rx, rz, h) => {
-    const geo = new THREE.SphereGeometry(1, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  // Sculpted low-profile polygonal landscaped embankment prisms (matching exact Apple Maps islands!)
+  const addTurfSlope = (ring, yBase, yTop) => {
+    const shape = new THREE.Shape();
+    ring.forEach(([px, pz], idx) => {
+      if (idx === 0) shape.moveTo(px, -pz);
+      else shape.lineTo(px, -pz);
+    });
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth: yTop - yBase, bevelEnabled: true, bevelThickness: 0.45, bevelSize: 0.65, bevelSegments: 3,
+    });
+    geo.rotateX(-Math.PI / 2);
     const mesh = new THREE.Mesh(geo, matGrass);
-    mesh.scale.set(rx, h, rz);
-    mesh.position.set(x, 0.08, z);
+    mesh.position.y = yBase;
     group.add(mesh);
   };
-  addBerm(-8.0, 514.0, 15.0, 11.0, 2.8);
-  addBerm(7.5, 522.0, 10.5, 6.5, 2.1);
-  addBerm(12.5, 537.5, 11.0, 4.2, 1.45);
-  addBerm(32.0, 558.5, 14.0, 7.5, 1.3);
+  // Landscaped hillside behind Portal #1 (between Lakeside Bellagio Dr & upper W Bellagio Dr)
+  addTurfSlope([
+    [-34.0, 505.0], [-14.0, 486.0], [8.0, 514.0], [16.0, 524.5], [-10.0, 528.0], [-22.0, 522.0],
+  ], 0.12, 1.55);
+  // Landscaped island between Portal #1 and Portal #2
+  addTurfSlope([
+    [-2.0, 536.0], [21.5, 534.5], [26.0, 537.5], [19.5, 539.4], [1.0, 541.0],
+  ], 0.12, 0.95);
+  // Landscaped teardrop island south of Portal #2 (between Tunnel #2 and W Bellagio Dr)
+  addTurfSlope([
+    [16.0, 551.8], [46.0, 550.2], [50.0, 561.5], [44.5, 569.2], [23.5, 563.5],
+  ], 0.12, 0.85);
 
-  // 2. BESPOKE BELLAGIO–COSMOPOLITAN PEDESTRIAN SKYBRIDGE (matching Apple Maps Image 1!)
-  // Spans (-52.9, 551.4) -> (32.9, 611.5) -> (97.3, 611.8) at y = 6.8 m with warm terracotta roofs & pavilions!
+  // Stylized Apple Maps rounded trees placed strictly on the landscaped islands & medians (zero on asphalt!)
+  const treeCoords = [
+    // Center median east of crossover
+    [72, 564, 1.0], [82, 566, 1.05], [93, 567, 0.95], [104, 568, 1.0],
+    // Teardrop island south of Portal #2
+    [28, 558, 1.05], [36, 556, 1.15], [43, 561, 1.0], [34, 563, 0.95],
+    // Island between Portal #1 and Portal #2
+    [6, 538, 0.95], [14, 537, 1.05], [21, 537, 0.9],
+    // Hillside berm behind Portal #1
+    [-16, 512, 1.2], [-6, 506, 1.15], [3, 518, 1.1], [-18, 520, 1.0], [-5, 522, 1.05],
+  ];
+  for (const [tx, tz, sc] of treeCoords) {
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.24 * sc, 0.34 * sc, 2.8 * sc, 7), matTrunk);
+    trunk.position.set(tx, 1.4 * sc + 0.5, tz);
+    group.add(trunk);
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(2.15 * sc, 12, 10), matCanopy);
+    crown.scale.set(1, 1.28, 1);
+    crown.position.set(tx, 4.1 * sc + 0.5, tz);
+    group.add(crown);
+  }
+
+  // 2. BESPOKE BELLAGIO–COSMOPOLITAN PEDESTRIAN SKYBRIDGE (replaces OSM duplicate buildings cleanly!)
   const deckY = 6.8;
   const addBridgeSpan = (p0, p1, width = 4.6) => {
     const dx = p1[0] - p0[0], dz = p1[1] - p0[1];
@@ -818,11 +884,9 @@ export function buildBellagioArchitecture() {
     span.position.set((p0[0] + p1[0]) / 2, deckY, (p0[1] + p1[1]) / 2);
     span.rotation.y = -angle;
 
-    // Warm sandstone deck slab & underside soffit
     const deck = new THREE.Mesh(new THREE.BoxGeometry(len, 0.72, width), matStone);
     span.add(deck);
 
-    // Sleek glass curtain walls & steel mullions on both sides
     for (const side of [-1, 1]) {
       const glassWall = new THREE.Mesh(new THREE.BoxGeometry(len - 0.6, 2.4, 0.14), matGlass);
       glassWall.position.set(0, 1.55, side * (width / 2 - 0.12));
@@ -833,7 +897,6 @@ export function buildBellagioArchitecture() {
       span.add(rail);
     }
 
-    // Warm terracotta/coral pitched roof along the full span
     const roofL = new THREE.Mesh(new THREE.BoxGeometry(len + 0.4, 0.28, width * 0.62), matTerracotta);
     roofL.position.set(0, 3.25, -width * 0.26);
     roofL.rotation.x = 0.28;
@@ -853,34 +916,32 @@ export function buildBellagioArchitecture() {
   addBridgeSpan(b0, b1, 4.6);
   addBridgeSpan(b1, b2, 4.4);
 
-  // Iconic square terracotta hipped-roof elevator/escalator pavilions (placed strictly off asphalt!)
+  // Iconic square terracotta hipped-roof pavilions at exact OSM coordinates (strictly clear of asphalt!)
   const addPavilion = (x, z, rotY = 0) => {
     const pav = new THREE.Group();
     pav.position.set(x, 0, z);
     pav.rotation.y = rotY;
 
-    // Sandstone elevator/support tower shaft
-    const shaft = new THREE.Mesh(new THREE.BoxGeometry(6.8, deckY + 3.2, 6.8), matStone);
+    const shaft = new THREE.Mesh(new THREE.BoxGeometry(7.2, deckY + 3.2, 7.2), matStone);
     shaft.position.y = (deckY + 3.2) / 2;
     pav.add(shaft);
 
-    // Dark recessed upper windows
-    const band = new THREE.Mesh(new THREE.BoxGeometry(7.0, 2.1, 7.0), matGlass);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(7.4, 2.1, 7.4), matGlass);
     band.position.y = deckY + 1.55;
     pav.add(band);
 
-    // Iconic pyramidal/hipped terracotta roof
-    const hip = new THREE.Mesh(new THREE.ConeGeometry(5.6, 2.6, 4), matTerracotta);
-    hip.position.y = deckY + 4.45;
+    const hip = new THREE.Mesh(new THREE.ConeGeometry(5.9, 2.7, 4), matTerracotta);
+    hip.position.y = deckY + 4.5;
     hip.rotation.y = Math.PI / 4;
     pav.add(hip);
 
     group.add(pav);
   };
 
-  // Two pavilions matching Apple Maps Image 1 (west Bellagio side & Cosmopolitan corner, both clear of roads!)
-  addPavilion(-34.0, 564.6, -Math.atan2(b1[1] - b0[1], b1[0] - b0[0]));
-  addPavilion(32.9, 611.5, 0);
+  const spanAngle = -Math.atan2(b1[1] - b0[1], b1[0] - b0[0]);
+  addPavilion(-27.5, 570.0, spanAngle);
+  addPavilion(2.0, 590.5, spanAngle);
+  addPavilion(32.8, 610.5, 0);
   addPavilion(97.3, 611.8, 0);
 
   return group;

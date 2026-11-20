@@ -190,15 +190,38 @@ window.setupMapChrome = function({ getMap, getLayer }) {
   document.querySelectorAll('.theme-btn').forEach(button => button.addEventListener('click', () => setTheme(button.dataset.theme)));
   const nextTheme = () => ['day', 'golden', 'night'][(['day', 'golden', 'night'].indexOf(currentTheme) + 1) % 3];
   byId('theme-cycle').addEventListener('click', () => setTheme(nextTheme()));
-  for (const [id, method] of [['toggle-streets-btn', 'setStreetsVisible'], ['toggle-labels-btn', 'setLabelsVisible']]) {
-    byId(id).addEventListener('click', () => {
-      const button = byId(id), selected = !button.classList.contains('active');
-      button.classList.toggle('active', selected);
-      button.setAttribute('aria-pressed', String(selected));
-      button.lastElementChild.textContent = selected ? 'ON' : 'OFF';
-      getLayer()?.[method](selected);
-    });
-  }
+  const labelsQuickBtn = byId('labels-quick-toggle');
+  const setLabelsState = (selected) => {
+    const panelBtn = byId('toggle-labels-btn');
+    if (panelBtn) {
+      panelBtn.classList.toggle('active', selected);
+      panelBtn.setAttribute('aria-pressed', String(selected));
+      panelBtn.lastElementChild.textContent = selected ? 'ON' : 'OFF';
+    }
+    if (labelsQuickBtn) {
+      labelsQuickBtn.classList.toggle('active', selected);
+      labelsQuickBtn.setAttribute('aria-pressed', String(selected));
+      labelsQuickBtn.title = selected ? 'Hide place labels (B)' : 'Show place labels (B)';
+    }
+    getLayer()?.setLabelsVisible(selected);
+    const labelsEl = byId('labels');
+    if (labelsEl) labelsEl.classList.toggle('hidden', !selected);
+    announce(selected ? 'Place labels shown' : 'Place labels hidden');
+  };
+  labelsQuickBtn?.addEventListener('click', () => {
+    setLabelsState(!labelsQuickBtn.classList.contains('active'));
+  });
+  byId('toggle-labels-btn')?.addEventListener('click', () => {
+    const panelBtn = byId('toggle-labels-btn');
+    setLabelsState(!panelBtn.classList.contains('active'));
+  });
+  byId('toggle-streets-btn')?.addEventListener('click', () => {
+    const button = byId('toggle-streets-btn'), selected = !button.classList.contains('active');
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-pressed', String(selected));
+    button.lastElementChild.textContent = selected ? 'ON' : 'OFF';
+    getLayer()?.setStreetsVisible(selected);
+  });
 
   const panel = byId('av-panel'), panelBody = byId('av-panel-body'), collapse = byId('av-panel-toggle');
   collapse.addEventListener('click', () => {
@@ -301,11 +324,18 @@ window.setupMapChrome = function({ getMap, getLayer }) {
     });
   }
 
-  // Interactive Apple Maps Compass: drag left/right to rotate bearing smoothly, click to snap North!
+  // Seamless Desktop Compass Orbit Control:
+  // 1) Press & hold ‹ / › for butter-smooth 60 FPS continuous orbiting (single click steps 30°)
+  // 2) Drag the compass dial left/right with smooth momentum glide on release
+  // 3) Scroll wheel / trackpad scroll over the compass pill to rotate effortlessly
+  // 4) Single click the center N dial to snap cleanly back to North
+  const compassPill = byId('compass-orbit-pill');
   const compassBtn = byId('cam-north');
   const compassNeedle = byId('compass-needle');
   const compassCardinal = byId('compass-cardinal');
   const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  let glideRaf = 0;
+  const cancelGlide = () => { if (glideRaf) { cancelAnimationFrame(glideRaf); glideRaf = 0; } };
   function syncCompassUI() {
     const map = getMap();
     if (!map) return;
@@ -316,39 +346,137 @@ window.setupMapChrome = function({ getMap, getLayer }) {
       compassCardinal.textContent = CARDINALS[Math.round(norm / 45) % 8];
     }
   }
+  // Hold-to-orbit + click-to-step buttons (‹ / ›)
+  const bindOrbitStep = (buttonId, dir) => {
+    const btn = byId(buttonId);
+    if (!btn) return;
+    let holdRaf = 0, holdTimer = 0, holding = false, activePointer = null, lastTs = 0;
+    const stopHold = (triggerClick) => {
+      clearTimeout(holdTimer);
+      if (holdRaf) { cancelAnimationFrame(holdRaf); holdRaf = 0; }
+      btn.classList.remove('holding');
+      compassPill?.classList.remove('orbiting');
+      const wasHold = holding;
+      holding = false;
+      activePointer = null;
+      if (triggerClick && !wasHold) {
+        const map = getMap();
+        if (!map) return;
+        cancelGlide();
+        getLayer()?.stopFollowing?.();
+        map.easeTo({ bearing: map.getBearing() + dir * 30, duration: reducedMotion.matches ? 0 : 280 });
+      }
+    };
+    btn.addEventListener('pointerdown', event => {
+      if (event.button !== 0 && event.pointerType === 'mouse') return;
+      event.preventDefault();
+      cancelGlide();
+      activePointer = event.pointerId;
+      btn.setPointerCapture?.(event.pointerId);
+      btn.classList.add('holding');
+      holdTimer = setTimeout(() => {
+        holding = true;
+        compassPill?.classList.add('orbiting');
+        getLayer()?.stopFollowing?.();
+        lastTs = performance.now();
+        const step = (now) => {
+          if (!holding) return;
+          const dt = Math.min(0.05, (now - lastTs) / 1000);
+          lastTs = now;
+          const map = getMap();
+          if (map) {
+            map.setBearing(map.getBearing() + dir * 78 * dt);
+            syncCompassUI();
+          }
+          holdRaf = requestAnimationFrame(step);
+        };
+        holdRaf = requestAnimationFrame(step);
+      }, 150);
+    });
+    btn.addEventListener('pointerup', event => { if (event.pointerId === activePointer) stopHold(true); });
+    btn.addEventListener('pointercancel', event => { if (event.pointerId === activePointer) stopHold(false); });
+    btn.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        const map = getMap();
+        if (map) map.easeTo({ bearing: map.getBearing() + dir * 30, duration: reducedMotion.matches ? 0 : 260 });
+      }
+    });
+  };
+  bindOrbitStep('compass-orbit-left', -1);
+  bindOrbitStep('compass-orbit-right', 1);
+
+  // Smooth wheel / trackpad scroll over the compass pill rotates bearing directly
+  compassPill?.addEventListener('wheel', event => {
+    const map = getMap();
+    if (!map) return;
+    event.preventDefault();
+    cancelGlide();
+    getLayer()?.stopFollowing?.();
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    map.setBearing(map.getBearing() + delta * 0.22);
+    syncCompassUI();
+  }, { passive: false });
+
+  // Drag the center compass dial left/right (with smooth inertia glide on release), or click for North
   {
     let compassDrag = null;
     compassBtn.addEventListener('pointerdown', event => {
       const map = getMap();
       if (!map) return;
-      compassDrag = { id: event.pointerId, startX: event.clientX, startBearing: map.getBearing(), moved: false };
+      cancelGlide();
+      compassDrag = {
+        id: event.pointerId, startX: event.clientX, lastX: event.clientX, lastTime: performance.now(),
+        startBearing: map.getBearing(), velocity: 0, moved: false,
+      };
       compassBtn.setPointerCapture?.(event.pointerId);
     });
     compassBtn.addEventListener('pointermove', event => {
       if (!compassDrag || compassDrag.id !== event.pointerId) return;
-      const dx = event.clientX - compassDrag.startX;
-      if (Math.abs(dx) > 4) {
+      const now = performance.now();
+      const dxTotal = event.clientX - compassDrag.startX;
+      if (Math.abs(dxTotal) > 3) {
         compassDrag.moved = true;
         compassBtn.classList.add('dragging');
+        compassPill?.classList.add('orbiting');
       }
       if (!compassDrag.moved) return;
+      const dt = Math.max(4, now - compassDrag.lastTime);
+      const stepDeg = (event.clientX - compassDrag.lastX) * 0.85;
+      compassDrag.velocity = compassDrag.velocity * 0.55 + (stepDeg / dt) * 16.67 * 0.45;
+      compassDrag.lastX = event.clientX;
+      compassDrag.lastTime = now;
       getLayer()?.stopFollowing?.();
-      getMap()?.setBearing(compassDrag.startBearing + dx * 0.72);
+      getMap()?.setBearing(compassDrag.startBearing + dxTotal * 0.85);
       syncCompassUI();
     });
     const endCompass = event => {
       if (!compassDrag || compassDrag.id !== event.pointerId) return;
-      const wasDrag = compassDrag.moved;
+      const { moved, velocity } = compassDrag;
       compassDrag = null;
       compassBtn.classList.remove('dragging');
-      if (!wasDrag) getMap()?.resetNorth(moveOptions());
+      compassPill?.classList.remove('orbiting');
+      if (!moved) {
+        getMap()?.resetNorth(moveOptions());
+      } else if (!reducedMotion.matches && Math.abs(velocity) > 0.35) {
+        let vel = Math.max(-14, Math.min(14, velocity));
+        const glide = () => {
+          const map = getMap();
+          if (!map || Math.abs(vel) < 0.08) { glideRaf = 0; return; }
+          map.setBearing(map.getBearing() + vel);
+          syncCompassUI();
+          vel *= 0.90;
+          glideRaf = requestAnimationFrame(glide);
+        };
+        glideRaf = requestAnimationFrame(glide);
+      }
     };
     compassBtn.addEventListener('pointerup', endCompass);
     compassBtn.addEventListener('pointercancel', endCompass);
-    // Keyboard activation (Enter/Space) still resets north
     compassBtn.addEventListener('keydown', event => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
+        cancelGlide();
         getMap()?.resetNorth(moveOptions());
       }
     });
@@ -379,10 +507,21 @@ window.setupMapChrome = function({ getMap, getLayer }) {
     if (event.altKey || event.ctrlKey || event.metaKey || /INPUT|SELECT|TEXTAREA/.test(event.target.tagName) || event.target.isContentEditable) return;
     switch (event.key.toLowerCase()) {
       case 't': setTheme(nextTheme()); break;
-      case 'n': getMap()?.resetNorth(moveOptions()); break;
+      case 'n': cancelGlide(); getMap()?.resetNorth(moveOptions()); break;
+      case 'q': {
+        const map = getMap();
+        if (map) { cancelGlide(); getLayer()?.stopFollowing?.(); map.easeTo({ bearing: map.getBearing() - 30, duration: reducedMotion.matches ? 0 : 240 }); }
+        break;
+      }
+      case 'e': {
+        const map = getMap();
+        if (map) { cancelGlide(); getLayer()?.stopFollowing?.(); map.easeTo({ bearing: map.getBearing() + 30, duration: reducedMotion.matches ? 0 : 240 }); }
+        break;
+      }
       case 'd': byId(getMap()?.getPitch() > 10 ? 'mode-lanes-btn' : 'mode-3d-btn').click(); break;
       case 'p': placesButton.click(); break;
       case 'l': layersButton.click(); break;
+      case 'b': labelsQuickBtn?.click(); break;
       case 'h': {
         closePanels();
         const hidden = document.body.classList.toggle('hide-chrome');

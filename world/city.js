@@ -8,7 +8,7 @@ import { buildCityLights } from '../landmarks/vendor/map/citylights.js';
 import { buildStreetscape } from '../landmarks/vendor/map/streetscape.js';
 import { buildSkybridges } from '../landmarks/vendor/map/skybridges.js';
 import { buildStreetNames } from '../landmarks/vendor/map/names.js';
-import { buildBuildings, makeHeightIndex } from '../landmarks/vendor/map/buildings.js';
+import { buildBuildings, heroOwned, makeHeightIndex } from '../landmarks/vendor/map/buildings.js';
 import { buildLandmarks } from '../landmarks/vendor/landmarks/landmarks.js';
 import { buildResorts } from '../landmarks/vendor/landmarks/resorts.js';
 import { buildArenas } from '../landmarks/vendor/landmarks/arenas.js';
@@ -25,7 +25,7 @@ import { buildLuxor } from './luxor.js';
 import { buildMandalayBay } from './mandalay-bay.js';
 import { stripModels } from './landmark-models.js';
 import { isRialtoBridge } from './venetian-palazzo.js';
-import { buildBellagioArchitecture, isBellagioSkybridgeWalk } from './bellagio-drive-roads.mjs';
+import { buildBellagioArchitecture, claimBellagioBridgeBuildings, isBellagioSkybridgeWalk } from './bellagio-drive-roads.mjs';
 
 const THREE = window.THREE;
 
@@ -67,6 +67,7 @@ export async function buildCity(data, engine) {
     buildings.add(buildRio(specialData, graph), buildNorthStrip(specialData, graph, engine));
     buildings.add(buildLuxor(specialData, graph), buildMandalayBay(specialData, graph));
     for (const item of stripModels) buildings.add(item.build(specialData, undefined, engine, graph));
+    claimBellagioBridgeBuildings(specialData, heroOwned);
   });
   buildings.add(stage('buildings', () => buildBuildings(data, valetPlan)).group);
   engine.reveal?.('skyline');

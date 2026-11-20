@@ -8,7 +8,7 @@ function smoothVisRef(e) {
     let cached = visRefCache.get(e);
     if (cached) return cached;
     const ref = e.ref, pts = ref.pts, ys = ref.y, n = pts.length;
-    if (n < 3 || e.southStrip || e.joinAcross || e.rampJoin) {
+    if (n < 3 || e.southStrip || e.stripCorridor || e.joinAcross || e.rampJoin) {
         visRefCache.set(e, ref);
         return ref;
     }
@@ -88,6 +88,7 @@ import { inSouthStrip, isSouthStripMedian, isSouthStripMedianOpening, isSouthStr
 import { finishSouthStripPavement } from '../../../world/south-strip-pavement.mjs';
 import { finishParisDrivePavement } from '../../../world/paris-drive-roads.mjs';
 import { finishBellagioDrivePavement } from '../../../world/bellagio-drive-roads.mjs';
+import { finishStripCorridorPavement, inFlamingoJunctionCore } from '../../../world/strip-corridor-pavement.mjs';
 const ELEV = 0.4;
 const WALK_HEIGHT = 0.11;
 const CURB_HEIGHT = 0.17;
@@ -530,6 +531,91 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             cur = cur.next !== undefined ? g.edges[cur.next] : undefined;
         }
     }
+    // Pre-compute sloped elevated Y-fork & ramp merge gore fills BEFORE emitting deck walls
+    // so (a) hollow triangular gore pockets and overhanging wide-deck corners are cleanly bridged,
+    // and (b) deckWall suppresses interior parapet walls facing into a filled gore.
+    const goreFills = [];
+    const pointInHull = (x, z, hull)=>{
+        for (let i = 0; i < hull.length; i++){
+            const a = hull[i], b = hull[(i + 1) % hull.length];
+            if ((b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]) < -0.15) return false;
+        }
+        return true;
+    };
+    for (const [id, node] of g.nodes){
+        if (node.y <= ELEV) continue;
+        const connected = [...node.inEdges, ...node.outEdges];
+        if (connected.length < 3) continue;
+        const elevEdges = connected.map(ei => g.edges[ei]).filter(e => !e.internal && isAir(e.ref));
+        if (elevEdges.length < 3) continue;
+        const samples = [];
+        let freewayOnly = true, minY = Infinity, maxY = -Infinity;
+        for (const e of elevEdges){
+            if (surfaceFor(e) !== freeway) freewayOnly = false;
+            const atStart = e.fromNode === id;
+            const farNode = g.nodes.get(atStart ? e.toNode : e.fromNode);
+            const [l0, l1] = extents(e);
+            const outerAdd = l1 - e.lanes.length * e.laneWidth;
+            const isShortLink = (e.cls === 'ramp' || e.cls === 'motorway' || /_link$/.test(e.way.hw)) &&
+                e.ref.length <= 42 && farNode && farNode.y > ELEV && Math.abs(farNode.y - node.y) < 2.2;
+            const reach = isShortLink ? e.ref.length : Math.min(e.ref.length * 0.4, e.cls === 'motorway' || e.cls === 'ramp' ? 16 : 10);
+            const stops = isShortLink && e.ref.length > 14 ? [0, e.ref.length * 0.5, reach] : [0, reach];
+            for (const d of stops){
+                const st = atStart ? d : e.ref.length - d;
+                const q = sample(e.ref, st), nx = -q.hz, nz = q.hx;
+                if (q.y <= ELEV) continue;
+                const lo = boundaryAt(e, 0, st) + l0;
+                const hi = boundaryAt(e, e.lanes.length, st) + outerAdd;
+                samples.push([q.x + nx * lo, q.z + nz * lo, q.y], [q.x + nx * hi, q.z + nz * hi, q.y]);
+                if (q.y < minY) minY = q.y;
+                if (q.y > maxY) maxY = q.y;
+            }
+        }
+        if (samples.length < 4 || maxY - minY > 2.6) continue;
+        const hull = convexHull(samples.map(p => [p[0], p[1]]));
+        if (hull.length < 3) continue;
+        const span = Math.max(...hull.map(p => Math.hypot(p[0] - node.x, p[1] - node.z)));
+        if (span > 44) continue;
+        // Fit a sloped plane y(x,z) across rim samples so inclined ramp forks bridge with zero cliff steps.
+        let sxx = 0, sxz = 0, szz = 0, sx = 0, sz = 0, sxy = 0, szy = 0, sy = 0;
+        const N = samples.length;
+        for (const [px, pz, py] of samples){
+            const dx = px - node.x, dz = pz - node.z;
+            sxx += dx * dx; sxz += dx * dz; szz += dz * dz; sx += dx; sz += dz;
+            sxy += dx * py; szy += dz * py; sy += py;
+        }
+        const mx = sx / N, mz = sz / N, my = sy / N;
+        const cxx = sxx - N * mx * mx, cxz = sxz - N * mx * mz, czz = szz - N * mz * mz;
+        const cxy = sxy - N * mx * my, czy = szy - N * mz * my;
+        const det = cxx * czz - cxz * cxz;
+        const a = Math.abs(det) > 1e-4 ? (cxy * czz - czy * cxz) / det : 0;
+        const b = Math.abs(det) > 1e-4 ? (czy * cxx - cxy * cxz) / det : 0;
+        const yAt = (px, pz) => Math.max(minY - 0.1, Math.min(maxY + 0.1, my + a * (px - node.x - mx) + b * (pz - node.z - mz)));
+        const soup = (freewayOnly ? freewayDeckTop : deckTop).at(node.x, node.z);
+        const topIdx = hull.map(([px, pz]) => soup.vert(px, Math.max(0, yAt(px, pz) - 0.025), pz));
+        for (let k = 1; k < topIdx.length - 1; k++) soup.tri(topIdx[0], topIdx[k + 1], topIdx[k]);
+        const underIdx = hull.map(([px, pz]) => {
+            const y = yAt(px, pz);
+            const slab = Math.min(BRIDGE_SLAB_DEPTH, Math.max(0.35, y * 0.48));
+            return deckSide.vert(px, Math.max(0, y - slab), pz, [0, -1, 0]);
+        });
+        for (let k = 1; k < underIdx.length - 1; k++) deckSide.tri(underIdx[0], underIdx[k], underIdx[k + 1]);
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        for (const [px, pz] of hull){
+            if (px < minX) minX = px; if (px > maxX) maxX = px;
+            if (pz < minZ) minZ = pz; if (pz > maxZ) maxZ = pz;
+        }
+        goreFills.push({ hull, yAt, minX, maxX, minZ, maxZ });
+    }
+    const onDeckOrGore = (x, z, y, pad, skipWay, skipEdge)=>{
+        if (onElevatedDeck(x, z, y, pad, skipWay, skipEdge)) return true;
+        for (let i = 0; i < goreFills.length; i++){
+            const gf = goreFills[i];
+            if (x < gf.minX || x > gf.maxX || z < gf.minZ || z > gf.maxZ) continue;
+            if (Math.abs(y - gf.yAt(x, z)) < 1.25 && pointInHull(x, z, gf.hull)) return true;
+        }
+        return false;
+    };
     let sliceStart = performance.now();
     for (const e of g.edges){
         if (pause && performance.now() - sliceStart > 28) {
@@ -558,10 +644,10 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             deckUnderside(deckSide, leftRoad, rightDeck);
             if (e.twin === undefined) {
                 for (const [from, to] of paintSpans(0, leftRoad.length, bridgePlan.joined.get(e.id) ?? [])) {
-                    deckWall(deckSide, deckCoping, slice(leftRoad.pts, from, to, leftRoad.y), -1, e, onElevatedDeck, blocksSupport);
+                    deckWall(deckSide, deckCoping, slice(leftRoad.pts, from, to, leftRoad.y), -1, e, onDeckOrGore, blocksSupport);
                 }
             }
-            deckWall(deckSide, deckCoping, rightDeck, 1, e, onElevatedDeck, blocksSupport);
+            deckWall(deckSide, deckCoping, rightDeck, 1, e, onDeckOrGore, blocksSupport);
             if (e.oneway || e.twin === undefined || e.id < e.twin) {
                 pillarsAlong(pillars, e, leftRoad, rightDeck, blocksSupport);
             }
@@ -708,7 +794,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                     while(end < pts.length && crowns[end] &&
                         Math.min(crowns[end - 1].to, crowns[end].to) - Math.max(crowns[end - 1].from, crowns[end].from) > 0.25) end++;
                     const last = end - 1, len = dists[last] - dists[start];
-                    if (len >= 2){
+                    if (len >= 2 && !inFlamingoJunctionCore(pts[(start + last) >> 1][0], pts[(start + last) >> 1][1])){
                         // Smooth minor local sampling jitter along continuous median runs without blurring nose tapers.
                         for (let pass = 0; pass < 2; pass++) {
                             const orig = crowns.slice(start, end).map(c=>({ ...c }));
@@ -720,6 +806,8 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                             }
                         }
                         const maxWidth = Math.max(...crowns.slice(start, end).map(({from, to})=>to - from));
+                        // Skip wide oval gore blobs on elevated freeway decks (they look like floating pads over lanes).
+                        if (air && (maxWidth > 4.5 || len < 14)) { start = last; continue; }
                         const radius = Math.min(len * 0.4, Math.max(2.2, maxWidth * 0.58));
                         const taperStart = dists[start] > 0.1 || e.prev === undefined;
                         const taperEnd = dists[last] < e.ref.length - 0.1 || e.next === undefined;
@@ -827,8 +915,8 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 const only = (t, m)=>!!t && t.length === 1 && t[0] === m;
                 const turnDiv = only(e.turns[i - 1], 'left') && !only(e.turns[i], 'left') || only(e.turns[i], 'right') && !only(e.turns[i - 1], 'right');
                 const stripTail = !isLinkOrRamp && intersectionAt(e.toNode)?.control === 'signal' && e.cls === 'arterial' ? Math.min(18, Math.max(0, (a1 - a0) * 0.42)) : 0;
-                const longPocket = turnDiv && !e.southStrip;
-                const solidTail = turnDiv && e.southStrip ? Math.max(stripTail, 24) : stripTail;
+                const longPocket = turnDiv && !e.southStrip && !e.stripCorridor;
+                const solidTail = turnDiv && (e.southStrip || e.stripCorridor) ? Math.max(stripTail, 24) : stripTail;
                 const dashEnd = longPocket ? a0 : Math.max(a0, a1 - solidTail);
                 // Crisp Apple Maps dashes along Strip approaches, transitioning to solid pocket/stop-bar channelization.
                 for (const [d0, d1] of dashRuns(a0, dashEnd, 2.4, 4.6, dashStart.get(e.id) ?? 0)){
@@ -1498,6 +1586,8 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
     }
     await finishSouthStripPavement({ major, asphalt, service, aisle, slipPavement, sidewalk, concreteMedians,
         medians, medianPaving, medianPlanting, frontagePlanting, curb, paint, paintDim, paintYellow, reviewedAisles, parkingBase }, pause);
+    await finishStripCorridorPavement({ major, asphalt, service, aisle, slipPavement, sidewalk, concreteMedians,
+        medians, medianPaving, medianPlanting, frontagePlanting, curb, paint, paintDim, paintYellow, reviewedAisles, parkingBase }, pause);
     finishParisDrivePavement({ major, asphalt, service, slipPavement, sidewalk, concreteMedians,
         medians, medianPaving, medianPlanting, frontagePlanting, curb, curbFaces, paint, paintDim, paintYellow });
     finishBellagioDrivePavement({ major, asphalt, service, slipPavement, sidewalk, concreteMedians,
@@ -1538,29 +1628,36 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         corridor: STRIP_PAVEMENT,
         deckTint: 'bridgeRoad',
         depthWrite: true,
-        polygonOffset: -1
+        polygonOffset: 0
     });
     const freewayDeckMat = surfaceMaterial('freeway', {
-        grain: 0.13, weathering: 0.08, deckTint: 'bridgeRoad', depthWrite: true, polygonOffset: -1
+        grain: 0.13, weathering: 0.08, deckTint: 'bridgeRoad', depthWrite: true, polygonOffset: -0.5
     });
+    const deckWalkMat = surfaceMaterial('sidewalk', { grain: 0.22, weathering: 0.04, polygonOffset: -2 });
+    const deckCurbMat = surfaceMaterial('curb', { grain: 0, weathering: 0, polygonOffset: -2.5 });
+    const deckFaceMat = surfaceMaterial('curb', { grain: 0, weathering: 0, tone: 0.59, polygonOffset: -2.5 });
     const bridgeDecks = [...deckTop.meshes(deckMat, 'deck', ORDER.solid),
         ...freewayDeckTop.meshes(freewayDeckMat, 'freeway-deck', ORDER.solid)];
     add(bridgeDecks);
-    add(deckMedianPaving.meshes(walkMat, 'deck-median-paving', ORDER.solid + 0.1));
-    add(deckWalk.meshes(walkMat, 'deck-sidewalk', ORDER.solid + 0.2));
-    add(deckCurbFaces.meshes(faceMat, 'deck-curb-faces', ORDER.solid + 0.3));
-    add(deckCurb.meshes(curbMat, 'deck-curb', ORDER.solid + 0.4));
+    add(deckMedianPaving.meshes(deckWalkMat, 'deck-median-paving', ORDER.solid + 0.1));
+    add(deckWalk.meshes(deckWalkMat, 'deck-sidewalk', ORDER.solid + 0.2));
+    add(deckCurbFaces.meshes(deckFaceMat, 'deck-curb-faces', ORDER.solid + 0.3));
+    add(deckCurb.meshes(deckCurbMat, 'deck-curb', ORDER.solid + 0.4));
     const deckPaintMat = surfaceMaterial('paint', {
-        depthWrite: true,
-        polygonOffset: -3
+        depthWrite: false,
+        polygonOffset: -4
     });
     add(deckPaint.meshes(deckPaintMat, 'deck-paint', ORDER.solid + 1));
     const deckPaintYellowMat = surfaceMaterial('paintYellow', {
-        depthWrite: true,
-        polygonOffset: -3
+        depthWrite: false,
+        polygonOffset: -4
     });
     add(deckPaintYellow.meshes(deckPaintYellowMat, 'deck-paint-yellow', ORDER.solid + 1));
-    const side = new THREE.Mesh(deckSide.geometry(), litMaterial('bridgeSide'));
+    const sideMat = litMaterial('bridgeSide');
+    sideMat.polygonOffset = true;
+    sideMat.polygonOffsetFactor = 2.0;
+    sideMat.polygonOffsetUnits = 2.5;
+    const side = new THREE.Mesh(deckSide.geometry(), sideMat);
     side.name = 'deck-sides';
     const coping = new THREE.Mesh(deckCoping.geometry(), litMaterial('freewayEdge'));
     coping.name = 'deck-parapets';
@@ -1626,7 +1723,11 @@ function deckWall(s, coping, line, sign, e, onElevDeck, blocksSupport) {
         const top = (p, y, inset)=>coping.vert(p.x - p.nx * inset, y + 0.005, p.z - p.nz * inset, [0, 1, 0]);
         for (let j = 0; j < count; j++) {
             const p = at(j / count), q = at((j + 1) / count), m = at((j + 0.5) / count);
-            if ([0.75, 1.35, 2.0].some(d=>onElevDeck(m.x + nx * d, m.z + nz * d, m.y, 0.9, undefined, e.id))) continue;
+            if ([0.55, 1.4, 2.5, 3.8, 5.2].some(d=>
+                onElevDeck(m.x + nx * d, m.z + nz * d, m.y, 1.05, undefined, e.id) ||
+                onElevDeck(p.x + nx * d, p.z + nz * d, p.y, 0.9, undefined, e.id) ||
+                onElevDeck(q.x + nx * d, q.z + nz * d, q.y, 0.9, undefined, e.id)
+            )) continue;
             const bottom = (v)=>{
                 const slab = Math.min(BRIDGE_SLAB_DEPTH, Math.max(0.32, v.y * 0.48));
                 const overRoad = blocksSupport(v.x + nx * 0.8, v.z + nz * 0.8, 0, Math.max(0, v.y - 0.5), 2.2, e);

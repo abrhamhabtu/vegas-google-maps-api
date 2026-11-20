@@ -1468,38 +1468,11 @@ function buildStripResorts(data, engine) {
         glowK: 0.12
     });
     // Caesars towers, arrival and fountains are dressed in world/caesars-palace.js.
+    // Legacy procedural colonnade/twin-domes removed so Via del Nord & Caesars entry roads stay 100% clear.
     const aug = tower(/^palace tower$/i);
     const caes = tower(/^caesars palace hotel and casino$/i) ?? aug;
     if (caes) {
         const f = frontFrame(data, centroid(caes.ring), 54);
-        block(f, 0, 0, 0, 92, 0.4, 16, stone);
-        for(let x = -42; x <= 42; x += 6){
-            column(f, x, 6, 13, 0.75, white);
-            column(f, x, 13, 13, 0.75, white);
-        }
-        block(f, 0, 14.8, 6, 88, 1.3, 2.4, white);
-        block(f, 0, 14.8, 13, 88, 1.3, 2.4, white);
-        block(f, 0, 16.1, 9.5, 88, 0.6, 10, white);
-        const dome = sheen('#5d9a8c', {
-            refl: 0.3,
-            spec: 0.8
-        });
-        for (const sx of [
-            -50,
-            50
-        ]){
-            for(let k = 0; k < 8; k++){
-                const a = k / 8 * Math.PI * 2;
-                column(f, sx + Math.cos(a) * 6, 9 + Math.sin(a) * 6, 11, 0.55, white);
-            }
-            const ring = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 1.2, 20), white);
-            ring.position.set(sx, 13, 9);
-            f.add(ring);
-            const cap = new THREE.Mesh(new THREE.SphereGeometry(6.8, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2), dome);
-            cap.position.set(sx, 13.6, 9);
-            f.add(cap);
-        }
-        block(f, 0, 0.05, 2, 84, 0.9, 5, water);
         adBoard(f, engine, 66, 2, 16, 20, nextAd(), bronze);
         g.add(f);
     }

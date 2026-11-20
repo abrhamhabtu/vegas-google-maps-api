@@ -25,8 +25,8 @@ function square(x, z, w, d, ax = 1, az = 0) {
 }
 
 function wing(out, parts, building, base, isNorth) {
-  const ring = clean(building.pts), h = building.h;
-  parts.hotel.walls(ring, base - 0.3, h, WHITE, [h, isNorth ? 3 : 41, 0, base]);
+  const ring = offset(clean(building.pts), 0.12), h = building.h;
+  parts.hotel.walls(ring, base, h, WHITE, [h, isNorth ? 3 : 41, 0, base]);
   parts.parapet.prism(offset(ring, 0.22), h - 0.6, h + 0.04);
   parts.parapet.battlements(ring, h + 0.02, WHITE, [h + 1.75, 0, 0, h - 2], {
     pitch: 2.9, w: 1.45, h: 1.03, t: 0.76, rail: 0.68,
@@ -130,13 +130,14 @@ export function buildExcalibur(data) {
     heroOwned.add(b);
     const ring = clean(b.pts), a = area(ring), seed = hash(i * 13 + 5) * 40;
     if (b.h >= 60 && a > 2000) {
-      wing(out, parts, b, Math.min(11.4, podium.h), z < 1900);
+      wing(out, parts, b, Math.max(11.4, podium.h), z < 1900);
     } else if ((ring.length >= 12 && a < 270) || a < 40) {
       rounds.push({ x, z, r: Math.max(1.9, Math.min(7.6, Math.sqrt(a / Math.PI))), h: b.h });
     } else {
       const canopy = a > 150 && a < 200 && b.h > 38 && ring.length === 4 && (z < 1875 || z > 1975);
       const top = canopy ? b.h - 7.3 : b.h;
-      parts.keeps.walls(ring, Math.min(9.7, podium.h), top, WHITE, [top, seed, 1, Math.min(9.7, podium.h)]);
+      const keepBase = Math.max(11.4, podium.h);
+      parts.keeps.walls(offset(ring, 0.08), keepBase, top, WHITE, [top, seed, 1, keepBase]);
       if (canopy) {
         const peak = ring.map(([px, pz]) => [x + (px - x) * 0.075, z + (pz - z) * 0.075]);
         parts.red.skirt(offset(ring, 0.32), top, peak, b.h + 2.4);

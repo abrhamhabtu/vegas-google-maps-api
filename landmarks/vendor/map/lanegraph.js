@@ -3,6 +3,7 @@ import { convexHull } from './geom.js';
 import { isSouthStripRoad, roundSouthStripRoad, southStripLaneCount } from '../../../world/south-strip-roads.mjs';
 import { parisDriveLaneCount, parisDriveTurns } from '../../../world/paris-drive-roads.mjs';
 import { bellagioWayHeights, isBellagioFlattenedBridge } from '../../../world/bellagio-drive-roads.mjs';
+import { isStripCorridorRoad } from '../../../world/strip-corridor-pavement.mjs';
 export const CLASS = {
     motorway: 'motorway',
     motorway_link: 'ramp',
@@ -528,6 +529,7 @@ export function buildLaneGraph(data) {
     };
     for (const w of ways){
         const southStrip = isSouthStripRoad(w);
+        const stripCorridor = !southStrip && isStripCorridorRoad(w);
         const cuts = [
             0
         ];
@@ -596,7 +598,7 @@ export function buildLaneGraph(data) {
             const centre = !w.ow && total % 2 === 1 && total >= 3 && !w.lf ? laneW / 2 : 0;
             for (const d of dirs){
                 const oneway = !!w.ow;
-                const shape = southStrip ? roundSouthStripRoad(d.pts, d.y) : d;
+                const shape = southStrip || stripCorridor ? roundSouthStripRoad(d.pts, d.y) : d;
                 const base = makeLine(shape.pts, shape.y);
                 const ref = oneway ? offset(base, -(d.n * laneW) / 2) : centre ? offset(base, centre) : base;
                 const e = {
@@ -612,6 +614,7 @@ export function buildLaneGraph(data) {
                     turns: parseTurns(d.turn, d.n),
                     explicitTurns: !!d.turn,
                     southStrip,
+                    stripCorridor,
                     oneway,
                     elevated: !isBellagioFlattenedBridge(w) && d.y.some((v)=>v > 0.4)
                 };
@@ -694,6 +697,7 @@ export function buildLaneGraph(data) {
                 targetY = primary.y;
             }
             for (const o of ends) {
+                if (isBellagioFlattenedBridge(o.e.way)) continue;
                 if (Math.abs(o.y - targetY) > 0.05) {
                     const maxB = targetY === 0 || o.y <= 0.08 ? Math.max(25, Math.min(70, o.e.ref.length)) : Math.min(28, o.e.ref.length * 0.85);
                     adjustEnd(o.e, o.atStart, targetY, maxB);
@@ -918,7 +922,7 @@ export function buildLaneGraph(data) {
         const want = Math.max(36, Math.min(move * (W.cls === 'motorway' || W.cls === 'ramp' ? 28 : 16), W.cls === 'motorway' || W.cls === 'ramp' ? 400 : 110));
         const hasOtherTaper = wideIsA ? !!A.taperStart : !!B.taperEnd;
         const maxLen = W.ref.length * (hasOtherTaper ? 0.48 : 0.9);
-        if (!W.southStrip && (W.cls === 'arterial' || W.cls === 'collector') && move > maxLen * 0.125) {
+        if (!W.southStrip && !W.stripCorridor && (W.cls === 'arterial' || W.cls === 'collector') && move > maxLen * 0.125) {
             const scale = maxLen * 0.125 / move;
             for(let i = 0; i <= nW; i++)joint[i] = i * W.laneWidth + (joint[i] - i * W.laneWidth) * scale;
         }
@@ -936,7 +940,7 @@ export function buildLaneGraph(data) {
         const maxSlope = (e.cls === 'arterial' || e.cls === 'collector') && e.jointStart ? 0.25 : 0.125;
         if (e.taperStart) {
             e.taperStart = Math.min(e.taperStart, both ? L * 0.48 : L * 0.9);
-            if (!e.southStrip && (e.cls === 'arterial' || e.cls === 'collector') && e.jointStart) {
+            if (!e.southStrip && !e.stripCorridor && (e.cls === 'arterial' || e.cls === 'collector') && e.jointStart) {
                 const mv = Math.max(...e.jointStart.map((v, i)=>Math.abs(v - i * e.laneWidth)));
                 const lim = Math.min(4.0, Math.max(e.taperStart * 0.125, mv <= 3.8 ? e.taperStart * maxSlope : e.taperStart * 0.125));
                 if (mv > lim) {
@@ -947,7 +951,7 @@ export function buildLaneGraph(data) {
         }
         if (e.taperEnd) {
             e.taperEnd = Math.min(e.taperEnd, both ? L * 0.48 : L * 0.9);
-            if (!e.southStrip && (e.cls === 'arterial' || e.cls === 'collector') && e.jointEnd) {
+            if (!e.southStrip && !e.stripCorridor && (e.cls === 'arterial' || e.cls === 'collector') && e.jointEnd) {
                 const mv = Math.max(...e.jointEnd.map((v, i)=>Math.abs(v - i * e.laneWidth)));
                 const lim = Math.min(4.0, Math.max(e.taperEnd * 0.125, mv <= 3.8 ? e.taperEnd * 0.25 : e.taperEnd * 0.125));
                 if (mv > lim) {
@@ -960,7 +964,7 @@ export function buildLaneGraph(data) {
     }
     alignRampBranches(edges, nodes);
     for (const e of edges){
-        if (!e.southStrip && !e.rampJoin && e.next === undefined && e.prev === undefined) continue;
+        if (!e.southStrip && !e.stripCorridor && !e.rampJoin && e.next === undefined && e.prev === undefined) continue;
         e.lanes.forEach((id, i)=>{
             lanes[id].line = edgeLine(e, (at)=>(boundaryAt(e, i, at) + boundaryAt(e, i + 1, at)) / 2);
         });

@@ -193,7 +193,7 @@ body[data-theme="night"] #sphere-ad { color-scheme: dark; }
 /* ─── Apple Maps–style right-side control rail ─── */
 .camera-hud {
   position: fixed; z-index: 18; right: var(--gap); top: 50%; transform: translateY(-44%);
-  display: flex; flex-direction: column; gap: 10px; align-items: center;
+  display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
 }
 .apple-rail-pill {
   width: 44px; display: flex; flex-direction: column; align-items: center;
@@ -234,14 +234,32 @@ body[data-theme="night"] #sphere-ad { color-scheme: dark; }
 }
 .pitch-slider-wrap.dragging .pitch-thumb { transform: translate(-50%, -50%) scale(1.22); background: var(--accent); }
 
-/* Interactive Apple Maps Compass Dial (click for North, drag left/right to rotate!) */
+/* Seamless Desktop Compass Orbit Pill (hold/click ‹ ›, drag dial, scroll, or click N) */
+.compass-orbit-pill {
+  display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 25px;
+  transition: box-shadow .18s ease, transform .14s ease;
+}
+.compass-orbit-pill.orbiting {
+  box-shadow: var(--shadow), 0 0 0 2px var(--accent);
+}
+.orbit-step-btn {
+  width: 30px; height: 38px; border-radius: 19px; display: grid; place-items: center;
+  color: var(--text-muted); transition: background .14s ease, color .14s ease, transform .1s ease;
+  user-select: none; touch-action: none;
+}
+.orbit-step-btn svg { width: 17px; height: 17px; stroke-width: 2.3; }
+.orbit-step-btn:hover { background: var(--hover); color: var(--text-main); }
+.orbit-step-btn:active, .orbit-step-btn.holding {
+  background: var(--accent-wash); color: var(--accent); transform: scale(.92);
+}
 .compass-dial {
-  width: 44px; height: 44px; border-radius: 50%; position: relative; display: grid; place-items: center;
+  width: 42px; height: 42px; border-radius: 50%; position: relative; display: grid; place-items: center;
+  background: var(--glass-strong); box-shadow: 0 1px 4px rgba(0, 0, 0, .1);
   cursor: ew-resize; touch-action: none; user-select: none;
   transition: transform .14s ease, box-shadow .16s ease;
 }
-.compass-dial:hover { box-shadow: var(--shadow), 0 0 0 2px var(--accent-wash); }
-.compass-dial.dragging { cursor: grabbing; transform: scale(1.06); box-shadow: var(--shadow), 0 0 0 2.5px var(--accent); }
+.compass-dial:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .14), 0 0 0 1.5px var(--accent-wash); }
+.compass-dial.dragging { cursor: grabbing; transform: scale(1.06); box-shadow: 0 2px 10px rgba(0, 0, 0, .2), 0 0 0 2px var(--accent); }
 .compass-ticks {
   position: absolute; inset: 3px; border-radius: 50%; pointer-events: none;
   background: repeating-conic-gradient(from -2deg, var(--text-muted) 0deg 4deg, transparent 4deg 30deg);
@@ -367,7 +385,7 @@ input[type='checkbox'], input[type='range'] { accent-color: var(--accent); }
 
   .camera-hud { right: var(--gap); top: auto; transform: none; bottom: calc(var(--peek) + 14px); gap: 8px; transition: opacity .2s; }
   .sheet[data-state='half'] ~ .camera-hud, .sheet[data-state='full'] ~ .camera-hud { opacity: 0; pointer-events: none; }
-  .apple-rail-pill.zoom-control, .pitch-slider-wrap { display: none; }
+  .apple-rail-pill.zoom-control, .pitch-slider-wrap, .orbit-step-btn { display: none; }
 
   .map-hint { bottom: auto; top: calc(var(--safe-top) + 12px); left: var(--gap); right: calc(var(--gap) + 56px); translate: none; justify-content: space-between; }
   

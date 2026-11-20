@@ -755,7 +755,10 @@ export function buildingMaterial(cut) {
         vertexShader: VERT,
         fragmentShader: FRAG,
         vertexColors: true,
-        fog: true
+        fog: true,
+        polygonOffset: true,
+        polygonOffsetFactor: 2.0,
+        polygonOffsetUnits: 2.5
     });
 }
 export function makeHeightIndex(data, extra = []) {
@@ -848,6 +851,9 @@ export function buildBuildings(data, valets) {
     for (const b of data.buildings)if (b.name && LANDMARK_SKIP.test(b.name.trim()) && !b.part) owned.push(b.pts);
     const named = [];
     const t = new THREE.Color(), g = new THREE.Color();
+    const prepared = [];
+    const wallIndex = new Map();
+    const keyPt = (p)=>`${Math.round(p[0] * 4)},${Math.round(p[1] * 4)}`;
     let i = 0;
     for (const b of data.buildings){
         i++;
@@ -898,16 +904,45 @@ export function buildBuildings(data, valets) {
             h: b.h,
             area
         });
-        extrude(ch.at(c[0], c[1]), ring, b.mh ?? 0, h, [
-            t.r,
-            t.g,
-            t.b
-        ], hash(i) * 50, style, k, roofTint, [
-            g.r,
-            g.g,
-            g.b,
-            gk
-        ]);
+        const y0 = Math.max(0, (b.mh ?? 0) + (b.part ? 0.02 : 0));
+        const epsH = (hash(i * 29) - 0.5) * 0.08 + (b.part ? 0.04 : -0.04);
+        const y1 = Math.max(1.5, h + epsH);
+        const ccw = ringArea(ring) > 0 ? ring : ring.slice().reverse();
+        const entry = {
+            idx: i,
+            ccw,
+            area,
+            c,
+            y0,
+            y1,
+            h,
+            tint: [t.r, t.g, t.b],
+            seed: hash(i) * 50,
+            style,
+            k,
+            roofTint,
+            aux: [g.r, g.g, g.b, gk]
+        };
+        prepared.push(entry);
+        // Index same-direction wall segments so buried coplanar OSM building/part walls are culled cleanly.
+        for (let eIdx = 0; eIdx < ccw.length; eIdx++){
+            const a = ccw[eIdx], d = ccw[(eIdx + 1) % ccw.length];
+            if (Math.hypot(d[0] - a[0], d[1] - a[1]) < 0.2) continue;
+            const fwd = `${keyPt(a)}>${keyPt(d)}`;
+            let list = wallIndex.get(fwd);
+            if (!list) wallIndex.set(fwd, list = []);
+            list.push(entry);
+        }
+    }
+    for (const item of prepared){
+        // Height-stratified true inward edge-normal inset (never expands onto streets or adjacent lots):
+        // taller structures sit slightly outside lower podiums/annexes, and hero models (0 inset) cleanly win.
+        const hFrac = Math.min(1, item.h / 28);
+        const rawDelta = -0.15 + hFrac * 0.14 - hash(item.idx * 41) * 0.015;
+        const maxSafe = Math.min(0.16, Math.sqrt(item.area) * 0.04);
+        const delta = Math.max(-maxSafe, Math.min(0, rawDelta));
+        const shifted = offsetBuildingRing(item.ccw, delta, item.area);
+        extrude(ch.at(item.c[0], item.c[1]), shifted, item.ccw, item.y0, item.y1, item.tint, item.seed, item.style, item.k, item.roofTint, item.aux, item, wallIndex, keyPt);
     }
     const mat = buildingMaterial(valets);
     for (const m of ch.meshes(mat, 'bldg', ORDER.solid))group.add(m);
@@ -968,8 +1003,37 @@ function lookFor(b, c, resorts) {
         ...l.low
     } : l;
 }
-function extrude(s, ring, y0, y1, tint, seed, style, k, roofTint, aux) {
+function offsetBuildingRing(ccw, delta, area) {
+    if (Math.abs(delta) < 1e-4 || ccw.length < 3) return ccw;
+    const n = ccw.length;
+    const edgeN = new Array(n);
+    for (let i = 0; i < n; i++){
+        const a = ccw[i], b = ccw[(i + 1) % n];
+        const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+        edgeN[i] = L > 1e-5 ? [dz / L, -dx / L] : null;
+    }
+    const out = new Array(n);
+    for (let i = 0; i < n; i++){
+        const nPrev = edgeN[(i + n - 1) % n] ?? edgeN[i];
+        const nCurr = edgeN[i] ?? nPrev;
+        if (!nPrev || !nCurr) { out[i] = ccw[i]; continue; }
+        const bx = nPrev[0] + nCurr[0], bz = nPrev[1] + nCurr[1];
+        const denom = 1 + nPrev[0] * nCurr[0] + nPrev[1] * nCurr[1];
+        if (denom > 0.25) {
+            const m = Math.min(2.2, 1 / denom);
+            out[i] = [ccw[i][0] + bx * m * delta, ccw[i][1] + bz * m * delta];
+        } else {
+            const bl = Math.hypot(bx, bz);
+            out[i] = bl > 1e-5 ? [ccw[i][0] + (bx / bl) * delta, ccw[i][1] + (bz / bl) * delta] : ccw[i];
+        }
+    }
+    const newArea = ringArea(out);
+    if (newArea <= area * 0.25) return ccw;
+    return out;
+}
+function extrude(s, ring, origCcw, y0, y1, tint, seed, style, k, roofTint, aux, item, wallIndex, keyPt) {
     const r = ringArea(ring) > 0 ? ring : ring.slice().reverse();
+    const orig = origCcw && origCcw.length === r.length ? origCcw : r;
     const e = (u)=>[
             u,
             y1,
@@ -981,17 +1045,37 @@ function extrude(s, ring, y0, y1, tint, seed, style, k, roofTint, aux) {
         const a = r[i], b = r[(i + 1) % r.length];
         const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
         if (L < 0.05) continue;
-        const n = [
-            dz / L,
-            0,
-            -dx / L
-        ];
-        const v0 = s.vert(a[0], y0, a[1], n, tint, e(u));
-        const v1 = s.vert(b[0], y0, b[1], n, tint, e(u + L));
-        const v2 = s.vert(b[0], y1, b[1], n, tint, e(u + L));
-        const v3 = s.vert(a[0], y1, a[1], n, tint, e(u));
-        s.aux.push(...aux, ...aux, ...aux, ...aux);
-        s.idx.push(v0, v2, v1, v0, v3, v2);
+        // Skip wall quads completely buried behind a taller/larger coplanar building sharing the exact directed edge.
+        let buried = false;
+        if (wallIndex && item) {
+            const oa = orig[i], ob = orig[(i + 1) % orig.length];
+            const peers = wallIndex.get(`${keyPt(oa)}>${keyPt(ob)}`);
+            if (peers && peers.length > 1) {
+                for (const other of peers){
+                    if (other.idx === item.idx) continue;
+                    if (other.y0 <= y0 + 0.05 && other.y1 >= y1 - 0.05) {
+                        const sameH = Math.abs(other.y1 - y1) < 0.12;
+                        if (!sameH || other.area > item.area || (other.area === item.area && other.idx < item.idx)) {
+                            buried = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (!buried) {
+            const n = [
+                dz / L,
+                0,
+                -dx / L
+            ];
+            const v0 = s.vert(a[0], y0, a[1], n, tint, e(u));
+            const v1 = s.vert(b[0], y0, b[1], n, tint, e(u + L));
+            const v2 = s.vert(b[0], y1, b[1], n, tint, e(u + L));
+            const v3 = s.vert(a[0], y1, a[1], n, tint, e(u));
+            s.aux.push(...aux, ...aux, ...aux, ...aux);
+            s.idx.push(v0, v2, v1, v0, v3, v2);
+        }
         u += L;
     }
     const contour = r.map((p)=>new THREE.Vector2(p[0], p[1]));
