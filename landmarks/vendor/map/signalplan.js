@@ -57,7 +57,7 @@ export function planSignals(g) {
             const yaw = Math.atan2(-p.hx, -p.hz);
             const conn = new Set(e.lanes.flatMap((l)=>g.lanes[l].next));
             const clear = (u0, dir)=>{
-                for(let k = 0; k <= 16; k++){
+                for(let k = 0; k <= 6; k++){
                     const u = u0 + dir * k;
                     if (!onRoad(bx + nx * u, bz + nz * u, 0.25)) return u;
                 }
@@ -75,19 +75,22 @@ export function planSignals(g) {
             const span = R === null ? null : Math.min(MAX_ARM, R);
             let splitAt = 0;
             if (R !== null && span !== null) splitAt = Math.max(0, R - span);
-            if (Lp === null && R !== null) splitAt = Math.max(0, R - Math.min(R, 24));
+            if (Lp === null && R !== null) splitAt = Math.max(0, R - Math.min(R, MAX_ARM + 2));
             const street = [
                 ...names
             ].sort((x, y)=>x.length - y.length)[0];
             const label = e.cls === 'arterial' || e.cls === 'collector' ? street?.replace(/^(North|South|East|West)\s/, (m0)=>m0[0] + ' ').replace(/\bBoulevard\b/, 'Blvd').replace(/\bAvenue\b/, 'Ave').replace(/\bRoad\b/, 'Rd').replace(/\bDrive\b/, 'Dr').replace(/\bStreet\b/, 'St') : undefined;
-            if (R === null) arms.push({
-                px: bx + nx * Lp,
-                pz: bz + nz * Lp,
-                ax: bx + nx * (W - 0.3),
-                az: bz + nz * (W - 0.3),
-                yaw,
-                name: label
-            });
+            if (R === null) {
+                const reach = Math.min(W - 0.3, Lp + MAX_ARM);
+                arms.push({
+                    px: bx + nx * Lp,
+                    pz: bz + nz * Lp,
+                    ax: bx + nx * reach,
+                    az: bz + nz * reach,
+                    yaw,
+                    name: label
+                });
+            }
             if (R !== null) arms.push({
                 px: bx + nx * R,
                 pz: bz + nz * R,
@@ -96,13 +99,16 @@ export function planSignals(g) {
                 yaw,
                 name: label
             });
-            if (Lp !== null && splitAt > 0.5) arms.push({
-                px: bx + nx * Lp,
-                pz: bz + nz * Lp,
-                ax: bx + nx * splitAt,
-                az: bz + nz * splitAt,
-                yaw
-            });
+            if (Lp !== null && splitAt > 0.5) {
+                const leftTip = Math.min(splitAt, Lp + MAX_ARM);
+                if (leftTip - Lp > 1.5) arms.push({
+                    px: bx + nx * Lp,
+                    pz: bz + nz * Lp,
+                    ax: bx + nx * leftTip,
+                    az: bz + nz * leftTip,
+                    yaw
+                });
+            }
             e.lanes.forEach((l, k)=>{
                 const u = (k + 0.5) * e.laneWidth, own = new Set(g.lanes[l].next);
                 heads.push({

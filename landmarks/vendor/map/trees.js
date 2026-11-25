@@ -9,35 +9,35 @@ import { ORIGIN, SIGN_LATLON } from '../places.js';
 import { hasPavedStripMedian, isStripEdge } from '../../../world/strip-streets.mjs';
 export function palmGeometry() {
     const parts = [];
-    const trunk = new THREE.CylinderGeometry(0.16, 0.26, 9, 5, 1, true);
-    trunk.translate(0, 4.5, 0);
-    setColor(trunk, new THREE.Color('#7d7466'));
+    const trunk = new THREE.CylinderGeometry(0.15, 0.25, 8.6, 5, 1, true);
+    trunk.translate(0, 4.3, 0);
+    setColor(trunk, new THREE.Color('#8a7864'));
     parts.push(trunk);
-    for(let i = 0; i < 7; i++){
-        const a = i / 7 * Math.PI * 2 + i % 2 * 0.2;
-        const f = new THREE.PlaneGeometry(0.9, 3.4, 1, 3);
+    for(let i = 0; i < 8; i++){
+        const a = i / 8 * Math.PI * 2 + i % 2 * 0.18;
+        const f = new THREE.PlaneGeometry(0.92, 3.2, 1, 3);
         const pos = f.attributes.position;
         for(let k = 0; k < pos.count; k++){
-            const y = pos.getY(k) + 1.7;
-            const droop = -0.12 * y * y;
-            pos.setXYZ(k, pos.getX(k) * (1 - y / 4.2), droop, y);
+            const y = pos.getY(k) + 1.6;
+            const droop = -0.13 * y * y;
+            pos.setXYZ(k, pos.getX(k) * (1 - y / 4.0), droop, y);
         }
         f.rotateY(a);
-        f.translate(0, 9, 0);
+        f.translate(0, 8.6, 0);
         f.computeVertexNormals();
-        setColor(f, new THREE.Color(i % 2 ? '#2f8a6c' : '#287a60'));
+        setColor(f, new THREE.Color(i % 2 ? '#2fa07c' : '#268b6b'));
         parts.push(f);
     }
     return merge(parts);
 }
 function canopyGeometry() {
-    const trunk = new THREE.CylinderGeometry(0.15, 0.22, 2.6, 5, 1, true);
-    trunk.translate(0, 1.3, 0);
-    setColor(trunk, new THREE.Color('#6f665a'));
-    const crown = new THREE.IcosahedronGeometry(2.1, 1);
-    crown.scale(1, 1.15, 1);
-    crown.translate(0, 4.1, 0);
-    setColor(crown, new THREE.Color('#23735f'));
+    const trunk = new THREE.CylinderGeometry(0.16, 0.23, 2.5, 5, 1, true);
+    trunk.translate(0, 1.25, 0);
+    setColor(trunk, new THREE.Color('#7a6a58'));
+    const crown = new THREE.IcosahedronGeometry(2.05, 1);
+    crown.scale(1, 1.12, 1);
+    crown.translate(0, 3.95, 0);
+    setColor(crown, new THREE.Color('#259272'));
     return merge([
         trunk,
         crown
@@ -94,8 +94,49 @@ export function plantTrees(data, g) {
         ]);
     }
     const occupied = new Set();
-    const key = (x, z)=>`${Math.round(x / 9)},${Math.round(z / 9)}`;
+    const key = (x, z, cell = 6)=>`${Math.round(x / cell)},${Math.round(z / cell)}`;
     for (const p of palms)occupied.add(key(p[0], p[1]));
+    for (const r of round)occupied.add(key(r[0], r[1]));
+    const bldgGrid = new Map();
+    for (const b of data.buildings ?? []){
+        const pts = b.pts;
+        if (!pts || pts.length < 3) continue;
+        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (const [bx, bz] of pts){
+            if (bx < x0) x0 = bx;
+            if (bx > x1) x1 = bx;
+            if (bz < z0) z0 = bz;
+            if (bz > z1) z1 = bz;
+        }
+        const pad = 2.4;
+        const entry = [pts, x0 - pad, x1 + pad, z0 - pad, z1 + pad];
+        for(let cx = Math.floor((x0 - pad) / 50); cx <= Math.floor((x1 + pad) / 50); cx++)
+            for(let cz = Math.floor((z0 - pad) / 50); cz <= Math.floor((z1 + pad) / 50); cz++){
+                const bk = `${cx},${cz}`;
+                let list = bldgGrid.get(bk);
+                if (!list) bldgGrid.set(bk, list = []);
+                list.push(entry);
+            }
+    }
+    const inBuilding = (x, z, margin = 2.0)=>{
+        const list = bldgGrid.get(`${Math.floor(x / 50)},${Math.floor(z / 50)}`);
+        if (!list) return false;
+        const m2 = margin * margin;
+        for (const [pts, x0, x1, z0, z1] of list){
+            if (x < x0 || x > x1 || z < z0 || z > z1) continue;
+            let inside = false;
+            for(let i = 0, j = pts.length - 1; i < pts.length; j = i++){
+                const xi = pts[i][0], zi = pts[i][1], xj = pts[j][0], zj = pts[j][1];
+                if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi || 1e-9) + xi) inside = !inside;
+                const dx = xj - xi, dz = zj - zi, L2 = dx * dx + dz * dz || 1;
+                const t = Math.max(0, Math.min(1, ((x - xi) * dx + (z - zi) * dz) / L2));
+                const d2 = (x - (xi + dx * t)) ** 2 + (z - (zi + dz * t)) ** 2;
+                if (d2 <= m2) return true;
+            }
+            if (inside) return true;
+        }
+        return false;
+    };
     const medGrid = new Map();
     for (const m of g.edges){
         if (m.internal || m.cls === 'service' || m.elevated) continue;
@@ -185,48 +226,95 @@ export function plantTrees(data, g) {
                 bestHd = hx * mhx + hz * mhz;
             }
         }
-        if (!bestM || bestT < 1.9 || bestT >= 28) return 0;
+        if (!bestM || bestT < 1.2 || bestT >= 28) return 0;
         const mIsLink = /_link$/.test(bestM.way.hw);
         if (!mIsLink && !(bestHd < -0.35 && bestM.oneway && (bestM.cls === 'arterial' || bestM.cls === 'collector'))) return 0;
         return bestT;
     };
     for (const e of g.edges){
-        if (!e.oneway || e.elevated || e.internal || /_link$/.test(e.way.hw) || hasPavedStripMedian(e)) continue;
+        if (!e.oneway || e.elevated || e.internal || /_link$/.test(e.way.hw)) continue;
         const name = e.way.name ?? '';
-        if (!/Las Vegas Boulevard|Flamingo Road|Tropicana Avenue|Harmon Avenue|Spring Mountain Road|Bruno Mars Drive|Park Avenue/i.test(name)) continue;
-        const isStrip = /Las Vegas Boulevard/i.test(name);
-        const minGap = isStripEdge(e) ? 3.4 : 2.0;
-        const step = isStrip ? 12.5 : 16;
-        const left = boundaryLine(e, 0);
-        for(let s = 12; s < left.length - 12; s += step){
-            const q = sample(left, s);
-            const gap = islandWidthAt(e, q.x, q.z, q.hx, q.hz);
-            if (gap < minGap) continue;
-            const lx = q.hz, lz = -q.hx;
-            const x = q.x + lx * (gap * 0.5), z = q.z + lz * (gap * 0.5);
-            if (occupied.has(key(x, z)) || inLot(x, z) || onRoad(x, z, 0.9) || onCarriageway(x, z, 0.75) || onConn(x, z, 0.85)) continue;
-            occupied.add(key(x, z));
-            palms.push([
-                x,
-                z,
-                1.02 + hash(Math.round(x * 7 + z)) * 0.35,
-                hash(Math.round(x + z * 3)) * 6.28
-            ]);
-            if (isStrip && gap >= 6.8) {
-                for (const off of [
-                    -gap * 0.24,
-                    gap * 0.24
-                ]){
-                    const sx2 = x + lx * off + q.hx * 5.5, sz2 = z + lz * off + q.hz * 5.5;
-                    if (!occupied.has(key(sx2, sz2)) && !inLot(sx2, sz2) && !onRoad(sx2, sz2, 0.9) && !onCarriageway(sx2, sz2, 0.85) && !onConn(sx2, sz2, 0.9)) {
-                        occupied.add(key(sx2, sz2));
-                        palms.push([
-                            sx2,
-                            sz2,
-                            0.95 + hash(Math.round(sx2 * 5 + sz2)) * 0.35,
-                            hash(Math.round(sx2 + sz2 * 5)) * 6.28
-                        ]);
+        const stripEdge = isStripEdge(e);
+        if (!stripEdge && !/Las Vegas Boulevard|Flamingo Road|Tropicana Avenue|Harmon Avenue|Spring Mountain Road|Bruno Mars Drive|Park Avenue/i.test(name)) continue;
+        const isStrip = stripEdge || /Las Vegas Boulevard/i.test(name);
+        // 1. Landscaped center median trees (alternating palms & leafy canopy trees, matching Apple Maps)
+        if (!hasPavedStripMedian(e)) {
+            const minGap = isStrip ? 1.25 : 2.0;
+            const step = isStrip ? 8.2 : 14.5;
+            const endPad = isStrip ? 5.5 : 10;
+            const left = boundaryLine(e, 0);
+            for(let s = endPad; s < left.length - endPad; s += step){
+                const q = sample(left, s);
+                const gap = islandWidthAt(e, q.x, q.z, q.hx, q.hz);
+                if (gap < minGap) continue;
+                const lx = q.hz, lz = -q.hx;
+                const x = q.x + lx * (gap * 0.5), z = q.z + lz * (gap * 0.5);
+                const roadMargin = gap < 2.2 ? 0.35 : 0.65;
+                if (occupied.has(key(x, z)) || inLot(x, z) || onRoad(x, z, roadMargin) || onCarriageway(x, z, roadMargin) || onConn(x, z, 0.75)) continue;
+                occupied.add(key(x, z));
+                const h = hash(Math.round(x * 7 + z * 3));
+                const yaw = hash(Math.round(x + z * 5)) * 6.28;
+                const widthFit = Math.min(1, Math.max(0.72, (gap - 0.3) / 2.6));
+                if (isStrip && h > 0.66 && gap >= 1.9) {
+                    round.push([
+                        x,
+                        z,
+                        (0.78 + h * 0.32) * widthFit,
+                        yaw
+                    ]);
+                } else {
+                    palms.push([
+                        x,
+                        z,
+                        (0.88 + h * 0.34) * Math.max(0.84, widthFit),
+                        yaw
+                    ]);
+                }
+                if (isStrip && gap >= 5.6) {
+                    for (const off of [
+                        -gap * 0.24,
+                        gap * 0.24
+                    ]){
+                        const sx2 = x + lx * off + q.hx * 4.2, sz2 = z + lz * off + q.hz * 4.2;
+                        if (!occupied.has(key(sx2, sz2)) && !inLot(sx2, sz2) && !onRoad(sx2, sz2, 0.7) && !onCarriageway(sx2, sz2, 0.65) && !onConn(sx2, sz2, 0.8)) {
+                            occupied.add(key(sx2, sz2));
+                            const h2 = hash(Math.round(sx2 * 5 + sz2));
+                            (h2 > 0.62 ? round : palms).push([
+                                sx2,
+                                sz2,
+                                0.85 + h2 * 0.32,
+                                hash(Math.round(sx2 + sz2 * 5)) * 6.28
+                            ]);
+                        }
                     }
+                }
+            }
+        }
+        // 2. Strip boulevard sidewalk trees along outer curbs (clear of roads, intersections, and buildings)
+        if (stripEdge && e.ref.length >= 22) {
+            const right = boundaryLine(e, e.lanes.length);
+            for(let s = 9.5; s < right.length - 9.5; s += 11.5){
+                const q = sample(right, s);
+                const rx = -q.hz, rz = q.hx;
+                const x = q.x + rx * 2.25, z = q.z + rz * 2.25;
+                if (occupied.has(key(x, z, 7)) || inLot(x, z) || onRoad(x, z, 1.0) || onCarriageway(x, z, 0.9) || onConn(x, z, 1.1) || inBuilding(x, z, 2.2)) continue;
+                occupied.add(key(x, z, 7));
+                const h = hash(Math.round(x * 11 + z * 7));
+                const yaw = hash(Math.round(x * 3 + z * 13)) * 6.28;
+                if (h < 0.76) {
+                    round.push([
+                        x,
+                        z,
+                        0.76 + h * 0.32,
+                        yaw
+                    ]);
+                } else {
+                    palms.push([
+                        x,
+                        z,
+                        0.92 + (h - 0.76) * 1.1,
+                        yaw
+                    ]);
                 }
             }
         }

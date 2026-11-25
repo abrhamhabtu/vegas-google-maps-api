@@ -820,25 +820,11 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                             far.push(across(i, to - inset));
                         }
                         const y = heights.slice(start, end);
+                        const stripPlanted = stripApproach && !hasPavedStripMedian(e) && len >= 4 && maxWidth >= 1.15;
                         const planted = len >= 7 && maxWidth >= 1.7;
-                        const target = air ? deckMedianPaving : stripApproach ? concreteMedians : planted ? medians : medianPaving;
+                        const target = air ? deckMedianPaving : stripPlanted ? medians : stripApproach ? concreteMedians : planted ? medians : medianPaving;
                         ribbonY(target.at(x, z), {pts: far, y}, {pts: near, y}, WALK_HEIGHT);
-                        if (stripApproach && len >= 5 && maxWidth >= 2.8 && !hasPavedStripMedian(e)) {
-                            const inner = [[], []];
-                            for (let i = 0; i < near.length; i++){
-                                const [nx, nz] = near[i], [fx, fz] = far[i];
-                                const width = Math.hypot(nx - fx, nz - fz);
-                                const d = dists[start + i] - dists[start];
-                                const tip = Math.min(taperStart ? d : Infinity, taperEnd ? len - d : Infinity);
-                                const fill = Math.max(0, Math.min(1, (width - 2.4) / 0.8, (tip - 2.8) / 2));
-                                const growth = fill * fill * (3 - 2 * fill);
-                                const t = 0.5 - 0.5 * growth * Math.max(0, 1 - 0.84 / Math.max(0.84, width));
-                                inner[0].push([fx + (nx - fx) * t, fz + (nz - fz) * t]);
-                                inner[1].push([nx + (fx - nx) * t, nz + (fz - nz) * t]);
-                            }
-                            ribbonY(medianPlanting.at(x, z), {pts: inner[0], y}, {pts: inner[1], y}, WALK_HEIGHT + 0.012);
-                        }
-                        const curbWidth = stripApproach ? 0.12 : 0.19;
+                        const curbWidth = stripApproach ? 0.14 : 0.19;
                         sidewalkPiece({pts: near, y}, 0, -curbWidth, 0, air);
                         sidewalkPiece({pts: far, y}, 0, curbWidth, 0, air);
                     }
@@ -914,20 +900,18 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             if (stripApproach) {
                 const only = (t, m)=>!!t && t.length === 1 && t[0] === m;
                 const turnDiv = only(e.turns[i - 1], 'left') && !only(e.turns[i], 'left') || only(e.turns[i], 'right') && !only(e.turns[i - 1], 'right');
-                const stripTail = !isLinkOrRamp && intersectionAt(e.toNode)?.control === 'signal' && e.cls === 'arterial' ? Math.min(18, Math.max(0, (a1 - a0) * 0.42)) : 0;
-                const longPocket = turnDiv && !e.southStrip && !e.stripCorridor;
-                const solidTail = turnDiv && (e.southStrip || e.stripCorridor) ? Math.max(stripTail, 24) : stripTail;
-                const dashEnd = longPocket ? a0 : Math.max(a0, a1 - solidTail);
-                // Crisp Apple Maps dashes along Strip approaches, transitioning to solid pocket/stop-bar channelization.
-                for (const [d0, d1] of dashRuns(a0, dashEnd, 2.4, 4.6, dashStart.get(e.id) ?? 0)){
+                const solidTail = turnDiv ? Math.min(28, Math.max(0, (a1 - a0) * 0.72)) : 0;
+                const dashEnd = Math.max(a0, a1 - solidTail);
+                // Crisp Apple Maps dashes along Strip approaches; solid channelizing lines only on dedicated turn pockets.
+                for (const [d0, d1] of dashRuns(a0, dashEnd, 2.2, 4.8, dashStart.get(e.id) ?? 0)){
                     const d = (d0 + d1) * 0.5, mid = boundaryAt(e, i, d);
                     if (Math.min(mid - boundaryAt(e, i - 1, d), boundaryAt(e, i + 1, d) - mid) < 1.15) continue;
                     if (isLinkOrRamp && !crossSectionClear(d)) continue;
-                    strip(line, d0, d1, 0.072, P);
+                    strip(line, d0, d1, 0.056, P);
                 }
                 if (dashEnd < a1 - 0.5) {
                     const keepStrip = isLinkOrRamp ? (d)=>crossSectionClear(d, 0.25) : undefined;
-                    stripFiltered(line, dashEnd, a1, turnDiv ? 0.085 : 0.072, P, (d)=>{
+                    stripFiltered(line, dashEnd, a1, 0.068, P, (d)=>{
                         const mid = boundaryAt(e, i, d);
                         if (Math.min(mid - boundaryAt(e, i - 1, d), boundaryAt(e, i + 1, d) - mid) < 1.15) return false;
                         return !keepStrip || keepStrip(d);
@@ -955,7 +939,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             if (tail > 1) stripFiltered(line, a1 - tail, a1, 0.075, P, keepDiv);
         }
         if (e.oneway) {
-            if (e.cls !== 'local') {
+            if (e.cls !== 'local' && !(stripApproach && !air && !isLinkOrRamp)) {
                 const leftEdge = edgeLine(e, (at)=>boundaryAt(e, 0, at) + 0.3);
                 const leftTarget = e.cls === 'motorway' || e.cls === 'ramp' ? PY : air ? deckPaint : paintDim;
                 stripFiltered(leftEdge, a0, a1, 0.075, leftTarget, isLinkOrRamp ? (d)=>{
@@ -977,7 +961,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 strip(edgeLine(e, (at)=>boundaryAt(e, 0, at) + 0.13), a0, a1, 0.068, PY);
             }
         }
-        if (e.cls === 'motorway' || e.cls === 'ramp' || e.cls === 'arterial' || isLink) {
+        if ((e.cls === 'motorway' || e.cls === 'ramp' || e.cls === 'arterial' || isLink) && !(stripApproach && !air && !isLinkOrRamp)) {
             const rightEdge = edgeLine(e, (at)=>boundaryAt(e, e.lanes.length, at) - 0.3);
             stripFiltered(rightEdge, a0, a1, 0.08, P, isLinkOrRamp ? (d)=>{
                 const q = atStation(e, rightEdge, d);
@@ -1019,7 +1003,8 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             const left = barEnd(0), right = barEnd(e.lanes.length);
             const s = at(P, p.x, p.z);
             const [hx, hz] = mappedBar ? leg.a : [p.hx, p.hz];
-            const bar = [[left, -0.22], [right, -0.22], [right, 0.22], [left, 0.22]].map(([q, d])=>
+            const barHalf = stripApproach ? 0.16 : 0.2;
+            const bar = [[left, -barHalf], [right, -barHalf], [right, barHalf], [left, barHalf]].map(([q, d])=>
                 s.vert(q.x + hx * d, paintHeight(q.y, yOff), q.z + hz * d));
             s.quad(...bar);
             const chainLaneSample = (laneIdx, d, half)=>{
@@ -1059,6 +1044,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 e.lanes.forEach((_, i)=>{
                     const mv = laneMoves[i];
                     if (!mv || !mv.length) return;
+                    if (stripApproach && mv.every(m=>m === 'through' || m === 'merge')) return;
                     const q = chainLaneSample(i, a1 - 7.5, stripApproach ? 1.5 : 1.95);
                     if (!q) return;
                     const arrowS = a1 - 7.5;
@@ -1066,7 +1052,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                     const flatCurve = !qPrev || !qNext || qPrev.hx * qNext.hx + qPrev.hz * qNext.hz > 0.94;
                     const showArrow = flatCurve && e.ref.length >= 13 && (ix.control === 'signal' || e.cls !== 'local' || e.explicitTurns);
                     if (showArrow) {
-                        arrow(at(P, q.x, q.z), q, mv, yOff, stripApproach ? 0.88 : 1);
+                        arrow(at(P, q.x, q.z), q, mv, yOff, stripApproach ? 0.78 : 1);
                         if (mv.length === 1 && (mv[0] === 'left' || mv[0] === 'right') && e.cls !== 'local') {
                             const q2 = chainLaneSample(i, a1 - 16.5, stripApproach ? 1.5 : 0.9);
                             if (q2 && q2.width >= 2.55) {
