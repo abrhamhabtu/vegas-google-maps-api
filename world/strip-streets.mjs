@@ -22,6 +22,66 @@ export const STRIP_PAVEMENT = { path, color: 'roadStrip', innerRadius: 72, outer
 const stripName = 'South Las Vegas Boulevard';
 const flamingo = toLocal(36.11468, -115.17288);
 const tropicana = toLocal(36.10086, -115.17296);
+const sands = toLocal(36.12547, -115.16932);
+const wynnGate = [603.5, -1273.45];
+const gateHeading = 28 * Math.PI / 180;
+const gateCos = Math.cos(gateHeading), gateSin = Math.sin(gateHeading);
+const wynnGateNodes = new Set([137442843, 1490596683]);
+export const isWynnGateJunction = members => members.some(id => wynnGateNodes.has(id));
+
+// The added turn lanes narrow toward the existing curb, leaving room for the
+// planted divider that runs up to each boulevard crosswalk.
+export function wynnMedianInset(edge, station) {
+  if (edge.way?.id !== 1030272955 && edge.way?.id !== 1030297250) return 0;
+  if (!wynnGateNodes.has(edge.toNode)) return 0;
+  const length = edge.ref.length;
+  const fade = Math.max(length - 32, length * 0.5);
+  const t = Math.max(0, Math.min(1, 1 - station / fade));
+  return 2.85 * (1 - t * t * (3 - 2 * t));
+}
+
+export function wynnGateShape(way, points, heights) {
+  if (way.id !== 1043470556 || points.length < 4) return { pts: points, y: heights };
+  // Two mapped nodes less than a metre apart introduce a reverse segment
+  // when offset by the full four-lane approach. Keep the node at the crossing.
+  const keep = points.map((p, i) => i === 0 || i >= points.length - 2 || Math.hypot(p[0] - points[i + 1][0], p[1] - points[i + 1][1]) >= 1);
+  return { pts: points.filter((_, i) => keep[i]), y: heights.filter((_, i) => keep[i]) };
+}
+
+const wynnCrossings = new Map([
+  ['Wynn Main Gate Drive', [1269039870, 1269039902]],
+  ['Fashion Show Drive', [5255307397]],
+  ['South Las Vegas Boulevard', [[5255307353, 5255307354], [5255307364, 5255307374]]],
+]);
+
+export function wynnCrossingIds(leg) {
+  const name = leg.entries[0]?.e.way.name;
+  const ids = wynnCrossings.get(name);
+  return name === stripName ? ids[leg.a[1] < 0 ? 0 : 1] : ids;
+}
+
+const gateCoordinates = (x, z) => {
+  const dx = x - wynnGate[0], dz = z - wynnGate[1];
+  return [gateCos * dx + gateSin * dz, -gateSin * dx + gateCos * dz];
+};
+
+export function inWynnGateThroat(x, z) {
+  const [u, v] = gateCoordinates(x, z);
+  return u >= 12 && u <= 54 && Math.abs(v) < 8;
+}
+
+export const isWynnGateMedian = area => area.k === 'park' && area.pts.every(([x, z]) => inWynnGateThroat(x, z));
+
+export function isWynnGateSplit(center, legs) {
+  const [u, v] = gateCoordinates(...center);
+  return u > 45 && u < 80 && Math.abs(v) < 20 && legs.length === 2 &&
+    legs.every(leg => leg.entries.every(({ e }) => e.way.name === 'Wynn Main Gate Drive'));
+}
+
+// Fill minor seams between the two driveways around the mapped refuge island.
+// The finishing pass subtracts the real lanes, refuge, and adjoining sidewalks.
+export const WYNN_GATE_APRON = [[14, -1.5], [21, -4.3], [51, -5.6], [51, 5.1], [23, 5], [14, 2.6]]
+  .map(([u, v]) => [wynnGate[0] + u * gateCos - v * gateSin, wynnGate[1] + u * gateSin + v * gateCos]);
 
 function edgeMidpoint(edge) {
   const [x0, z0] = edge.ref.pts[0];
@@ -32,16 +92,22 @@ function edgeMidpoint(edge) {
 export function isStripEdge(edge) {
   if (edge.internal || edge.elevated || edge.way.name !== stripName) return false;
   const z = edgeMidpoint(edge)[1];
-  return z <= path[0][1] && z >= path.at(-1)[1];
+  return z <= path[0][1] + 235 && z >= path.at(-1)[1];
 }
 
-export function hasPavedStripMedian(edge) {
-  if (!isStripEdge(edge)) return false;
-  const [x, z] = edgeMidpoint(edge);
-  // The two reference views show unplanted median noses on these approaches.
-  return Math.hypot(x - tropicana[0], z - tropicana[1]) < 85 ||
-    z < flamingo[1] && Math.hypot(x - flamingo[0], z - flamingo[1]) < 155;
+export function hasPavedStripMedian(edge, x, z) {
+  const name = edge.way.name;
+  if (name === 'East Flamingo Road' || name === 'West Flamingo Road') return Math.hypot(x - flamingo[0], z - flamingo[1]) < 145;
+  if (name === 'Sands Avenue' || name === 'Spring Mountain Road') return Math.hypot(x - sands[0], z - sands[1]) < 150;
+  // Leave the exposed concrete noses at the junctions. The planted stretches
+  // farther back include the palms north of the Flamingo pedestrian bridge.
+  return Math.hypot(x - tropicana[0], z - tropicana[1]) < 47 ||
+    Math.hypot(x - flamingo[0], z - flamingo[1]) < 38;
 }
+
+// The southwest Sands turn is mapped as a separate path, but the aerial view
+// shows a continuous paved corner with one outer curb beside the Palazzo.
+export const flushStripCorner = edge => edge.way.id === 277512381 ? sands : undefined;
 
 function collectSlipLanes(graph, junctionRoads) {
   const { edges, nodes } = graph;

@@ -4,6 +4,7 @@ import { isSouthStripRoad, roundSouthStripRoad, southStripLaneCount } from '../.
 import { parisDriveLaneCount, parisDriveTurns } from '../../../world/paris-drive-roads.mjs';
 import { bellagioWayHeights, isBellagioFlattenedBridge } from '../../../world/bellagio-drive-roads.mjs';
 import { isStripCorridorRoad } from '../../../world/strip-corridor-pavement.mjs';
+import { wynnGateShape, wynnMedianInset } from '../../../world/strip-streets.mjs';
 export const CLASS = {
     motorway: 'motorway',
     motorway_link: 'ramp',
@@ -62,7 +63,8 @@ export function boundaryAt(e, i, at) {
     };
     if (e.jointStart && e.taperStart) d += (e.jointStart[i] - base) * ease(1 - at / e.taperStart);
     if (e.jointEnd && e.taperEnd) d += (e.jointEnd[i] - base) * ease(1 - (e.ref.length - at) / e.taperEnd);
-    return base + d;
+    const inset = wynnMedianInset(e, at);
+    return base + d + (inset ? inset * (1 - i / e.lanes.length) : 0);
 }
 export function offsetBy(line, f, mitreStart, mitreEnd) {
     const n = line.pts.length, out = [];
@@ -598,7 +600,7 @@ export function buildLaneGraph(data) {
             const centre = !w.ow && total % 2 === 1 && total >= 3 && !w.lf ? laneW / 2 : 0;
             for (const d of dirs){
                 const oneway = !!w.ow;
-                const shape = southStrip || stripCorridor ? roundSouthStripRoad(d.pts, d.y) : d;
+                const shape = southStrip || stripCorridor ? roundSouthStripRoad(d.pts, d.y) : wynnGateShape(w, d.pts, d.y);
                 const base = makeLine(shape.pts, shape.y);
                 const ref = oneway ? offset(base, -(d.n * laneW) / 2) : centre ? offset(base, centre) : base;
                 const e = {

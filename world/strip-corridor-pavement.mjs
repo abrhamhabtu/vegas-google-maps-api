@@ -2,13 +2,9 @@ import clipper from '../landmarks/vendor/clipper/clipper.mjs';
 import { STRIP_PAVEMENT } from './strip-streets.mjs';
 import { SOUTH_STRIP_BOUNDS } from './south-strip-roads.mjs';
 
-// Full Center & North Las Vegas Strip Corridor CSG Pavement Finisher
-// Covers z from -3080 (The STRAT / Sahara) south to 1980 (joining SOUTH_STRIP_BOUNDS seamlessly),
-// hugging the exact Strip centerline ±235 m east/west.
-// Local coordinates in metres: x east, y up, z south.
-
-const Z_NORTH = -3080;
-const Z_SOUTH = SOUTH_STRIP_BOUNDS[1]; // 1980 — joins finishSouthStripPavement with 0.00 m seam
+// Follow the boulevard from the STRAT to the separately reviewed South Strip.
+const Z_NORTH = Math.floor(STRIP_PAVEMENT.path.at(-1)[1]);
+const Z_SOUTH = SOUTH_STRIP_BOUNDS[1];
 const HALF_WIDTH = 145;
 const STRIP_STEP_Z = 220;
 const BLOCK_W = 160;
@@ -205,7 +201,7 @@ function collectLayer(layer, layout, ringsFor) {
 
 function finishBlock(layers, block, inputs) {
   const { major, asphalt, service, aisle, slipPavement, sidewalk, concreteMedians, medians, medianPaving,
-    medianPlanting, frontagePlanting, curb, paint, paintDim, paintYellow, reviewedAisles, parkingBase } = layers;
+    medianPlanting, medianApron, frontagePlanting, curb, paint, paintDim, paintYellow, reviewedAisles, parkingBase } = layers;
   const [x0, z0] = block.bounds;
   const raw = (...sources) => sources.flatMap(layer => inputs.get(layer).get(block));
   const take = (...sources) => {
@@ -218,14 +214,14 @@ function finishBlock(layers, block, inputs) {
   const driveRaw = raw(service);
   const driveShapes = driveRaw.length ? clipOp(ctUnion, driveRaw) : [];
   const drivePaths = toPaths(driveShapes);
-  const drivable = drivePaths.length
-    ? toPaths(clipOp(ctUnion, [...streetPaths, ...drivePaths]))
+  const aisleRaw = raw(aisle);
+  const drivable = drivePaths.length || aisleRaw.length
+    ? toPaths(clipOp(ctUnion, [...streetPaths, ...drivePaths, ...aisleRaw]))
     : streetPaths;
   if (!drivable.length && !inputs.get(sidewalk).get(block).length) return;
 
   const drives = drivePaths.length ? clipOp(ctDifference, drivePaths, streetPaths) : [];
-  const aisleRaw = raw(aisle);
-  const parking = aisleRaw.length ? clipOp(ctDifference, aisleRaw, drivable) : [];
+  const parking = aisleRaw.length ? clipOp(ctDifference, aisleRaw, [...streetPaths, ...drivePaths]) : [];
   const parkingPaths = toPaths(parking);
   const lotRaw = raw(parkingBase);
   const lots = lotRaw.length ? clipOp(ctDifference, lotRaw, [...drivable, ...parkingPaths]) : [];
@@ -248,10 +244,12 @@ function finishBlock(layers, block, inputs) {
   const walkRaw = raw(sidewalk);
   const walkClear = walkRaw.length ? clipOp(ctDifference, walkRaw, [...drivable, ...medianPaths, ...parkingPaths]) : [];
   add(sidewalk, walkClear, 0.11, 0.65);
+  const aprons = raw(medianApron);
+  if (aprons.length) add(major, clipOp(ctDifference, aprons, [...drivable, ...medianPaths, ...toPaths(walkClear)]));
 
   const frontRaw = raw(frontagePlanting);
   if (frontRaw.length) add(frontagePlanting, clipOp(ctDifference, frontRaw, [...drivable, ...parkingPaths]), 0.065, 1.0);
-  const plantRaw = raw(medianPlanting);
+  const plantRaw = raw(medians, medianPlanting);
   if (plantRaw.length && medianPaths.length) add(medianPlanting, clipOp(ctIntersection, plantRaw, medianPaths), 0.122, 0.75);
   const curbRaw = raw(curb);
   if (curbRaw.length) add(curb, clipOp(ctDifference, curbRaw, drivable), 0.17, 0.15);

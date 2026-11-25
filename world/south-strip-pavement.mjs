@@ -2,7 +2,6 @@ import clipper from '../landmarks/vendor/clipper/clipper.mjs';
 import { SOUTH_STRIP_BOUNDS } from './south-strip-roads.mjs';
 
 // Integer millimetres keep coincident rims and paint cuts stable.
-const [west, north, east, south] = SOUTH_STRIP_BOUNDS;
 const mm = 1000;
 const point = (x, z) => ({ X: Math.round(x * mm), Y: Math.round(z * mm) });
 const { ctUnion, ctIntersection, ctDifference } = clipper.ClipType;
@@ -45,7 +44,8 @@ function closing(paths) {
 
 // Collect only flat faces. Preserve the original geometry outside the review
 // bounds, including the portion of a triangle that straddles an end of the section.
-function collect(layer, blocks, section, ringsFor) {
+function collect(layer, blocks, section, bounds, ringsFor) {
+  const [west, north, east, south] = bounds;
   const size = layer.size || 1400;
   for (const [key, soup] of layer.m.entries()) {
     const comma = key.indexOf(',');
@@ -90,16 +90,17 @@ function collect(layer, blocks, section, ringsFor) {
 
 function finishBlock(layers, block, inputs) {
   const { major, asphalt, service, aisle, slipPavement, sidewalk, concreteMedians, medians, medianPaving,
-    medianPlanting, frontagePlanting, curb, paint, paintDim, paintYellow, reviewedAisles, parkingBase } = layers;
+    medianPlanting, medianApron, frontagePlanting, curb, paint, paintDim, paintYellow, reviewedAisles, parkingBase, plaza, gravel } = layers;
   const [x0, z0] = block.bounds;
   const take = (...sources) => clip(ctUnion, sources.flatMap(layer => inputs.get(layer).get(block)));
   const street = take(major, asphalt, slipPavement);
   const driveShapes = take(service);
   const paving = [...paths(street), ...paths(driveShapes)];
-  const drivable = paths(clip(ctUnion, paving));
-  const closed = paths(clip(ctIntersection, closing(drivable), block.section));
+  const parkingShapes = paths(take(aisle));
+  const drivable = paths(clip(ctUnion, [...paving, ...parkingShapes]));
+  const closed = paths(clip(ctIntersection, closing(paths(clip(ctUnion, paving))), block.section));
   const drives = clip(ctDifference, [...paths(driveShapes), ...closed], paths(street));
-  const parking = clip(ctDifference, paths(take(aisle)), drivable);
+  const parking = clip(ctDifference, parkingShapes, paving);
   const lots = clip(ctDifference, paths(take(parkingBase)), [...drivable, ...paths(parking)]);
   const add = (layer, polygons, y = 0, minimumArea = 0) => {
     emit(layer.at(x0, z0), polygons, y, minimumArea);
@@ -109,11 +110,18 @@ function finishBlock(layers, block, inputs) {
   add(reviewedAisles, parking);
   add(parkingBase, lots);
 
-  const mediansClear = clip(ctDifference, paths(take(concreteMedians, medians, medianPaving)), drivable);
+  const plazaPaths = plaza ? paths(take(plaza)) : [];
+  const gravelClear = gravel ? clip(ctDifference, paths(take(gravel)), [...drivable, ...plazaPaths]) : [];
+  const gravelPaths = paths(gravelClear);
+  const mediansClear = clip(ctDifference, paths(take(concreteMedians, medians, medianPaving)), [...drivable, ...plazaPaths, ...gravelPaths]);
   add(concreteMedians, mediansClear, 0.11, 0.45);
-  add(sidewalk, clip(ctDifference, paths(take(sidewalk)), [...drivable, ...paths(mediansClear), ...paths(parking)]), 0.11, 0.45);
+  if (gravel) add(gravel, gravelClear, 0.11, 0.45);
+  const islands = [...paths(mediansClear), ...gravelPaths];
+  const walks = clip(ctDifference, [...paths(take(sidewalk)), ...plazaPaths], [...drivable, ...islands]);
+  add(sidewalk, walks, 0.11, 0.45);
+  add(major, clip(ctDifference, paths(take(medianApron)), [...drivable, ...islands, ...paths(walks)]));
   add(frontagePlanting, clip(ctDifference, paths(take(frontagePlanting)), [...drivable, ...paths(parking)]), 0.065, 1.0);
-  add(medianPlanting, clip(ctIntersection, paths(take(medianPlanting)), paths(mediansClear)), 0.122, 0.6);
+  add(medianPlanting, clip(ctIntersection, paths(take(medians, medianPlanting)), islands), 0.122, 0.6);
   add(curb, clip(ctDifference, paths(take(curb)), drivable), 0.17, 0.12);
   const yellow = clip(ctIntersection, paths(take(paintYellow)), drivable);
   const white = clip(ctDifference, paths(clip(ctIntersection, paths(take(paint)), drivable)), paths(yellow));
@@ -123,7 +131,8 @@ function finishBlock(layers, block, inputs) {
   add(paintDim, clip(ctDifference, dim, [...paths(white), ...paths(yellow)]));
 }
 
-export async function finishSouthStripPavement(layers, pause) {
+export async function finishSouthStripPavement(layers, pause, bounds = SOUTH_STRIP_BOUNDS) {
+  const [west, north, east, south] = bounds;
   const rectangle = ([x0, z0, x1, z1]) => [[point(x0, z0), point(x1, z0), point(x1, z1), point(x0, z1)]];
   const blocks = [];
   const blockSize = 135;
@@ -133,11 +142,11 @@ export async function finishSouthStripPavement(layers, pause) {
       blocks.push({ bounds, section: rectangle(bounds) });
     }
   }
-  const section = rectangle(SOUTH_STRIP_BOUNDS);
+  const section = rectangle(bounds);
   const inputs = new Map();
   for (const layer of Object.values(layers)) {
     const rings = new Map(blocks.map(block => [block, []]));
-    collect(layer, blocks, section, rings);
+    collect(layer, blocks, section, bounds, rings);
     inputs.set(layer, rings);
     if (pause) await pause();
   }

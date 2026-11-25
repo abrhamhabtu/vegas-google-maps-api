@@ -1,8 +1,8 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
 import { boundaryLine, sample } from './lanegraph.js';
 import { rebuildMovements } from './movements.js';
-import { isStripEdge } from '../../../world/strip-streets.mjs';
-import { alignSouthStripCrossing, isMandalayLaneFan } from '../../../world/south-strip-roads.mjs';
+import { isStripEdge, isWynnGateJunction, wynnCrossingIds } from '../../../world/strip-streets.mjs';
+import { alignMappedCrossing, alignSouthStripCrossing, isMandalayLaneFan } from '../../../world/south-strip-roads.mjs';
 import { CROSSWALK_OFFSET, crossingStation } from '../../../world/road-crossings.mjs';
 export function planIntersections(data, g) {
     const waysAt = new Map();
@@ -208,6 +208,7 @@ export function planIntersections(data, g) {
                 ];
                 const inGroup = new Set(group), mine = [], real = crossesRoad(group);
                 const mandalayLaneFan = isMandalayLaneFan(group);
+                const wynnGate = isWynnGateJunction(group);
                 groupsOut.push({
                     nodes: group,
                     ctr,
@@ -229,7 +230,9 @@ export function planIntersections(data, g) {
                         const L = Math.hypot(ax, az) || 1;
                         ax /= L;
                         az /= L;
-                        let leg = mine.find((l)=>l.a[0] * ax + l.a[1] * az > 0.88);
+                        let leg = wynnGate && e.way.name === 'Wynn Main Gate Drive'
+                            ? mine.find(l=>l.entries[0]?.e.way.name === e.way.name)
+                            : mine.find(l=>l.a[0] * ax + l.a[1] * az > 0.88);
                         if (!leg) {
                             mine.push(leg = {
                                 ctr,
@@ -283,6 +286,10 @@ export function planIntersections(data, g) {
                     if (leg.cross && spans.some((sp)=>Math.hypot(sp.x - mx, sp.z - mz) < 42 && Math.abs(sp.hx * leg.a[0] + sp.hz * leg.a[1]) < 0.45)) leg.cross = false;
                     if (leg.cross && leg.entries.some(({ e })=>e.cls === 'arterial') && spans.filter((sp)=>Math.hypot(sp.x - ctr[0], sp.z - ctr[1]) < 95).length >= 2) leg.cross = false;
                     if (leg.cross && alignSouthStripCrossing(leg, group, crossingsById, CROSSWALK_OFFSET)) leg.mapped = true;
+                    if (wynnGate && alignMappedCrossing(leg, wynnCrossingIds(leg), crossingsById, CROSSWALK_OFFSET)) {
+                        leg.cross = leg.mapped = true;
+                        leg.markedEdges = new Set(leg.entries.map(({e})=>e.id));
+                    }
                     const target = (t, e, atStart, max = e.ref.length * 0.5)=>{
                         if (leg.mapped) {
                             const mid = (crossingStation(e, boundaryLine(e, 0), leg, t, atStart, max) +

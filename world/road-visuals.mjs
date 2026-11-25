@@ -1,5 +1,6 @@
 // The lane edge and its reference have the same vertices but different arclengths.
 export function offsetStation(reference, line, distance) {
+  reference = line.reference ?? reference;
   const station = Math.max(0, Math.min(reference.length, distance));
   let low = 0;
   let high = reference.cum.length - 1;

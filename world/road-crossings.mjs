@@ -30,6 +30,7 @@ function continuation(edges, edge, atStart) {
 // Walk toward the street side of the crossing plane. Boundary vertices share
 // stations with the reference line even when the approach curves or flares.
 function distancePastPlane(ref, line, leg, plane, atStart) {
+  ref = line.reference ?? ref;
   const count = line.pts.length;
   let previous = -Infinity, previousDistance = 0;
   for (let k = 0; k < count; k++) {

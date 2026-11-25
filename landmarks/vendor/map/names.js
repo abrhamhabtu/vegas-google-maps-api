@@ -75,7 +75,7 @@ export function shortName(n) {
     for (const [re, r] of ABBR)s = s.replace(re, r);
     return s.toUpperCase();
 }
-export function buildStreetNames(g) {
+export function buildStreetNames(g, crossingGaps) {
     const len = new Map();
     const usable = (e)=>!!e.way.name && !e.internal && !/_link$/.test(e.way.hw) && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local');
     for (const e of g.edges)if (usable(e)) len.set(e.way.name, (len.get(e.way.name) ?? 0) + e.ref.length);
@@ -137,7 +137,9 @@ export function buildStreetNames(g) {
         const point = (d)=>sample(center, offsetStation(e.ref, center, d));
         const spacing = e.cls === 'arterial' ? 105 : 160;
         const first = (from + to) / 2 - Math.floor((to - from) / (2 * spacing)) * spacing;
+        const gaps = crossingGaps.get(e.id) ?? [];
         for(let s = first; s <= to; s += spacing){
+            if (gaps.some(([lo, hi])=>s + textL / 2 >= lo && s - textL / 2 <= hi)) continue;
             const a = point(s - textL / 2), b = point(s + textL / 2), m = point(s);
             if (a.hx * b.hx + a.hz * b.hz < 0.985 || Math.min(width(s - textL / 2), width(s + textL / 2)) < textH + 0.32) continue;
             const cx = m.x, cz = m.z;

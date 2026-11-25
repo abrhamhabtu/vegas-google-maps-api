@@ -59,7 +59,7 @@ export async function buildCity(data, engine) {
   const specialData = { ...data, rail: [] };
   buildings.add(stage('landmarks', () => buildLandmarks(specialData, engine)), buildArenas(data, engine));
   const resorts = stage('resorts', () => buildResorts(data, engine));
-  buildings.add(resorts.group, buildDetails(specialData, engine, graph), welcomeSign(graph, engine));
+  buildings.add(resorts.group, buildDetails(specialData, engine, graph), welcomeSign(engine));
   await engine.yield();
   // Must run before buildBuildings: these claim the tower footprints they model by hand.
   stage('hero resorts', () => {
@@ -83,7 +83,7 @@ export async function buildCity(data, engine) {
   const valets = stage('valets', () => buildValets(data, valetPlan, graph));
   graph.valets = valets.stops;
   buildings.add(valets.group);
-  roads.add(roadOutput.group, buildStreetNames(graph));
+  roads.add(roadOutput.group, buildStreetNames(graph, roadOutput.crossingGaps));
   engine.reveal?.('roads');
   await engine.yield();
   engine.progress('Opening bridges…', 0.85);
@@ -95,7 +95,7 @@ export async function buildCity(data, engine) {
   );
   await engine.yield();
   engine.progress('Bringing the city to life…', 0.93);
-  detail.add(stage('trees', () => buildTrees(data, graph)));
+  detail.add(stage('trees', () => buildTrees(data, graph, roadOutput.planting)));
   const lights = buildCityLights(data);
   detail.add(lights.group, stage('streetscape', () => buildStreetscape(graph, engine, lights.spots)), buildSigns(data, graph));
   engine.reveal?.('streets');

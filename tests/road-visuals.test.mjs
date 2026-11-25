@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { arrowMarking, dashRuns, offsetStation, widestClearSpan, zebraBars } from '../world/road-visuals.mjs';
+import { surfaceMask, supportsTree } from '../world/road-planting.mjs';
+import { finishSouthStripPavement } from '../world/south-strip-pavement.mjs';
+import { finishStripCorridorPavement } from '../world/strip-corridor-pavement.mjs';
+import { junctionOutline } from '../world/south-strip-roads.mjs';
 
 globalThis.window = { THREE: {} };
 const { guideClearsCrossing, paintSpans, planCrossingPaint } = await import('../world/road-crossings.mjs');
@@ -11,6 +15,24 @@ test('offset markings use the same reference cross section on curves', () => {
   assert.equal(offsetStation(reference, laneEdge, 5), 4);
   assert.equal(offsetStation(reference, laneEdge, 10), 8);
   assert.equal(offsetStation(reference, laneEdge, 15), 16);
+  const rounded = { length: 20, cum: [0, 5, 10, 20] };
+  const offset = { length: 24, cum: [0, 3, 8, 24], reference: rounded };
+  assert.equal(offsetStation(reference, offset, 15), 16);
+});
+
+test('a right-angle intersection joins the curb rims along a tangent curve', () => {
+  const corners = [];
+  junctionOutline([
+    { dir: [1, 0], pts: [[20, -10], [20, 10]] },
+    { dir: [0, 1], pts: [[10, 20], [-10, 20]] },
+    { dir: [-1, 0], pts: [[-20, 10], [-20, -10]] },
+    { dir: [0, -1], pts: [[-10, -20], [10, -20]] },
+  ], [0, 0], corners);
+  assert.equal(corners.length, 4);
+  const east = corners.find(([p]) => p[0] === 20);
+  assert.deepEqual(east[0], [20, 10]);
+  assert.deepEqual(east[6], [12.5, 12.5]);
+  assert.deepEqual(east.at(-1), [10, 20]);
 });
 
 test('dash phase carries across road splits and keeps paint out of crosswalk space', () => {
@@ -40,6 +62,46 @@ test('median edges follow narrow clear gaps and exclude a connector in the middl
   const [nose, edge] = widestClearSpan(1.05, d => d < 0.13 || d > 0.90);
   assert.ok(edge - nose > 0.74);
   assert.deepEqual(widestClearSpan(5, () => true), [0, 0]);
+});
+
+test('both Strip pavement finishers retain planted medians and cut them around parking access', async () => {
+  for (const [finish, x, z] of [[finishSouthStripPavement, 140, 2010], [finishStripCorridorPavement, 150, 250]]) {
+    const keys = ['major', 'asphalt', 'service', 'aisle', 'slipPavement', 'sidewalk', 'concreteMedians', 'medians',
+      'medianPaving', 'medianPlanting', 'medianApron', 'frontagePlanting', 'curb', 'paint', 'paintDim', 'paintYellow', 'reviewedAisles', 'parkingBase'];
+    const layers = Object.fromEntries(keys.map(key => {
+      const mesh = { pos: [], idx: [], output: [], polygon(outer, y, holes) { this.output.push({ outer, y, holes }); } };
+      return [key, { m: new Map([[`0,${Math.floor(z / 1400)}`, mesh]]), at: () => mesh }];
+    }));
+    const rectangle = (layer, left, top, right, bottom) => {
+      const mesh = layers[layer].at();
+      mesh.pos.push(x + left, 0, z + top, x + right, 0, z + top, x + right, 0, z + bottom, x + left, 0, z + bottom);
+      mesh.idx.push(0, 1, 2, 0, 2, 3);
+    };
+    rectangle('medians', 0, 0, 12, 4);
+    rectangle('major', -4, -2, 2, 6);
+    rectangle('aisle', 8, -2, 15, 6);
+    rectangle('medianApron', 0, -1, 12, 5);
+
+    await finish(layers);
+    const area = ring => Math.abs(ring.reduce((sum, [px, pz], i) => {
+      const [nx, nz] = ring[(i + 1) % ring.length];
+      return sum + px * nz - nx * pz;
+    }, 0)) / 2;
+    const totalArea = layer => layers[layer].at().output.reduce((sum, { outer, holes }) =>
+      sum + area(outer) - holes.reduce((removed, hole) => removed + area(hole), 0), 0);
+    // Review blocks may split an island or lot without changing its coverage.
+    assert.ok(Math.abs(totalArea('medianPlanting') - 24) < 0.02);
+    assert.ok(Math.abs(totalArea('reviewedAisles') - 56) < 0.02);
+    assert.ok(Math.abs(totalArea('major') - 60) < 0.02);
+  }
+});
+
+test('a tree needs its full base on finished planting geometry', () => {
+  const pos = [0, 0.122, 0, 4, 0.122, 0, 4, 0.122, 4, 0, 0.122, 4];
+  const surface = surfaceMask({ m: new Map([[0, { pos, idx: [0, 1, 2, 0, 2, 3] }]]) });
+  assert.ok(supportsTree(surface, 2, 2, 0.4));
+  assert.ok(!supportsTree(surface, 0.1, 2, 0.4));
+  assert.ok(!supportsTree(surface, 5, 2, 0.4));
 });
 
 function road(id, from, to, extra = {}) {

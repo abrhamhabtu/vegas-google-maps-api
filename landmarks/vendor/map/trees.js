@@ -1,31 +1,34 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
 const THREE = window.THREE;
-import { theme } from '../core/theme.js';
 import { hash } from './geom.js';
 import { boundaryAt, boundaryLine, roadMask, sample } from './lanegraph.js';
 import { litColor } from './materials.js';
-import { latLonToXZ } from '../core/data.js';
-import { ORIGIN, SIGN_LATLON } from '../places.js';
-import { hasPavedStripMedian, isStripEdge } from '../../../world/strip-streets.mjs';
+import { isStripEdge } from '../../../world/strip-streets.mjs';
+import { inSouthStrip } from '../../../world/south-strip-roads.mjs';
+import { inStripCorridor } from '../../../world/strip-corridor-pavement.mjs';
+import { supportsTree } from '../../../world/road-planting.mjs';
+import { atWelcome } from '../../../world/welcome-sign-roads.mjs';
 export function palmGeometry() {
     const parts = [];
     const trunk = new THREE.CylinderGeometry(0.15, 0.25, 8.6, 5, 1, true);
     trunk.translate(0, 4.3, 0);
     setColor(trunk, new THREE.Color('#8a7864'));
     parts.push(trunk);
-    for(let i = 0; i < 8; i++){
-        const a = i / 8 * Math.PI * 2 + i % 2 * 0.18;
-        const f = new THREE.PlaneGeometry(0.92, 3.2, 1, 3);
+    for(let i = 0; i < 11; i++){
+        const a = i / 11 * Math.PI * 2 + i % 2 * 0.18;
+        const f = new THREE.PlaneGeometry(1, 1, 2, 7);
+        const length = 2.5 + hash(i + 23) * 0.7;
         const pos = f.attributes.position;
         for(let k = 0; k < pos.count; k++){
-            const y = pos.getY(k) + 1.6;
-            const droop = -0.13 * y * y;
-            pos.setXYZ(k, pos.getX(k) * (1 - y / 4.0), droop, y);
+            const u = pos.getX(k), t = 0.5 - pos.getY(k);
+            const width = 0.08 + 0.83 * Math.sin(Math.PI * t) ** 0.8;
+            const arch = (i % 3 === 0 ? 2.45 : 1.6) * t - 2.65 * t * t;
+            pos.setXYZ(k, u * width, arch - Math.abs(u) * width * 0.49, t * length);
         }
         f.rotateY(a);
         f.translate(0, 8.6, 0);
         f.computeVertexNormals();
-        setColor(f, new THREE.Color(i % 2 ? '#2fa07c' : '#268b6b'));
+        setColor(f, new THREE.Color(i % 2 ? '#3b7651' : '#4b8960'));
         parts.push(f);
     }
     return merge(parts);
@@ -34,14 +37,17 @@ function canopyGeometry() {
     const trunk = new THREE.CylinderGeometry(0.16, 0.23, 2.5, 5, 1, true);
     trunk.translate(0, 1.25, 0);
     setColor(trunk, new THREE.Color('#7a6a58'));
-    const crown = new THREE.IcosahedronGeometry(2.05, 1);
-    crown.scale(1, 1.12, 1);
-    crown.translate(0, 3.95, 0);
-    setColor(crown, new THREE.Color('#259272'));
-    return merge([
-        trunk,
-        crown
-    ]);
+    const parts = [trunk];
+    for (const [x, y, z, radius, color] of [
+        [0, 4.18, 0, 1.63, '#4c7d58'], [-0.88, 3.57, 0.2, 1.22, '#386b4a'],
+        [0.82, 3.85, 0.53, 1.16, '#447953'], [0.25, 4.08, -0.92, 1.13, '#50825c']
+    ]) {
+        const crown = new THREE.IcosahedronGeometry(radius, 1);
+        crown.scale(1, 1.13, 0.94).translate(x, y, z);
+        setColor(crown, new THREE.Color(color));
+        parts.push(crown);
+    }
+    return merge(parts);
 }
 function setColor(g, c) {
     const n = g.attributes.position.count;
@@ -75,18 +81,18 @@ function merge(parts) {
     out.setIndex(idx);
     return out;
 }
-export function plantTrees(data, g) {
+export function plantTrees(data, g, planting) {
     const onRoad = roadMask(g);
     const palms = [];
     const round = [];
-    const [sx, sz] = latLonToXZ(ORIGIN, SIGN_LATLON.lat, SIGN_LATLON.lon);
-    const inLot = (x, z)=>Math.abs(x - sx) < 17 && z > sz - 20 && z < sz + 232;
     const t = data.trees;
     for(let i = 0; i < t.length; i += 3){
         const x = t[i], z = t[i + 1], k = t[i + 2];
-        if (inLot(x, z) || onRoad(x, z, 0.8)) continue;
+        const welcome = atWelcome(x, z);
+        if (onRoad(x, z, 0.8) || welcome && !supportsTree(planting.welcome, x, z, 0.4) &&
+            !supportsTree(planting.median, x, z, 0.4)) continue;
         const r = hash(i);
-        (k === 1 ? palms : round).push([
+        (k === 1 || welcome && r < 0.8 ? palms : round).push([
             x,
             z,
             0.8 + r * 0.45,
@@ -157,7 +163,7 @@ export function plantTrees(data, g) {
     }
     const connGrid = new Map();
     for (const k of g.lanes){
-        if (!k.connector || k.line.pts.length < 2) continue;
+        if (!k.connector || k.line.pts.length < 2 || k.line.y.some(y=>y > 2)) continue;
         const hw = (k.width ?? 3.5) * 0.5;
         for(let i = 0; i < k.line.pts.length - 1; i++){
             const a = k.line.pts[i], b = k.line.pts[i + 1];
@@ -238,7 +244,7 @@ export function plantTrees(data, g) {
         if (!stripEdge && !/Las Vegas Boulevard|Flamingo Road|Tropicana Avenue|Harmon Avenue|Spring Mountain Road|Bruno Mars Drive|Park Avenue/i.test(name)) continue;
         const isStrip = stripEdge || /Las Vegas Boulevard/i.test(name);
         // 1. Landscaped center median trees (alternating palms & leafy canopy trees, matching Apple Maps)
-        if (!hasPavedStripMedian(e)) {
+        {
             const minGap = isStrip ? 1.25 : 2.0;
             const step = isStrip ? 8.2 : 14.5;
             const endPad = isStrip ? 5.5 : 10;
@@ -250,7 +256,9 @@ export function plantTrees(data, g) {
                 const lx = q.hz, lz = -q.hx;
                 const x = q.x + lx * (gap * 0.5), z = q.z + lz * (gap * 0.5);
                 const roadMargin = gap < 2.2 ? 0.35 : 0.65;
-                if (occupied.has(key(x, z)) || inLot(x, z) || onRoad(x, z, roadMargin) || onCarriageway(x, z, roadMargin) || onConn(x, z, 0.75)) continue;
+                if (occupied.has(key(x, z)) || atWelcome(x, z) || onRoad(x, z, roadMargin) || onCarriageway(x, z, roadMargin) || onConn(x, z, 0.75)) continue;
+                const reviewed = stripEdge || inSouthStrip(x, z) || inStripCorridor(x, z);
+                if (reviewed && !supportsTree(planting.median, x, z, 0.43)) continue;
                 occupied.add(key(x, z));
                 const h = hash(Math.round(x * 7 + z * 3));
                 const yaw = hash(Math.round(x + z * 5)) * 6.28;
@@ -276,7 +284,8 @@ export function plantTrees(data, g) {
                         gap * 0.24
                     ]){
                         const sx2 = x + lx * off + q.hx * 4.2, sz2 = z + lz * off + q.hz * 4.2;
-                        if (!occupied.has(key(sx2, sz2)) && !inLot(sx2, sz2) && !onRoad(sx2, sz2, 0.7) && !onCarriageway(sx2, sz2, 0.65) && !onConn(sx2, sz2, 0.8)) {
+                        if (!occupied.has(key(sx2, sz2)) && !atWelcome(sx2, sz2) && !onRoad(sx2, sz2, 0.7) && !onCarriageway(sx2, sz2, 0.65) && !onConn(sx2, sz2, 0.8) &&
+                            (!reviewed || supportsTree(planting.median, sx2, sz2, 0.48))) {
                             occupied.add(key(sx2, sz2));
                             const h2 = hash(Math.round(sx2 * 5 + sz2));
                             (h2 > 0.62 ? round : palms).push([
@@ -297,8 +306,9 @@ export function plantTrees(data, g) {
                 const q = sample(right, s);
                 const rx = -q.hz, rz = q.hx;
                 const x = q.x + rx * 2.25, z = q.z + rz * 2.25;
-                if (occupied.has(key(x, z, 7)) || inLot(x, z) || onRoad(x, z, 1.0) || onCarriageway(x, z, 0.9) || onConn(x, z, 1.1) || inBuilding(x, z, 2.2)) continue;
-                occupied.add(key(x, z, 7));
+                if (occupied.has(key(x, z)) || atWelcome(x, z) || onRoad(x, z, 1.0) || onCarriageway(x, z, 0.9) || onConn(x, z, 1.1) || inBuilding(x, z, 2.2) ||
+                    !supportsTree(planting.sidewalk, x, z, 0.44)) continue;
+                occupied.add(key(x, z));
                 const h = hash(Math.round(x * 11 + z * 7));
                 const yaw = hash(Math.round(x * 3 + z * 13)) * 6.28;
                 if (h < 0.76) {
@@ -324,22 +334,22 @@ export function plantTrees(data, g) {
         round
     };
 }
-export function buildTrees(data, g) {
-    const { palms, round } = plantTrees(data, g);
+export function buildTrees(data, g, planting) {
+    const { palms, round } = plantTrees(data, g, planting);
     const group = new THREE.Group();
     group.name = 'trees';
     const mk = (geo, list, color)=>{
         if (!list.length) return;
-        const mat = litColor(theme.name === 'day' ? '#ffffff' : '#ffffff', {
+        const mat = litColor('#ffffff', {
             vertexColors: true
         });
-        void color;
         const mesh = new THREE.InstancedMesh(geo, mat, list.length);
         const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
         list.forEach(([x, z, s, yaw], i)=>{
             q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
             sc.set(s, s, s);
-            pos.set(x, 0, z);
+            const y = planting.median(x, z) ? 0.122 : planting.sidewalk(x, z) || atWelcome(x, z) && planting.welcome(x, z) ? 0.11 : 0;
+            pos.set(x, y, z);
             mesh.setMatrixAt(i, m.compose(pos, q, sc));
         });
         mesh.computeBoundingSphere();

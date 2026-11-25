@@ -98,7 +98,12 @@ export function alignSouthStripCrossing(leg, members, crossings, offset) {
   const [ax, az] = leg.a;
   const axis = Math.abs(ax) > Math.abs(az) ? [Math.sign(ax), 0] : [0, Math.sign(az)];
   const arm = axis[1] < 0 ? 0 : axis[1] > 0 ? 1 : axis[0] < 0 ? 2 : 3;
-  const points = signalCrossings.get(anchor)[arm].map(id => crossings.get(id));
+  return alignMappedCrossing(leg, signalCrossings.get(anchor)[arm], crossings, offset, axis);
+}
+
+export function alignMappedCrossing(leg, ids, crossings, offset, axis = leg.a) {
+  if (!ids?.length) return false;
+  const points = ids.map(id => crossings.get(id));
   if (points.some(point => !point)) return false;
   const [a, b] = points;
   let normal = axis;
@@ -115,7 +120,7 @@ export function alignSouthStripCrossing(leg, members, crossings, offset) {
 }
 
 // Trace the outer corners from the ends of the lane rims at each arm.
-export function junctionOutline(mouths, center) {
+export function junctionOutline(mouths, center, corners = []) {
   const arms = mouths.map(({dir, pts}) => {
     const side = p => (p[1] - center[1]) * dir[0] - (p[0] - center[0]) * dir[1];
     const ends = pts.slice().sort((a, b) => side(a) - side(b));
@@ -132,15 +137,18 @@ export function junctionOutline(mouths, center) {
     const dx = next[0] - high[0], dz = next[1] - high[1];
     const d = (dx * b[1] - dz * b[0]) / cross;
     const e = (dx * a[1] - dz * a[0]) / cross;
-    if (d >= -0.1 || e <= 0.1 || d < -45 || e > 45) continue;
+    if (d >= -0.1 || e >= -0.1 || d < -45 || e < -45) continue;
     const corner = [high[0] + a[0] * d, high[1] + a[1] * d];
+    const curve = [high];
     for (let k = 1; k < 12; k++) {
       const t = k / 12, u = 1 - t;
-      ring.push([
+      curve.push([
         u * u * high[0] + 2 * u * t * corner[0] + t * t * next[0],
         u * u * high[1] + 2 * u * t * corner[1] + t * t * next[1],
       ]);
     }
+    ring.push(...curve.slice(1));
+    corners.push([...curve, next]);
   }
   return ring;
 }
