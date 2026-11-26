@@ -534,7 +534,9 @@ export function buildValets(data, plan, graph) {
                 (Math.hypot(wx - 692.5, wz - (-1233.5)) < 34.0) ||
                 (wx > 840 && wx < 958 && wz > -1532 && wz < -1454) ||
                 (wx > 324 && wx < 520 && wz > -605 && wz < -435) ||
-                (wx > 418 && wx < 484 && wz > -876 && wz < -786);
+                (wx > 418 && wx < 484 && wz > -876 && wz < -786) ||
+                (wx > 495 && wx < 622 && wz > 1582 && wz < 1685) ||
+                (wx > 16 && wx < 98 && wz > 2620 && wz < 2736);
             const r = ringArea(b.pts) > 0 ? b.pts : b.pts.slice().reverse();
             const every = area > 800 ? 13 : 8.5;
             let acc = 0;
@@ -708,7 +710,7 @@ export function buildValets(data, plan, graph) {
     for (const st of stops){
         if (!st.main) continue;
         // Custom multi-lane porte-cochere motor courts handle their own pavement and markings
-        if (/^(bellagio|caesars palace|the cosmopolitan|aria|wynn las vegas|encore|the venetian)$/i.test(st.name ?? '')) continue;
+        if (/^(bellagio|caesars palace|the cosmopolitan|aria|wynn las vegas|encore|the venetian|mgm grand|mandalay bay)$/i.test(st.name ?? '')) continue;
         const e = graph.edges[st.edge];
         if (!e) continue;
         const W = e.lanes.length * e.laneWidth;
