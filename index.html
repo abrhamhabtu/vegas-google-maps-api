@@ -12,14 +12,19 @@
   <!-- The city snapshot is the long pole: start it downloading before any script runs. -->
   <link rel="preload" href="landmarks/footprints.json" as="fetch" crossorigin="anonymous" />
   <link rel="modulepreload" href="three-strip.js" />
+  <link rel="modulepreload" href="landmarks/georeference.mjs" />
+  <link rel="modulepreload" href="landmarks/vendor/core/data.js" />
+  <link rel="modulepreload" href="landmarks/vendor/core/theme.js" />
+  <link rel="modulepreload" href="landmarks/vendor/core/shadows.js" />
   <link rel="modulepreload" href="world/city.js" />
   <link rel="modulepreload" href="landmarks/vendor/map/lanegraph.js" />
-  <link rel="modulepreload" href="landmarks/vendor/map/intersections.js" />
-  <link rel="modulepreload" href="landmarks/vendor/map/roads.js" />
-  <link rel="modulepreload" href="landmarks/vendor/clipper/clipper.mjs" />
+  <link rel="modulepreload" href="landmarks/vendor/map/valets.js" />
+  <link rel="modulepreload" href="landmarks/vendor/map/buildings.js" />
   <link rel="preconnect" href="https://unpkg.com" crossorigin />
   <link rel="preconnect" href="https://mt0.google.com" />
   <link rel="preconnect" href="https://mt1.google.com" />
+  <link rel="preconnect" href="https://mt2.google.com" />
+  <link rel="preconnect" href="https://mt3.google.com" />
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="world/fleet-panel.css" />
@@ -28,7 +33,7 @@
   <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script defer src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
   <!-- Load local config if present (gitignored) -->
-  <script src="config.local.js" onerror="console.info('No config.local.js found; using stored or fallback config.')"></script>
+  <script defer src="config.local.js" onerror="console.info('No config.local.js found; using stored or fallback config.')"></script>
 </head>
 <body data-theme="day" class="booting">
   <main class="map-stage">

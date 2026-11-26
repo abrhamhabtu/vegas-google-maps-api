@@ -26,6 +26,7 @@ function solveRoadElevations(roads) {
     };
     const GCELL = 80;
     const roadGrid = new Map();
+    const cellKey = (gx, gz)=>(gx + 32768) * 65536 + (gz + 32768);
     for (const r of roads){
         if (r.tn || r.hw === 'service') continue;
         for(let i = 0; i < r.pts.length - 1; i++){
@@ -33,7 +34,7 @@ function solveRoadElevations(roads) {
             const x0 = Math.floor(Math.min(a[0], b[0]) / GCELL), x1 = Math.floor(Math.max(a[0], b[0]) / GCELL);
             const z0 = Math.floor(Math.min(a[1], b[1]) / GCELL), z1 = Math.floor(Math.max(a[1], b[1]) / GCELL);
             for(let gx = x0; gx <= x1; gx++)for(let gz = z0; gz <= z1; gz++){
-                const k = `${gx},${gz}`;
+                const k = cellKey(gx, gz);
                 let list = roadGrid.get(k);
                 if (!list) roadGrid.set(k, list = []);
                 list.push([
@@ -53,7 +54,9 @@ function solveRoadElevations(roads) {
             const x0 = Math.floor(Math.min(a[0], b[0]) / GCELL), x1 = Math.floor(Math.max(a[0], b[0]) / GCELL);
             const z0 = Math.floor(Math.min(a[1], b[1]) / GCELL), z1 = Math.floor(Math.max(a[1], b[1]) / GCELL);
             for(let gx = x0; gx <= x1; gx++)for(let gz = z0; gz <= z1; gz++){
-                for (const [o, c, d] of roadGrid.get(`${gx},${gz}`) ?? []){
+                const cell = roadGrid.get(cellKey(gx, gz));
+                if (!cell) continue;
+                for (const [o, c, d] of cell){
                     if (o === r) continue;
                     const ol = o.br ? o.layer ?? 1 : 0;
                     if (ol >= rl) continue;
@@ -152,28 +155,30 @@ function solveRoadElevations(roads) {
         }
         if (r.br) {
             const isL2 = (r.layer ?? 1) >= 2;
-            const roadMinD1 = Math.min(...r.pts.map((p)=>{
-                let md = Infinity;
+            let roadMinD1Sq = Infinity;
+            for (const p of r.pts){
+                const px = p[0], pz = p[1];
                 for (const cp of crossL1){
-                    const d = Math.hypot(p[0] - cp[0], p[1] - cp[1]);
-                    if (d < md) md = d;
+                    const dx = px - cp[0], dz = pz - cp[1], d2 = dx * dx + dz * dz;
+                    if (d2 < roadMinD1Sq) roadMinD1Sq = d2;
                 }
                 for (const cp of crossL2){
-                    const d = Math.hypot(p[0] - cp[0], p[1] - cp[1]);
-                    if (d < md) md = d;
+                    const dx = px - cp[0], dz = pz - cp[1], d2 = dx * dx + dz * dz;
+                    if (d2 < roadMinD1Sq) roadMinD1Sq = d2;
                 }
-                return md;
-            }));
-            if (roadMinD1 <= 160) {
+            }
+            if (roadMinD1Sq <= 160 * 160) {
                 for(let i = 0; i < r.n.length; i++){
                     const p = r.pts[i], nd = r.n[i];
                     let target = DECK1;
                     if (isL2) {
-                        let minD = Infinity;
+                        let minDSq = Infinity;
+                        const px = p[0], pz = p[1];
                         for (const cp of crossL2){
-                            const d = Math.hypot(p[0] - cp[0], p[1] - cp[1]);
-                            if (d < minD) minD = d;
+                            const dx = px - cp[0], dz = pz - cp[1], d2 = dx * dx + dz * dz;
+                            if (d2 < minDSq) minDSq = d2;
                         }
+                        const minD = Math.sqrt(minDSq);
                         if (minD <= 45) target = DECK2;
                         else if (minD < 45 + (DECK2 - DECK1) / 0.05) target = DECK2 - (minD - 45) * 0.05;
                     }
@@ -231,19 +236,21 @@ function solveRoadElevations(roads) {
             for(let i = 0; i < r.n.length; i++){
                 const p = r.pts[i], nd = r.n[i];
                 if (mainNodes.has(nd)) continue;
-                let minD2 = Infinity, minD1 = Infinity;
+                let minD2Sq = Infinity, minD1Sq = Infinity;
+                const px = p[0], pz = p[1];
                 if (isL2) for (const cp of crossL2){
-                    const d = Math.hypot(p[0] - cp[0], p[1] - cp[1]);
-                    if (d < minD2) minD2 = d;
+                    const dx = px - cp[0], dz = pz - cp[1], d2 = dx * dx + dz * dz;
+                    if (d2 < minD2Sq) minD2Sq = d2;
                 }
                 for (const cp of crossL1){
-                    const d = Math.hypot(p[0] - cp[0], p[1] - cp[1]);
-                    if (d < minD1) minD1 = d;
+                    const dx = px - cp[0], dz = pz - cp[1], d2 = dx * dx + dz * dz;
+                    if (d2 < minD1Sq) minD1Sq = d2;
                 }
+                const minD2 = Math.sqrt(minD2Sq);
                 let target = 0;
                 if (isL2 && minD2 <= 50) target = DECK2;
                 else if (isL2 && minD2 < 50 + (DECK2 - DECK1) / 0.052) target = DECK2 - (minD2 - 50) * 0.052;
-                else if (minD1 <= 45 || minD2 <= 90) target = DECK1;
+                else if (minD1Sq <= 45 * 45 || minD2Sq <= 90 * 90) target = DECK1;
                 if (target > 0) H.set(nd, Math.max(H.get(nd) ?? 0, target));
             }
         }
@@ -432,7 +439,15 @@ export function decode(raw) {
                 k: s.k,
                 m: s.m
             })),
-        trees: Float32Array.from(raw.trees, (v, i)=>i % 3 === 2 ? v : v / 10),
+        trees: (()=>{
+            const src = raw.trees, out = new Float32Array(src.length);
+            for(let i = 0; i < src.length; i += 3){
+                out[i] = src[i] / 10;
+                out[i + 1] = src[i + 1] / 10;
+                out[i + 2] = src[i + 2];
+            }
+            return out;
+        })(),
         pois: raw.pois.map((p)=>({
                 n: p.n,
                 k: p.k,

@@ -29,6 +29,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
 
+    def setup(self):
+        super().setup()
+        try:
+            self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
+
     def end_headers(self):
         # Allow browser disk-cache hits for large immutable data/vendor payloads on reload.
         if self.path.startswith(('/landmarks/footprints.json', '/landmarks/vendor/clipper/')):
@@ -116,17 +123,36 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 
 def prewarm_cache():
-    """Pre-gzip landmarks/footprints.json in the background so first page load never stalls."""
-    target = os.path.join(ROOT, 'landmarks', 'footprints.json')
-    if not os.path.isfile(target):
-        return
-    try:
-        stat = os.stat(target)
-        etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
-        with open(target, 'rb') as f:
-            _gz_cache[target] = (etag, gzip.compress(f.read(), compresslevel=4))
-    except OSError:
-        pass
+    """Pre-gzip footprints.json and all app modules/styles in the background so first page load never stalls."""
+    skip_dirs = {'.git', 'node_modules', 'docs', 'tests', 'scripts', '__pycache__'}
+    footprints = os.path.join(ROOT, 'landmarks', 'footprints.json')
+    if os.path.isfile(footprints):
+        try:
+            stat = os.stat(footprints)
+            etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+            with open(footprints, 'rb') as f:
+                _gz_cache[footprints] = (etag, gzip.compress(f.read(), compresslevel=6))
+        except OSError:
+            pass
+    for dirpath, dirnames, filenames in os.walk(ROOT):
+        dirnames[:] = [d for d in dirnames if d not in skip_dirs and not d.startswith('.')]
+        for name in filenames:
+            ext = os.path.splitext(name)[1].lower()
+            if ext not in COMPRESSIBLE:
+                continue
+            target = os.path.join(dirpath, name)
+            if target == footprints:
+                continue
+            try:
+                stat = os.stat(target)
+                etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+                cached = _gz_cache.get(target)
+                if cached and cached[0] == etag:
+                    continue
+                with open(target, 'rb') as f:
+                    _gz_cache[target] = (etag, gzip.compress(f.read(), compresslevel=4))
+            except OSError:
+                pass
 
 
 if __name__ == '__main__':

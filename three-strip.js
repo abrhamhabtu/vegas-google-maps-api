@@ -3,8 +3,6 @@ import { ORIGIN, toLocal, mercatorSouth, adaptVertexShader, localMetreInMercator
 import { decode } from './landmarks/vendor/core/data.js';
 import { theme } from './landmarks/vendor/core/theme.js';
 import { Shadows } from './landmarks/vendor/core/shadows.js';
-import { buildCity } from './world/city.js';
-import { startFleet } from './world/fleet-runtime.js';
 import { extendCityDepth, zoomToDistance } from './world/map-camera.mjs';
 import { createCityHorizon } from './world/city-horizon.js';
 
@@ -14,7 +12,7 @@ window.VEGAS_ROAD_WORLD_ENABLED = true;
 document.documentElement.classList.add('world-enabled');
 
 // Kick off the 12 MB city snapshot fetch + JSON parse + decode immediately at module load,
-// overlapping with MapLibre WebGL initialization instead of waiting for map.on('load').
+// overlapping with MapLibre WebGL initialization and dynamic city/fleet module loading.
 const preloadedSnapshotPromise = fetch('landmarks/footprints.json')
   .then(response => {
     if (!response.ok) throw new Error(`City data: HTTP ${response.status}`);
@@ -30,6 +28,11 @@ const preloadedSnapshotPromise = fetch('landmarks/footprints.json')
     return data;
   })
   .catch(() => null);
+
+// Load the large city and fleet module graphs asynchronously so DOMContentLoaded,
+// MapLibre initialization, and footprints.json decoding never wait on the full ES module tree.
+const cityModulePromise = import('./world/city.js');
+const fleetModulePromise = import('./world/fleet-runtime.js');
 
 // Sub-millisecond cooperative yield (avoids 4 ms+ nested setTimeout browser clamping during road build).
 const fastYield = (() => {
@@ -72,7 +75,7 @@ window.createVegasThreeLayer = function() {
   const animations = [], simulationAnimations = [], disposers = [], scheduled = new Set();
   const frustum = new THREE.Frustum(), mvp = new THREE.Matrix4(), target = new THREE.Vector3();
   let renderer, map, city, runtime, timer, simulationTimer, abortController, shadows;
-  let disposed = false, visible = true, detailed = true, labelsEnabled = true, ready = false;
+  let disposed = false, visible = true, detailed = true, labelsEnabled = true, ready = false, detailsPending = false;
   let lastRender = 0, lastTick = 0, animationTime = 0, simulationTime = 0;
   let themeName = 'day';
 
@@ -87,17 +90,28 @@ window.createVegasThreeLayer = function() {
   // The city's three groups join the scene as soon as they exist and fill in phase by phase,
   // so the skyline is on screen long before the last street lamp is built.
   let parts = null;
+  let preparedAnimationCount = 0;
+  function prepareAnimationBounds() {
+    for (let i = preparedAnimationCount; i < animations.length; i++) {
+      const animation = animations[i];
+      if (!animation.bounds || animation.bounds.radius > 2000) {
+        animation.bounds = new THREE.Box3().setFromObject(animation.object).getBoundingSphere(new THREE.Sphere());
+      }
+    }
+    preparedAnimationCount = animations.length;
+  }
   function attach(groups) {
     parts = groups;
     groups.buildings.visible = visible;
     groups.roads.visible = groups.detail.visible = detailed;
     scene.add(groups.buildings, groups.roads, groups.detail);
   }
-  function reveal(phase) {
+  function reveal(phase, addedRoot) {
     if (disposed || !parts) return;
-    scene.updateMatrixWorld(true);
-    prepareMaterials(scene);
-    theme.apply(themeName);
+    const root = addedRoot || scene;
+    root.updateMatrixWorld(true);
+    prepareMaterials(root);
+    if (phase === 'skyline') theme.apply(themeName);
     performance.mark(`scene:reveal ${phase}`);
     window.dispatchEvent(new CustomEvent('vegas-city-reveal', { detail: { phase } }));
     requestFrame();
@@ -107,6 +121,7 @@ window.createVegasThreeLayer = function() {
     get canvas() { return map.getCanvas(); },
     get renderer() { return renderer; },
     get shadowSize() { return theme.uniforms.uNight.value < 0.7 ? 1024 : 0; },
+    isDisposed: () => disposed,
     animate(object, update, bounds) {
       const entry = { object, update, bounds };
       (object.name === 'road users' ? simulationAnimations : animations).push(entry);
@@ -146,14 +161,14 @@ window.createVegasThreeLayer = function() {
     }
     const movingCamera = runtime.controls.advance(dt);
     if (!runtime.fleet.paused || movingCamera) requestFrame();
-    simulationTimer = setTimeout(tick, 33);
+    simulationTimer = setTimeout(tick, detailsPending ? 120 : 33);
   }
 
   async function load() {
     status('Loading Las Vegas…', 'loading', 0.02);
     try {
       abortController = new AbortController();
-      let data = await preloadedSnapshotPromise;
+      let [data, { buildCity }] = await Promise.all([preloadedSnapshotPromise, cityModulePromise]);
       if (disposed) return;
       if (!data) {
         const response = await fetch('landmarks/footprints.json', { signal: abortController.signal });
@@ -168,28 +183,44 @@ window.createVegasThreeLayer = function() {
       await engine.yield();
       if (disposed) return;
       city = await buildCity(data, engine);
-      if (disposed) return;
+      if (disposed || !city) return;
       if (!parts) attach(city);
       performance.mark('scene:city built');
       window.__vegas = { scene, city, data }; // debugging hook: inspect the built city from the console
-      scene.updateMatrixWorld(true);
-      prepareMaterials(scene);
+      const { startFleet } = await fleetModulePromise;
+      if (disposed) return;
       runtime = startFleet(map, data, city, engine, prepareMaterials);
       runtime.labels.enabled = labelsEnabled;
       shadows = new Shadows(engine, () => runtime.controls.cur);
-      for (const root of [city.buildings, city.detail]) shadows.addCasters(root);
+      shadows.addCasters(city.buildings);
       for (const deck of city.bridgeDecks) shadows.addCasters(deck);
-      for (const animation of animations) {
-        if (!animation.bounds || animation.bounds.radius > 2000) {
-          animation.bounds = new THREE.Box3().setFromObject(animation.object).getBoundingSphere(new THREE.Sphere());
-        }
-      }
+      prepareAnimationBounds();
       theme.apply(themeName);
       ready = true;
+      detailsPending = Boolean(city.finishDetails);
       status('Live city', 'ready');
       requestFrame();
       tick();
       window.dispatchEvent(new CustomEvent('vegas-landmarks-ready', { detail: { footprints: data.buildings.length } }));
+
+      // Stream secondary details (valets, coaster/trams, welcome sign, skybridges, rail, trees,
+      // streetscape, signs) cooperatively in the background without blocking interactivity.
+      city.finishDetails?.((added) => {
+        if (disposed || !added) return;
+        added.updateMatrixWorld(true);
+        prepareMaterials(added);
+        prepareAnimationBounds();
+        requestFrame();
+      })?.then(() => {
+        if (disposed) return;
+        detailsPending = false;
+        shadows?.addCasters(city.buildings);
+        shadows?.addCasters(city.detail);
+        requestFrame();
+      })?.catch((error) => {
+        detailsPending = false;
+        if (!disposed) console.error('Unable to finish city details:', error);
+      });
     } catch (error) {
       if (disposed || error.name === 'AbortError') return;
       status('City unavailable · reload to retry', 'error');
