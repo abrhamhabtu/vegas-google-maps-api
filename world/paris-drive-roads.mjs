@@ -160,7 +160,7 @@ function emitPolygons(layer, polys, y, minArea = 0.02) {
   }
 }
 
-function emitCurbFaces(curbFaces, paths, y0 = 0, y1 = 0.17) {
+function emitCurbFaces(curbFaces, paths, y0 = 0, y1 = 0.17, skipBounds = null) {
   for (const path of paths) {
     const ring = fromClipRing(path);
     const n = ring.length;
@@ -170,6 +170,11 @@ function emitCurbFaces(curbFaces, paths, y0 = 0, y1 = 0.17) {
       const [ax, az] = ring[i];
       const [bx, bz] = ring[(i + 1) % n];
       if (Math.hypot(bx - ax, bz - az) < 0.02) continue;
+      if (skipBounds) {
+        const mx = (ax + bx) * 0.5, mz = (az + bz) * 0.5;
+        if (Math.abs(mx - skipBounds[0]) < 0.28 || Math.abs(mx - skipBounds[2]) < 0.28
+          || Math.abs(mz - skipBounds[1]) < 0.28 || Math.abs(mz - skipBounds[3]) < 0.28) continue;
+      }
       const v0 = soup.vert(ax, y0, az);
       const v1 = soup.vert(bx, y0, bz);
       const v2 = soup.vert(bx, y1, bz);
@@ -301,27 +306,35 @@ export function finishParisDrivePavement(layers) {
   const rotaryOuter = toClipRing(circleRing(cx, cz, outerR, 128));
   const arcPlaza = toClipRing(circleRing(cx, cz, innerR, 128));
 
-  // Westbound straight carriageway + smooth north & south flares into LV Blvd and rotary
+  // Westbound straight carriageway + smooth north & south flares into LV Blvd and rotary (extended west of clip!)
   const wbStraight = toClipRing([
-    [west, wbZ0 - 5.2],
+    [west - 4.0, wbZ0 - 5.2],
     [168.5, wbZ0 - 1.4],
     [175.0, wbZ0],
     [244.0, wbZ0],
     [252.0, wbZ0 - 3.5],
     [252.0, wbZ1 + 3.0],
     [172.0, wbZ1],
-    [west, wbZ1 + 1.0],
+    [west - 4.0, wbZ1 + 1.0],
   ]);
 
-  // Eastbound straight carriageway + smooth flare into LV Blvd and curve into SW rotary
+  // Eastbound straight carriageway + smooth flare into LV Blvd and curve into SW rotary (extended west of clip!)
   const ebStraight = toClipRing([
-    [west, ebZ0 - 1.0],
+    [west - 4.0, ebZ0 - 1.0],
     [242.0, ebZ0],
     [248.0, ebZ1 + 4.0],
     [234.0, ebZ1],
     [174.0, ebZ1],
     [167.5, ebZ1 + 1.8],
-    [west, ebZ1 + 5.2],
+    [west - 4.0, ebZ1 + 5.2],
+  ]);
+
+  // Continuous west Strip mouth throat across x = west-4 .. 168.5 so no sidewalk/curb cuts across LV Blvd seam
+  const stripMouth = toClipRing([
+    [west - 4.0, wbZ0 - 4.0],
+    [168.8, wbZ0 - 1.0],
+    [168.8, ebZ1 + 1.0],
+    [west - 4.0, ebZ1 + 4.0],
   ]);
 
   // Clean U-turn / median crossover gap at x = 191.8
@@ -340,66 +353,74 @@ export function finishParisDrivePavement(layers) {
     [229.5, ebZ1 + 0.8],
   ]);
 
-  // Southeast exit leg (218654265): sweeping smoothly from south rim of rotary to East Paris Dr
+  // Southeast exit leg (218654265): sweeping smoothly from south rim of rotary to East Paris Dr (aligned to satellite z=546.5)
   const seExitPts = [
-    ...quadBezier([253.0, 542.5], [268.0, 548.0], [292.0, 547.8], 24),
-    [312.0, 547.6],
-    [east, 547.5],
+    ...quadBezier([255.0, 543.0], [272.0, 546.8], [295.0, 546.7], 24),
+    [312.0, 546.6],
+    [east + 4.0, 546.5],
   ];
-  const seExit = toClipRing(ribbonRing(seExitPts, 3.4));
+  const seExit = toClipRing(ribbonRing(seExitPts, 3.2));
 
   // Southeast entry leg (218654264): sweeping smoothly from East Paris Dr up into east rim of rotary
   const seEntryPts = [
-    [east, 547.5],
-    [312.0, 547.6],
-    ...quadBezier([308.0, 547.6], [296.5, 542.5], [291.6, 523.7], 24),
+    [east + 4.0, 546.5],
+    [312.0, 546.6],
+    ...quadBezier([307.0, 546.6], [296.5, 541.5], [292.2, 523.5], 24),
   ];
-  const seEntry = toClipRing(ribbonRing(seEntryPts, 3.4));
+  const seEntry = toClipRing(ribbonRing(seEntryPts, 3.2));
 
   // Smooth corner fillets at LV Blvd, rotary mouths, and SE merge
   const rawAsphaltUnion = exToPaths(clipOp(ctUnion, [
-    rotaryOuter, wbStraight, ebStraight, medianCut, westThroat, seExit, seEntry,
+    rotaryOuter, wbStraight, ebStraight, stripMouth, medianCut, westThroat, seExit, seEntry,
   ]));
   // Gently round sharp exterior junctions while preserving exact edges
-  const smoothedAsphalt = offsetPaths(offsetPaths(rawAsphaltUnion, 2.2), -2.2);
+  const smoothedAsphalt = offsetPaths(offsetPaths(rawAsphaltUnion, 2.0), -2.0);
 
-  // Subtract the circular Arc de Triomphe center plaza and the two Paris Dr concrete median islands
-  const westMedian = toClipRing(stadiumRing(168.4, 188.0, 518.4, 3.4, 24));
-  const eastMedian = toClipRing(stadiumRing(195.8, 232.8, 518.4, 3.4, 24));
+  // Subtract the circular Arc de Triomphe center plaza and the two Paris Dr landscaped median islands
+  const westMedian = toClipRing(stadiumRing(169.0, 188.0, 518.4, 3.35, 24));
+  const eastMedian = toClipRing(stadiumRing(195.8, 232.8, 518.4, 3.35, 24));
 
-  // Southeast splitter island (clean rounded concrete triangle between rotary, seExit, seEntry)
+  // Southeast splitter island (aligned to Google Road & Satellite concrete triangle between rotary, seExit, seEntry)
   const seSplitterRaw = [toClipRing([
-    [275.5, 544.0],
-    [289.2, 544.2],
-    [293.0, 538.5],
-    [286.8, 536.2],
+    [280.0, 543.4],
+    [291.8, 543.4],
+    [294.6, 537.5],
+    [289.2, 535.6],
   ])];
-  const seSplitter = roundCorners(seSplitterRaw, 1.4);
+  const seSplitter = roundCorners(seSplitterRaw, 1.3);
 
   const allIslands = [arcPlaza, westMedian, eastMedian, ...seSplitter];
-  const drivableEx = clipOp(ctIntersection, exToPaths(clipOp(ctDifference, smoothedAsphalt, allIslands)), clipSection);
+  const drivableUnclipped = exToPaths(clipOp(ctDifference, smoothedAsphalt, allIslands));
+  const drivableEx = clipOp(ctIntersection, drivableUnclipped, clipSection);
   const drivablePaths = exToPaths(drivableEx);
 
   // Emit crisp slate asphalt on `major` so it matches South Las Vegas Blvd seamlessly
   emitPolygons(major, drivableEx, 0, 0.05);
 
-  // 2. RAISED CONCRETE ISLANDS, SIDEWALKS & CURBS (ZERO OVERLAP WITH ASPHALT)
+  // 2. RAISED CONCRETE ISLANDS, LANDSCAPED MEDIANS, SIDEWALKS & CURBS (ZERO OVERLAP WITH ASPHALT OR OPEN MOUTHS)
   const islandsEx = clipOp(ctIntersection, exToPaths(clipOp(ctUnion, allIslands)), clipSection);
   const islandPaths = exToPaths(islandsEx);
   emitPolygons(concreteMedians, islandsEx, 0.11, 0.2);
 
-  // Clean outer sidewalk apron hugging the north, south, and curved porte-cochere perimeter
-  const outerWalkBand = offsetPaths(drivablePaths, 2.8);
-  const outerWalkEx = clipOp(ctIntersection, exToPaths(clipOp(ctDifference, outerWalkBand, [...drivablePaths, ...islandPaths])), clipSection);
+  // Lush green median planting inside both Paris Drive medians (matching satellite & Apple Maps reference!)
+  const parisPlantingRaw = exToPaths(clipOp(ctUnion, [
+    ...offsetPaths([westMedian], -0.65),
+    ...offsetPaths([eastMedian], -0.65),
+  ]));
+  emitPolygons(medianPlanting, clipOp(ctIntersection, parisPlantingRaw, islandPaths), 0.124, 0.3);
+
+  // Clean outer sidewalk apron computed from UNCLIPPED asphalt so open LV Blvd & East Paris mouths stay curb-free!
+  const outerWalkBand = offsetPaths(drivableUnclipped, 2.6);
+  const outerWalkEx = clipOp(ctIntersection, exToPaths(clipOp(ctDifference, outerWalkBand, [...drivableUnclipped, ...islandPaths])), clipSection);
   emitPolygons(sidewalk, outerWalkEx, 0.11, 0.4);
 
-  // Crisp 0.18 m raised curbs + vertical curb risers around every island AND along the outer asphalt edge
+  // Crisp 0.18 m raised curbs + vertical curb risers (never across clip seam!)
   const islandCurbRing = exToPaths(clipOp(ctDifference, islandPaths, offsetPaths(islandPaths, -0.18)));
-  const outerCurbRing = exToPaths(clipOp(ctDifference, offsetPaths(drivablePaths, 0.18), [...drivablePaths, ...islandPaths]));
-  const allCurbsEx = clipOp(ctIntersection, exToPaths(clipOp(ctUnion, [...islandCurbRing, ...outerCurbRing])), clipSection);
+  const outerCurbUnclipped = exToPaths(clipOp(ctDifference, offsetPaths(drivableUnclipped, 0.18), [...drivableUnclipped, ...islandPaths]));
+  const allCurbsEx = clipOp(ctIntersection, exToPaths(clipOp(ctUnion, [...islandCurbRing, ...outerCurbUnclipped])), clipSection);
   emitPolygons(curb, allCurbsEx, 0.17, 0.05);
-  emitCurbFaces(curbFaces, islandPaths, 0, 0.17);
-  emitCurbFaces(curbFaces, outerCurbRing, 0, 0.17);
+  emitCurbFaces(curbFaces, islandPaths, 0, 0.17, PARIS_DRIVE_BOUNDS);
+  emitCurbFaces(curbFaces, exToPaths(clipOp(ctIntersection, outerCurbUnclipped, clipSection)), 0, 0.17, PARIS_DRIVE_BOUNDS);
 
   // 3. RAZOR-SHARP APPLE MAPS / GOOGLE MAPS LANE MARKINGS (CLIPPED STRICTLY INSIDE DRIVABLE ASPHALT)
   const whitePolys = [];
@@ -439,12 +460,12 @@ export function finishParisDrivePavement(layers) {
   const wbStopX = 167.5;
   const wbDiv1Z = 511.08; // Between lane 0 (left) and lane 1 (through+right)
   const wbDiv2Z = 507.72; // Between lane 1 (through+right) and lane 2 (right)
-  // Solid lane dividers from stop bar smoothly into rotary
-  addRibbon(whitePolys, [[wbStopX + 0.4, wbDiv1Z], [235.5, wbDiv1Z], [239.0, 511.8]], 0.075);
-  addRibbon(whitePolys, [[wbStopX + 0.4, wbDiv2Z], [236.0, wbDiv2Z], [240.5, 507.0]], 0.075);
+  // Solid lane dividers stopping cleanly at the rotary outer ring (never crossing concentric rotary circles!)
+  addRibbon(whitePolys, [[wbStopX + 0.4, wbDiv1Z], [234.4, wbDiv1Z]], 0.075);
+  addRibbon(whitePolys, [[wbStopX + 0.4, wbDiv2Z], [235.2, wbDiv2Z]], 0.075);
   // Edge lines (north curb & median side)
-  addRibbon(whitePolys, [[wbStopX + 0.4, wbZ0 + 0.32], [238.5, wbZ0 + 0.32]], 0.075);
-  addRibbon(whitePolys, [[169.5, wbZ1 - 0.32], [187.5, wbZ1 - 0.32]], 0.075);
+  addRibbon(whitePolys, [[wbStopX + 0.4, wbZ0 + 0.32], [236.2, wbZ0 + 0.32]], 0.075);
+  addRibbon(whitePolys, [[169.8, wbZ1 - 0.32], [187.5, wbZ1 - 0.32]], 0.075);
   addRibbon(whitePolys, [[196.2, wbZ1 - 0.32], [232.0, wbZ1 - 0.32]], 0.075);
 
   // Westbound stop bar
@@ -468,14 +489,13 @@ export function finishParisDrivePavement(layers) {
 
   // 3c. Eastbound Paris Drive (2 lanes, z = 522.4 .. 529.0, heading east hx = 1, hz = 0)
   const ebDivZ = 525.70;
-  // Smooth continuous divider curving into the SW rotary concentric divider
+  // Clean divider stopping tangentially at the rotary outer ring (no crossing!)
   addRibbon(whitePolys, [
     [167.8, ebDivZ],
-    [229.0, ebDivZ],
-    ...quadBezier([229.0, ebDivZ], [235.5, ebDivZ + 0.5], [239.2, 527.8], 12),
+    [234.8, ebDivZ],
   ], 0.075);
   // Edge lines
-  addRibbon(whitePolys, [[169.5, ebZ0 + 0.32], [187.5, ebZ0 + 0.32]], 0.075);
+  addRibbon(whitePolys, [[169.8, ebZ0 + 0.32], [187.5, ebZ0 + 0.32]], 0.075);
   addRibbon(whitePolys, [[196.2, ebZ0 + 0.32], [232.0, ebZ0 + 0.32]], 0.075);
   addRibbon(whitePolys, [[168.0, ebZ1 - 0.32], [234.0, ebZ1 - 0.32]], 0.075);
 
@@ -490,16 +510,16 @@ export function finishParisDrivePavement(layers) {
     dimPolys.push(...arrowPolysWorld(ax, 527.35, 1, 0, ['through'], 3.1));
   }
 
-  // 3d. Southeast Exit & Entry Legs + STOP marking (matching Apple Maps bottom-left)
-  addRibbon(whitePolys, seExitPts.slice(0, 25), 0.072);
-  addRibbon(whitePolys, seEntryPts.slice(2), 0.072);
-  // Double yellow centerline on two-way East Paris Drive east of merge (x = 313 .. east)
-  addRibbon(yellowPolys, [[313.0, 547.42], [east, 547.37]], 0.068);
-  addRibbon(yellowPolys, [[313.0, 547.68], [east, 547.63]], 0.068);
+  // 3d. Southeast Exit & Entry Legs + STOP marking (kept strictly outside rotary concentric rings!)
+  addRibbon(whitePolys, seExitPts.slice(10, 25), 0.072);
+  addRibbon(whitePolys, seEntryPts.slice(2, 18), 0.072);
+  // Double yellow centerline on two-way East Paris Drive east of merge (x = 308 .. east)
+  addRibbon(yellowPolys, [[308.0, 546.42], [east, 546.37]], 0.068);
+  addRibbon(yellowPolys, [[308.0, 546.68], [east, 546.63]], 0.068);
 
   // Crisp STOP bar + "STOP" text on the SE entry throat before entering the rotary
-  addRibbon(whitePolys, [[292.0, 535.2], [298.5, 533.8]], 0.22);
-  whitePolys.push(...stopTextPolys(296.0, 537.5, -0.35, -0.94, 0.78));
+  addRibbon(whitePolys, [[293.5, 534.8], [299.2, 533.4]], 0.22);
+  whitePolys.push(...stopTextPolys(297.2, 537.4, -0.35, -0.94, 0.72));
 
   // Clip all paint strictly inside drivable asphalt (and inside clipSection)
   const yellowEx = clipOp(ctIntersection, exToPaths(clipOp(ctUnion, yellowPolys)), drivablePaths);
