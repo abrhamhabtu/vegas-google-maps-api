@@ -16,6 +16,8 @@ import { finishCosmoDrivePavement } from '../world/cosmo-drive-roads.mjs';
 import { finishAriaDrivePavement } from '../world/aria-drive-roads.mjs';
 import { finishWynnEncoreDrivePavement } from '../world/wynn-encore-drive-roads.mjs';
 import { finishVenetianPalazzoDrivePavement } from '../world/venetian-palazzo-drive-roads.mjs';
+import { finishMgmDrivePavement } from '../world/mgm-drive-roads.mjs';
+import { finishMandalayDrivePavement } from '../world/mandalay-drive-roads.mjs';
 import { junctionOutline } from '../world/south-strip-roads.mjs';
 import { stripLaneCount, stripLaneWidth } from '../world/strip-streets.mjs';
 
@@ -410,4 +412,32 @@ test('Caesars Palace valet rotary and Paris Arc rotary keep open mouths curb-fre
   }
   assert.equal(inLayer(ven, 'medianPlanting', 346.0, -555.0), true, 'Venetian oval garden planted');
   assert.equal(inLayer(ven, 'medianPlanting', 447.0, -836.0), true, 'Palazzo circular fountain garden planted');
+
+  const mgm = makeLayers();
+  finishMgmDrivePavement(mgm);
+  for (const [x, z] of [
+    [472.0, 1675.0], // MGM west Tropicana approach mouth
+    [530.0, 1626.0], // MGM porte-cochere arrival plaza
+    [566.0, 1681.5], // MGM south return lane
+    [611.0, 1632.0], // MGM east loop lane
+  ]) {
+    assert.equal(inLayer(mgm, 'major', x, z), true, `MGM missing asphalt at (${x}, ${z})`);
+    assert.equal(inLayer(mgm, 'curb', x, z), false, `MGM curb on asphalt at (${x}, ${z})`);
+  }
+  assert.equal(inLayer(mgm, 'medianPlanting', 584.0, 1648.0), true, 'MGM SE elliptical garden planted');
+  assert.equal(inLayer(mgm, 'medianPlanting', 531.0, 1666.0), true, 'MGM SW valet island planted');
+
+  const mandalay = makeLayers();
+  finishMandalayDrivePavement(mandalay);
+  for (const [x, z] of [
+    [27.0, 2655.0],  // Mandalay porte-cochere canopy lane
+    [47.0, 2703.0],  // Mandalay curved arrival plaza
+    [122.0, 2704.0], // Mandalay Strip inbound mouth
+    [122.0, 2721.0], // Mandalay Strip outbound mouth
+    [108.0, 2755.0], // Mandalay south exit mouth
+  ]) {
+    assert.equal(inLayer(mandalay, 'major', x, z), true, `Mandalay missing asphalt at (${x}, ${z})`);
+    assert.equal(inLayer(mandalay, 'curb', x, z), false, `Mandalay curb on asphalt at (${x}, ${z})`);
+  }
+  assert.equal(inLayer(mandalay, 'medianPlanting', 104.0, 2711.5), true, 'Mandalay Strip splitter planted');
 });

@@ -5,6 +5,8 @@ import { finishCosmoDrivePavement } from './cosmo-drive-roads.mjs';
 import { finishAriaDrivePavement } from './aria-drive-roads.mjs';
 import { finishWynnEncoreDrivePavement } from './wynn-encore-drive-roads.mjs';
 import { finishVenetianPalazzoDrivePavement } from './venetian-palazzo-drive-roads.mjs';
+import { finishMgmDrivePavement } from './mgm-drive-roads.mjs';
+import { finishMandalayDrivePavement } from './mandalay-drive-roads.mjs';
 
 // W Bellagio Drive, Bellagio Roundabout & Porte-Cochere Forecourt,
 // Underground Valet/Underpass Portals, Landscaped Hillside & Pedestrian Bridge.
@@ -1056,6 +1058,8 @@ export function finishBellagioDrivePavement(layers) {
   finishAriaDrivePavement(layers);
   finishWynnEncoreDrivePavement(layers);
   finishVenetianPalazzoDrivePavement(layers);
+  finishMgmDrivePavement(layers);
+  finishMandalayDrivePavement(layers);
 }
 
 // ───────────────────────── 3D Architecture: Roundabout Fountain, Portals, Hillside & Skybridge ─────────────────────────
