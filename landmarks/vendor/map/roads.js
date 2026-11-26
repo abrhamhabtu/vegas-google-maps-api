@@ -609,7 +609,25 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         const connected = [...node.inEdges, ...node.outEdges];
         if (connected.length < 3) continue;
         const elevEdges = connected.map(ei => g.edges[ei]).filter(e => !e.internal && isAir(e.ref));
-        if (elevEdges.length < 3) continue;
+        if (elevEdges.length < 3 || elevEdges.length > 4) continue;
+        // Restrict goreFills to genuine acute Y-forks / merges: out-pointing tangents from the node
+        // on the branching side must stay within ~54 deg of each other, never webbing 90-deg overpass T-intersections.
+        const outDirs = elevEdges.map(e => {
+            const atStart = e.fromNode === id;
+            const dCheck = Math.min(10, e.ref.length * 0.5);
+            const q = sample(e.ref, atStart ? dCheck : e.ref.length - dCheck);
+            const sgn = atStart ? 1 : -1;
+            return [q.hx * sgn, q.hz * sgn];
+        });
+        let wideAngle = false;
+        for (let i = 0; i < outDirs.length && !wideAngle; i++) {
+            for (let j = i + 1; j < outDirs.length; j++) {
+                const dot = outDirs[i][0] * outDirs[j][0] + outDirs[i][1] * outDirs[j][1];
+                // In an acute Y-fork, two branches on the same side have dot > 0.58, while trunk vs branch has dot < -0.58.
+                if (dot > -0.55 && dot < 0.58) { wideAngle = true; break; }
+            }
+        }
+        if (wideAngle) continue;
         const samples = [];
         let freewayOnly = true, minY = Infinity, maxY = -Infinity;
         for (const e of elevEdges){
@@ -619,8 +637,8 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             const [l0, l1] = extents(e);
             const outerAdd = l1 - e.lanes.length * e.laneWidth;
             const isShortLink = (e.cls === 'ramp' || e.cls === 'motorway' || /_link$/.test(e.way.hw)) &&
-                e.ref.length <= 42 && farNode && farNode.y > ELEV && Math.abs(farNode.y - node.y) < 2.2;
-            const reach = isShortLink ? e.ref.length : Math.min(e.ref.length * 0.4, e.cls === 'motorway' || e.cls === 'ramp' ? 16 : 10);
+                e.ref.length <= 30 && farNode && farNode.y > ELEV && Math.abs(farNode.y - node.y) < 1.8;
+            const reach = isShortLink ? e.ref.length : Math.min(e.ref.length * 0.35, e.cls === 'motorway' || e.cls === 'ramp' ? 12 : 8);
             const stops = isShortLink && e.ref.length > 14 ? [0, e.ref.length * 0.5, reach] : [0, reach];
             for (const d of stops){
                 const st = atStart ? d : e.ref.length - d;
@@ -633,11 +651,11 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 if (q.y > maxY) maxY = q.y;
             }
         }
-        if (samples.length < 4 || maxY - minY > 2.6) continue;
+        if (samples.length < 4 || maxY - minY > 2.2) continue;
         const hull = convexHull(samples.map(p => [p[0], p[1]]));
         if (hull.length < 3) continue;
         const span = Math.max(...hull.map(p => Math.hypot(p[0] - node.x, p[1] - node.z)));
-        if (span > 44) continue;
+        if (span > 28) continue;
         // Fit a sloped plane y(x,z) across rim samples so inclined ramp forks bridge with zero cliff steps.
         let sxx = 0, sxz = 0, szz = 0, sx = 0, sz = 0, sxy = 0, szy = 0, sy = 0;
         const N = samples.length;
@@ -1082,8 +1100,10 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 const d = (c0 + c1) * 0.5;
                 e.lanes.forEach((_, i)=>{
                     const q = laneSample(e, i, d);
+                    if (q.width < 2.25) return;
                     const mv = (!stripApproach || e.explicitTurns) && e.turns[i]?.length ? e.turns[i] : ['through'];
-                    arrow(at(P, q.x, q.z), q, mv, yOff);
+                    const linkScale = Math.min(0.88, Math.max(0.66, (q.width - 0.55) / 2.95));
+                    arrow(at(P, q.x, q.z), q, mv, yOff, linkScale);
                 });
             }
         }

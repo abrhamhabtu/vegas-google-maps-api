@@ -7,7 +7,7 @@ const pts = (p)=>{
     ];
     return out;
 };
-function solveRoadElevations(roads) {
+export function solveRoadElevations(roads) {
     const isRampOrSvc = (r)=>r.hw.endsWith('_link') || r.hw === 'service';
     const DECK1 = 6.5, DECK2 = 12.5;
     const segCross = (a, b, c, d)=>{
@@ -222,55 +222,6 @@ function solveRoadElevations(roads) {
             }
         }
     }
-    const mainNodes = new Set(mainGraph.keys());
-    const rampGraph = new Map();
-    for (const r of roads){
-        if (r.tn || !isRampOrSvc(r)) continue;
-        const grade = r.hw === 'service' ? 0.075 : 0.056;
-        for(let i = 0; i < r.n.length - 1; i++){
-            const d = Math.hypot(r.pts[i + 1][0] - r.pts[i][0], r.pts[i + 1][1] - r.pts[i][1]);
-            linkTo(rampGraph, r.n[i], r.n[i + 1], d, grade);
-        }
-        if (r.br) {
-            const isL2 = (r.layer ?? 1) >= 2;
-            for(let i = 0; i < r.n.length; i++){
-                const p = r.pts[i], nd = r.n[i];
-                if (mainNodes.has(nd)) continue;
-                let minD2Sq = Infinity, minD1Sq = Infinity;
-                const px = p[0], pz = p[1];
-                if (isL2) for (const cp of crossL2){
-                    const dx = px - cp[0], dz = pz - cp[1], d2 = dx * dx + dz * dz;
-                    if (d2 < minD2Sq) minD2Sq = d2;
-                }
-                for (const cp of crossL1){
-                    const dx = px - cp[0], dz = pz - cp[1], d2 = dx * dx + dz * dz;
-                    if (d2 < minD1Sq) minD1Sq = d2;
-                }
-                const minD2 = Math.sqrt(minD2Sq);
-                let target = 0;
-                if (isL2 && minD2 <= 50) target = DECK2;
-                else if (isL2 && minD2 < 50 + (DECK2 - DECK1) / 0.052) target = DECK2 - (minD2 - 50) * 0.052;
-                else if (minD1Sq <= 45 * 45 || minD2Sq <= 90 * 90) target = DECK1;
-                if (target > 0) H.set(nd, Math.max(H.get(nd) ?? 0, target));
-            }
-        }
-    }
-    for (const nd of rampGraph.keys()){
-        const h = H.get(nd) ?? 0;
-        if (h > 0) pushMax(nd, h);
-    }
-    while(heap.length){
-        const [h, n] = popMax();
-        if ((H.get(n) ?? 0) > h + 1e-6) continue;
-        for (const { to, d, grade } of rampGraph.get(n) ?? []){
-            if (mainNodes.has(to)) continue;
-            const nh = h - grade * d;
-            if (nh > 0.05 && nh > (H.get(to) ?? 0) + 1e-4) {
-                H.set(to, nh);
-                pushMax(to, nh);
-            }
-        }
-    }
     const maxH = new Map();
     const minHeap = [];
     const pushMin = (n, h)=>{
@@ -327,23 +278,171 @@ function solveRoadElevations(roads) {
     for (const [nd, mh] of maxH){
         if ((H.get(nd) ?? 0) > mh) H.set(nd, mh);
     }
-    // Main roads set the elevation at a ramp join. Keep their solved deck height
-    // and carry the approach grade into the ramp before applying low-road caps.
-    const rampFloor = new Map();
+    // Detect 3rd-level flyover ramps crossing over already-elevated main decks (including interpolated
+    // mid-bridge spans like W Tropicana and elevated I-15 barrels at Sahara) so flyovers maintain >= 6.2m
+    // vertical clearance instead of dipping into or colliding with the lower bridge deck.
+    const highFlyoverByWay = new Map();
+    const highFlyoverNodes = new Map(); // nodeId -> Array<[hx, hz, targetH]>
+    const underFlyoverNodes = new Set();
+    const addHighAnchor = (r, hx, hz, targetH)=>{
+        let list = highFlyoverByWay.get(r);
+        if (!list) {
+            list = [];
+            highFlyoverByWay.set(r, list);
+        }
+        list.push([hx, hz, targetH]);
+        for (const nd of r.n){
+            let nList = highFlyoverNodes.get(nd);
+            if (!nList) {
+                nList = [];
+                highFlyoverNodes.set(nd, nList);
+            }
+            nList.push([hx, hz, targetH]);
+        }
+    };
+    const checkRampOverMain = (r, forceHigh = false)=>{
+        for(let i = 0; i < r.pts.length - 1; i++){
+            const a = r.pts[i], b = r.pts[i + 1];
+            const x0 = Math.floor(Math.min(a[0], b[0]) / GCELL), x1 = Math.floor(Math.max(a[0], b[0]) / GCELL);
+            const z0 = Math.floor(Math.min(a[1], b[1]) / GCELL), z1 = Math.floor(Math.max(a[1], b[1]) / GCELL);
+            for(let gx = x0; gx <= x1; gx++)for(let gz = z0; gz <= z1; gz++){
+                const cell = roadGrid.get(cellKey(gx, gz));
+                if (!cell) continue;
+                for (const [o, c, d] of cell){
+                    if (o === r || o.hw === 'service') continue;
+                    const oIsRamp = isRampOrSvc(o);
+                    const rl = forceHigh ? Math.max(2, r.layer ?? 1) : r.layer ?? 1;
+                    const ol = o.br ? o.layer ?? 1 : 0;
+                    if (oIsRamp && !(rl >= 2 && ol < rl)) continue;
+                    const hit = segCross(a, b, c, d);
+                    if (!hit) continue;
+                    if (oIsRamp) {
+                        addHighAnchor(r, hit[0], hit[1], DECK2);
+                        const oIdx = o.pts.indexOf(c);
+                        if (oIdx >= 0) {
+                            underFlyoverNodes.add(o.n[oIdx]);
+                            if (oIdx + 1 < o.n.length) underFlyoverNodes.add(o.n[oIdx + 1]);
+                        }
+                        continue;
+                    }
+                    const segIdx = o.pts.indexOf(c);
+                    const oh0 = segIdx >= 0 ? (H.get(o.n[segIdx]) ?? 0) : 0;
+                    const oh1 = segIdx >= 0 && segIdx + 1 < o.n.length ? (H.get(o.n[segIdx + 1]) ?? 0) : oh0;
+                    const cdLen = Math.hypot(d[0] - c[0], d[1] - c[1]) || 1;
+                    const u = Math.max(0, Math.min(1, Math.hypot(hit[0] - c[0], hit[1] - c[1]) / cdLen));
+                    const underH = oh0 + (oh1 - oh0) * u;
+                    if (rl >= 2 && underH >= 1.5 || underH >= 2.2 && ol <= rl) {
+                        addHighAnchor(r, hit[0], hit[1], Math.max(DECK2, underH + 6.2));
+                    }
+                }
+            }
+        }
+    };
+    for (const r of roads){
+        if (!r.tn && r.br && isRampOrSvc(r)) checkRampOverMain(r, false);
+    }
+    // Also check unflagged motorway_link continuations directly attached to a high flyover ramp
+    // (e.g. Sahara flyover continuation crossing the second barrel of elevated I-15), and share
+    // crossing anchors across the split node so both halves of the span stay above the deck.
+    for (const r of roads){
+        if (r.tn || r.br || r.hw !== 'motorway_link') continue;
+        const shared = highFlyoverNodes.get(r.n[0]) ?? highFlyoverNodes.get(r.n[r.n.length - 1]);
+        if (!shared) continue;
+        for (const [hx, hz, th] of [...shared]) addHighAnchor(r, hx, hz, th);
+        checkRampOverMain(r, true);
+    }
+    for (const [r, list] of highFlyoverByWay){
+        for (const nd of r.n){
+            for (const [hx, hz, th] of highFlyoverNodes.get(nd) ?? []){
+                if (!list.some((a)=>a[0] === hx && a[1] === hz)) list.push([hx, hz, th]);
+            }
+        }
+    }
+    const mainNodes = new Set(mainGraph.keys());
+    const rampGraph = new Map();
+    const highCrossingFloor = new Map();
+    for (const r of roads){
+        if (r.tn || !isRampOrSvc(r)) continue;
+        const grade = r.hw === 'service' ? 0.075 : 0.056;
+        for(let i = 0; i < r.n.length - 1; i++){
+            const d = Math.hypot(r.pts[i + 1][0] - r.pts[i][0], r.pts[i + 1][1] - r.pts[i][1]);
+            linkTo(rampGraph, r.n[i], r.n[i + 1], d, grade);
+        }
+        const wayAnchors = highFlyoverByWay.get(r);
+        if (r.br || wayAnchors) {
+            const isL2 = (r.layer ?? 1) >= 2;
+            for(let i = 0; i < r.n.length; i++){
+                const p = r.pts[i], nd = r.n[i];
+                if (mainNodes.has(nd)) continue;
+                let minD2Sq = Infinity, minD1Sq = Infinity, bestHighTarget = DECK2;
+                const px = p[0], pz = p[1];
+                if (isL2) for (const cp of crossL2){
+                    const dx = px - cp[0], dz = pz - cp[1], d2 = dx * dx + dz * dz;
+                    if (d2 < minD2Sq) minD2Sq = d2;
+                }
+                if (wayAnchors) for (const [hx, hz, hTarget] of wayAnchors){
+                    const dx = px - hx, dz = pz - hz, d2 = dx * dx + dz * dz;
+                    if (d2 < minD2Sq) {
+                        minD2Sq = d2;
+                        bestHighTarget = Math.max(DECK2, hTarget);
+                    }
+                }
+                if (r.br) for (const cp of crossL1){
+                    const dx = px - cp[0], dz = pz - cp[1], d2 = dx * dx + dz * dz;
+                    if (d2 < minD1Sq) minD1Sq = d2;
+                }
+                const minD2 = Math.sqrt(minD2Sq);
+                let target = 0;
+                if (minD2 <= 52) target = bestHighTarget;
+                else if (minD2 < 52 + (bestHighTarget - DECK1) / 0.052) target = bestHighTarget - (minD2 - 52) * 0.052;
+                else if (r.br && (minD1Sq <= 45 * 45 || minD2Sq <= 90 * 90)) target = DECK1;
+                if (target > 0) H.set(nd, Math.max(H.get(nd) ?? 0, target));
+                if (wayAnchors && minD2 <= 34) {
+                    highCrossingFloor.set(nd, Math.max(highCrossingFloor.get(nd) ?? 0, bestHighTarget));
+                }
+            }
+        }
+    }
     for (const nd of rampGraph.keys()){
         const h = H.get(nd) ?? 0;
-        if (!mainNodes.has(nd) || h <= 0) continue;
+        if (h > 0) pushMax(nd, h);
+    }
+    while(heap.length){
+        const [h, n] = popMax();
+        if ((H.get(n) ?? 0) > h + 1e-6) continue;
+        for (const { to, d, grade } of rampGraph.get(n) ?? []){
+            if (mainNodes.has(to)) continue;
+            const nh = h - grade * d;
+            if (nh > 0.05 && nh > (H.get(to) ?? 0) + 1e-4) {
+                H.set(to, nh);
+                pushMax(to, nh);
+            }
+        }
+    }
+    // Main roads and verified 3rd-level flyover bridge spans set a physical elevation floor.
+    const rampFloor = new Map();
+    const fromHighFloor = new Set();
+    for (const nd of rampGraph.keys()){
+        const mainH = mainNodes.has(nd) ? (H.get(nd) ?? 0) : 0;
+        const highH = !mainNodes.has(nd) ? (highCrossingFloor.get(nd) ?? 0) : 0;
+        const h = Math.max(mainH, highH);
+        if (h <= 0) continue;
         rampFloor.set(nd, h);
+        if (highH > mainH) fromHighFloor.add(nd);
         pushMax(nd, h);
     }
     while(heap.length){
         const [h, n] = popMax();
         if ((rampFloor.get(n) ?? 0) > h + 1e-6) continue;
+        const isHigh = fromHighFloor.has(n);
+        const maxGrade = isHigh ? 0.14 : 0.072;
         for (const { to, d } of rampGraph.get(n) ?? []){
             if (mainNodes.has(to)) continue;
-            const floor = h - 0.072 * d;
+            const floor = h - maxGrade * d;
             if (floor > 0.05 && floor > (rampFloor.get(to) ?? 0) + 1e-4) {
                 rampFloor.set(to, floor);
+                if (isHigh) fromHighFloor.add(to);
+                else fromHighFloor.delete(to);
                 pushMax(to, floor);
             }
         }
@@ -353,6 +452,10 @@ function solveRoadElevations(roads) {
             const h0 = H.get(nd) ?? 0;
             maxH.set(nd, h0);
             pushMin(nd, h0);
+        } else if (underFlyoverNodes.has(nd) && !highCrossingFloor.has(nd)) {
+            const cap = Math.min(maxH.get(nd) ?? Infinity, DECK1);
+            maxH.set(nd, cap);
+            pushMin(nd, cap);
         }
     }
     while(minHeap.length){
@@ -380,10 +483,20 @@ function solveRoadElevations(roads) {
             r.y = undefined;
             continue;
         }
+        const wayAnchors = highFlyoverByWay.get(r);
         for(let pass = 0; pass < 3; pass++){
             for(let i = 1; i < hs.length - 1; i++){
                 if (hs[i] <= 0.02 && hs[i - 1] <= 0.1 && hs[i + 1] <= 0.1) continue;
-                hs[i] = Math.round((0.25 * hs[i - 1] + 0.5 * hs[i] + 0.25 * hs[i + 1]) * 100) / 100;
+                let smoothed = Math.round((0.25 * hs[i - 1] + 0.5 * hs[i] + 0.25 * hs[i + 1]) * 100) / 100;
+                if (wayAnchors) {
+                    const px = r.pts[i][0], pz = r.pts[i][1];
+                    for (const [hx, hz, hTarget] of wayAnchors){
+                        if ((px - hx) * (px - hx) + (pz - hz) * (pz - hz) <= 34 * 34) {
+                            smoothed = Math.max(smoothed, hTarget - 0.15);
+                        }
+                    }
+                }
+                hs[i] = smoothed;
             }
         }
         r.y = hs;

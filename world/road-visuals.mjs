@@ -100,3 +100,36 @@ export function zebraBars(from, to) {
     return [start, start + stripe];
   });
 }
+
+// Identify elevated highway overpass sidewalks and ADA switchback loops so they are not
+// built as enclosed glass-and-steel Strip casino skybridges.
+export function isHighwayBridgeSidewalk(w, elevRoadEdges) {
+  if (w.fw === 'sidewalk' || w.fw === 'crossing' || w.fw === 'traffic_island' || w.fw === 'link') return true;
+  const pts = w.pts;
+  if (pts.length < 2) return false;
+  const nearElevSeg = (px, pz, wx, wz, extraPad = 16) => {
+    for (const e of elevRoadEdges) {
+      const ref = e.ref.pts;
+      const maxDist = (e.lanes?.length ?? 3) * (e.laneWidth ?? 3.5) * 0.5 + extraPad;
+      for (let k = 0; k + 1 < ref.length; k++) {
+        const ax = ref[k][0], az = ref[k][1], bx = ref[k + 1][0], bz = ref[k + 1][1];
+        const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / L2));
+        const dist = Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
+        if (dist > maxDist) continue;
+        const L = Math.sqrt(L2), rx = dx / L, rz = dz / L;
+        if (wx === null || Math.abs(wx * rx + wz * rz) > 0.72) return true;
+      }
+    }
+    return false;
+  };
+  const midIdx = Math.floor((pts.length - 1) / 2);
+  const a = pts[0], b = pts[pts.length - 1], wl = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  if (nearElevSeg(pts[midIdx][0], pts[midIdx][1], (b[0] - a[0]) / wl, (b[1] - a[1]) / wl)) return true;
+  if (nearElevSeg(a[0], a[1], null, null, 28) && nearElevSeg(b[0], b[1], null, null, 28)) return true;
+  let nearCount = 0;
+  for (let i = 0; i < pts.length; i++) {
+    if (nearElevSeg(pts[i][0], pts[i][1], null, null, 18)) nearCount++;
+  }
+  return nearCount / pts.length >= 0.6;
+}

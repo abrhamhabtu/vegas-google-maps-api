@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrowMarking, dashRuns, offsetStation, widestClearSpan, zebraBars } from '../world/road-visuals.mjs';
+import { arrowMarking, dashRuns, isHighwayBridgeSidewalk, offsetStation, widestClearSpan, zebraBars } from '../world/road-visuals.mjs';
 import { surfaceMask, supportsTree } from '../world/road-planting.mjs';
 import { finishSouthStripPavement } from '../world/south-strip-pavement.mjs';
 import { finishStripCorridorPavement } from '../world/strip-corridor-pavement.mjs';
@@ -10,6 +10,7 @@ import { isSupersededStripSpan, stripLaneCount, stripLaneWidth } from '../world/
 globalThis.window = { THREE: {} };
 const { guideClearsCrossing, paintSpans, planCrossingPaint } = await import('../world/road-crossings.mjs');
 const { isPassage } = await import('../landmarks/vendor/map/lanegraph.js');
+const { solveRoadElevations } = await import('../landmarks/vendor/core/data.js');
 
 test('offset markings use the same reference cross section on curves', () => {
   const reference = { length: 20, cum: [0, 10, 20] };
@@ -280,4 +281,34 @@ test('narrow acute-nosed concrete dividers survive Strip pavement rounding witho
   await finishStripCorridorPavement(layers);
   assert.ok(layers.concreteMedians.at().output.length >= 1);
   assert.ok(layers.curb.at().output.length >= 1);
+});
+
+test('3rd-level freeway flyover ramps hold full clearance above elevated main decks', () => {
+  const roads = [
+    // Ground road running N-S at x = 0
+    { id: 1, hw: 'primary', name: 'West Sahara Avenue', n: [1, 2], pts: [[0, -80], [0, 80]] },
+    // Elevated I-15 motorway crossing over Sahara at y = 6.5m, continuing north on an unflagged span
+    { id: 2, hw: 'motorway', name: 'Las Vegas Freeway', br: 1, layer: 1, n: [10, 11], pts: [[-40, -10], [40, -10]] },
+    { id: 3, hw: 'motorway', name: 'Las Vegas Freeway', br: 1, layer: 1, n: [12, 13], pts: [[90, -10], [150, -10]] },
+    { id: 4, hw: 'motorway', name: 'Las Vegas Freeway', n: [11, 12], pts: [[40, -10], [90, -10]] },
+    // Flyover ramp crossing over the interpolated elevated motorway span at x = 65
+    { id: 5, hw: 'motorway_link', br: 1, layer: 1, n: [20, 21, 22], pts: [[65, -90], [65, -10], [65, 90]] },
+  ];
+  solveRoadElevations(roads);
+  const underMid = ((roads[3].y?.[0] ?? 0) + (roads[3].y?.[1] ?? 0)) * 0.5;
+  const flyoverMid = roads[4].y?.[1] ?? 0;
+  assert.ok(underMid >= 5.5, `expected elevated motorway span >= 5.5m, got ${underMid}`);
+  assert.ok(flyoverMid >= underMid + 5.5, `expected flyover ${flyoverMid}m to clear ${underMid}m deck by >= 5.5m`);
+});
+
+test('highway overpass sidewalks and switchback loops are excluded from Strip pedestrian skybridges', () => {
+  const elevRoadEdges = [
+    { lanes: [0, 1, 2, 3], laneWidth: 3.5, ref: { pts: [[-700, 200], [-450, 200]] } },
+  ];
+  // Parallel sidewalk right beside W Flamingo I-15 overpass
+  assert.equal(isHighwayBridgeSidewalk({ pts: [[-650, 186], [-500, 186]] }, elevRoadEdges), true);
+  // Curved/switchback walkway starting and ending on the same highway overpass
+  assert.equal(isHighwayBridgeSidewalk({ pts: [[-690, 178], [-620, 140], [-495, 176]] }, elevRoadEdges), true);
+  // Real Strip pedestrian skybridge crossing ground-level Las Vegas Blvd far from highway overpasses
+  assert.equal(isHighwayBridgeSidewalk({ pts: [[125, 175], [170, 175]] }, elevRoadEdges), false);
 });

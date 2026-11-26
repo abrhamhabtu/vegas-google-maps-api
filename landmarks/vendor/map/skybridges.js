@@ -5,6 +5,7 @@ import { normals, Soup } from './geom.js';
 import { roadMask, sample } from './lanegraph.js';
 import { litColor } from './materials.js';
 import { box } from './roads.js';
+import { isHighwayBridgeSidewalk } from '../../../world/road-visuals.mjs';
 const DECK = 1.2, CANOPY = 5.2, RAIL = 1.15;
 function band(s, pts, ys, off, y0, y1, face) {
     if (pts.length < 2) return;
@@ -45,25 +46,7 @@ export function buildSkybridges(data, g) {
     out.name = 'pedestrian bridges';
     const deck = new Soup(), fascia = new Soup(), glass = new Soup(), steel = new Soup(), soffit = new Soup(), roof = new Soup(), tower = new Soup(), stone = new Soup(), truss = new Soup();
     const elevRoadEdges = g.edges.filter((e)=>e.elevated && !e.internal);
-    const isHighwayBridgeSidewalk = (w)=>{
-        if (w.fw === 'sidewalk' || w.fw === 'crossing' || w.fw === 'traffic_island' || w.fw === 'link') return true;
-        const pts = w.pts;
-        if (pts.length < 2) return false;
-        const mid = pts[Math.floor(pts.length / 2)];
-        const a = pts[0], b = pts[pts.length - 1], wl = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-        const wx = (b[0] - a[0]) / wl, wz = (b[1] - a[1]) / wl;
-        for (const e of elevRoadEdges){
-            const ref = e.ref.pts;
-            for(let k = 0; k < ref.length; k++){
-                if (Math.hypot(ref[k][0] - mid[0], ref[k][1] - mid[1]) > 24) continue;
-                const p0 = ref[Math.max(0, k - 1)], p1 = ref[Math.min(ref.length - 1, k + 1)], rl = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
-                const rx = (p1[0] - p0[0]) / rl, rz = (p1[1] - p0[1]) / rl;
-                if (Math.abs(wx * rx + wz * rz) > 0.78) return true;
-            }
-        }
-        return false;
-    };
-    const walks = data.walks.filter((w)=>w.y && !w.tn && !w.indoor && w.y.some((v)=>v > 1.5) && !isHighwayBridgeSidewalk(w));
+    const walks = data.walks.filter((w)=>w.y && !w.tn && !w.indoor && w.y.some((v)=>v > 1.5) && !isHighwayBridgeSidewalk(w, elevRoadEdges));
     const isSpan = (w)=>!!w.br && w.hw !== 'steps' && !w.conv;
     const walkLen = (pts)=>pts.reduce((t, p, i)=>t + (i ? Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0), 0);
     const onRoad = roadMask(g);

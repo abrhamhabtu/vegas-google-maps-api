@@ -177,7 +177,7 @@ function alignRampBranches(edges, nodes) {
     };
     for (const node of nodes.values()) {
         if (node.id < 0) continue;
-        // Handle elevated multi-branch fans (e.g., 3 incoming valet lanes merging into a 3-lane viaduct)
+        // Handle multi-branch Y-fans (elevated valet fans + motorway_link Y-splits/merges)
         for (const split of [true, false]) {
             const singles = split ? node.inEdges : node.outEdges;
             const multis = split ? node.outEdges : node.inEdges;
@@ -186,14 +186,18 @@ function alignRampBranches(edges, nodes) {
             const branches = multis.map(id=>edges[id]);
             if (!road.oneway || branches.some(b=>!b.oneway)) continue;
             const totalBranchLanes = branches.reduce((s, b)=>s + b.lanes.length, 0);
-            if (totalBranchLanes !== road.lanes.length || !(road.elevated || branches.some(b=>b.elevated))) continue;
-            if (!isMinor(road) && !branches.some(isMinor)) continue;
+            const rampFork = road.cls === 'ramp' && branches.every(b=>b.cls === 'ramp');
+            if (totalBranchLanes !== road.lanes.length) continue;
+            if (!rampFork && (!(road.elevated || branches.some(b=>b.elevated)) || (!isMinor(road) && !branches.some(isMinor)))) continue;
             const roadAt = split ? road.ref.length : 0;
             const p = sample(road.ref, roadAt);
             const m = (split ? road.mitreEnd : road.mitreStart) ?? [-p.hz, p.hx];
+            const minDot = rampFork ? 0.72 : 0.55;
             const ok = branches.every(b=>{
                 const q = sample(b.ref, split ? 0 : b.ref.length);
-                return Math.abs(p.y - q.y) <= 0.25 && p.hx * q.hx + p.hz * q.hz > 0.55;
+                const qFar = sample(b.ref, split ? Math.min(14, b.ref.length) : Math.max(0, b.ref.length - 14));
+                return Math.abs(p.y - q.y) <= 0.25 && p.hx * q.hx + p.hz * q.hz > minDot &&
+                    (!rampFork || p.hx * qFar.hx + p.hz * qFar.hz > 0.58);
             });
             if (!ok) continue;
             const mLen2 = m[0] * m[0] + m[1] * m[1] || 1;
@@ -210,7 +214,7 @@ function alignRampBranches(edges, nodes) {
                 const lo = boundaryAt(road, slot, roadAt);
                 const hi = boundaryAt(road, slot + b.lanes.length, roadAt);
                 slot += b.lanes.length;
-                const plan = fitBranch(road, b, split, m, lo, hi, 0.85);
+                const plan = fitBranch(road, b, split, m, lo, hi, rampFork ? 0.72 : 0.85);
                 if (!plan) { allFit = false; break; }
                 plans.push(plan);
             }
@@ -226,19 +230,19 @@ function alignRampBranches(edges, nodes) {
         const pair = (split ? node.outEdges : node.inEdges).map(id=>edges[id]);
         const minorNode = isMinor(road) || pair.some(isMinor);
         const through = pair.find(e=>split ? road.next === e.id : e.next === road.id) ??
-            (minorNode ? pair.find(e=>road.way.name && e.way.name === road.way.name && e.lanes.length >= road.lanes.length - 1) : undefined);
+            pair.find(e=>road.way.name && e.way.name === road.way.name && e.lanes.length >= road.lanes.length - 2);
         if (!through || !road.oneway || !through.oneway) continue;
         const branch = pair.find(e=>e !== through);
+        if (branch.rampJoin) continue;
         const raised = minorNode && (road.elevated || branch.elevated || through.elevated);
         const motorwayRamp = road.cls === 'motorway' && through.cls === 'motorway' && branch.cls === 'ramp';
-        const namedLink = !!road.way.name && road.way.name === through.way.name && branch.way.hw.endsWith('_link');
+        const namedLink = !!road.way.name && road.way.name === through.way.name && (branch.way.hw.endsWith('_link') || branch.cls === 'ramp');
         if (!raised && !motorwayRamp && !namedLink) continue;
         const added = road.lanes.length - through.lanes.length;
         const roadAt = split ? road.ref.length : 0, throughAt = split ? 0 : through.ref.length;
         const p = sample(road.ref, roadAt), q = sample(through.ref, throughAt);
         const b = sample(branch.ref, split ? 0 : branch.ref.length);
-        const m = (split ? road.mitreEnd : road.mitreStart) ?? (raised ? [-p.hz, p.hx] : null);
-        if (!m) continue;
+        const m = (split ? road.mitreEnd : road.mitreStart) ?? [-p.hz, p.hx];
         const turn = p.hx * b.hz - p.hz * b.hx;
         if (Math.abs(p.y - b.y) > 0.25 || p.hx * b.hx + p.hz * b.hz < 0.72 || Math.abs(turn) < 0.035) continue;
         const left = split ? turn < 0 : turn > 0;
@@ -255,8 +259,9 @@ function alignRampBranches(edges, nodes) {
             lo = boundaryAt(road, first, roadAt);
             hi = boundaryAt(road, first + added, roadAt);
             if (Math.abs(hi - lo - added * branch.laneWidth) > 0.75) continue;
-        } else if (raised && added === 0 && road.lanes.length === through.lanes.length) {
-            // Side exit/entry branch peeling off the outer edge of an elevated road (e.g., Bellagio valet ramp)
+        } else if ((raised || motorwayRamp || namedLink && (road.elevated || through.elevated)) &&
+            added === 0 && road.lanes.length === through.lanes.length && branch.lanes.length <= 2) {
+            // Side exit/entry branch peeling off the outer edge of a motorway or elevated road
             const bw = branch.lanes.length * branch.laneWidth;
             if (left) {
                 lo = boundaryAt(road, 0, roadAt);
