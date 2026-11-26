@@ -191,12 +191,21 @@ function roundAcutePolys(polys, radiusMeters = 0.65, bounds = null) {
       out.push(poly);
       continue;
     }
-    const base = bounds ? extendAcrossBlockBounds([poly.outer, ...poly.holes], bounds, radiusMeters + 0.35) : [poly.outer, ...poly.holes];
-    const eroded = offsetPaths(base, -radiusMeters);
-    if (!eroded.length) continue;
-    const opened = offsetPaths(eroded, radiusMeters);
-    if (!opened.length) continue;
-    out.push(...clipOp(ctIntersection, opened, [poly.outer]));
+    let rounded = null;
+    for (const r of [radiusMeters, 0.24, 0.10]) {
+      const base = bounds ? extendAcrossBlockBounds([poly.outer, ...poly.holes], bounds, r + 0.35) : [poly.outer, ...poly.holes];
+      const eroded = offsetPaths(base, -r);
+      if (!eroded.length) continue;
+      const opened = offsetPaths(eroded, r);
+      if (!opened.length) continue;
+      const clipped = clipOp(ctIntersection, opened, [poly.outer]);
+      if (clipped.length) {
+        rounded = clipped;
+        break;
+      }
+    }
+    if (rounded) out.push(...rounded);
+    else out.push(poly);
   }
   return out;
 }
@@ -415,7 +424,7 @@ function finishBlock(layers, block, inputs) {
   const mediansRawClear = medRaw.length ? clipOp(ctDifference, medRaw, drivable) : [];
   const mediansClear = mediansRawClear.length ? roundAcutePolys(mediansRawClear, 0.65, block.bounds) : [];
   const medianPaths = toPaths(mediansClear);
-  add(concreteMedians, mediansClear, 0.11, 0.65);
+  add(concreteMedians, mediansClear, 0.11, 0.28);
 
   const walkRaw = raw(sidewalk);
   const walkClear = walkRaw.length ? clipOp(ctDifference, walkRaw, [...drivable, ...medianPaths, ...parkingPaths]) : [];

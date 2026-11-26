@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrowMarking, dashRuns, offsetStation, widestClearSpan, zebraBars } from '../world/road-visuals.mjs';
+import { arrowMarking, dashRuns, isHighwayBridgeSidewalk, offsetStation, widestClearSpan, zebraBars } from '../world/road-visuals.mjs';
 import { surfaceMask, supportsTree } from '../world/road-planting.mjs';
 import { finishSouthStripPavement } from '../world/south-strip-pavement.mjs';
 import { finishStripCorridorPavement } from '../world/strip-corridor-pavement.mjs';
 import { junctionOutline } from '../world/south-strip-roads.mjs';
-import { stripLaneCount, stripLaneWidth } from '../world/strip-streets.mjs';
+import { isSupersededStripSpan, stripLaneCount, stripLaneWidth } from '../world/strip-streets.mjs';
 
 globalThis.window = { THREE: {} };
 const { guideClearsCrossing, paintSpans, planCrossingPaint } = await import('../world/road-crossings.mjs');
 const { isPassage } = await import('../landmarks/vendor/map/lanegraph.js');
+const { solveRoadElevations } = await import('../landmarks/vendor/core/data.js');
 
 test('offset markings use the same reference cross section on curves', () => {
   const reference = { length: 20, cum: [0, 10, 20] };
@@ -201,4 +202,113 @@ test('Strip pavement finishers clip orphan curbs and clear stray vertical curb f
     assert.equal(layers.curb.at().output.length, 0);
     assert.equal(layers.curbFaces.at().idx.length, 0);
   }
+});
+
+test('superseded North Strip unsplit spans at The STRAT are skipped while valid spans remain', () => {
+  const stratDup = { id: 145661106 };
+  assert.equal(isSupersededStripSpan(stratDup, 0, 3), true);
+  assert.equal(isSupersededStripSpan(stratDup, 3, 5), false);
+  assert.equal(isSupersededStripSpan(stratDup, 9, 11), false);
+  assert.equal(isSupersededStripSpan(stratDup, 11, 14), true);
+  assert.equal(isSupersededStripSpan(stratDup, 16, 18), true);
+  assert.equal(isSupersededStripSpan(stratDup, 18, 20), false);
+  assert.equal(isSupersededStripSpan({ id: 1569897918 }, 0, 3), false);
+});
+
+test('slip-lane corner outlines stay tight so pork-chop islands are not paved over', () => {
+  const wideCorners = [], slipCorners = [];
+  const rims = [
+    { dir: [1, 0], pts: [[20, -10], [20, 10]] },
+    { dir: [0, 1], pts: [[10, 20], [-10, 20]] },
+    { dir: [-1, 0], pts: [[-20, 10], [-20, -10]] },
+    { dir: [0, -1], pts: [[-10, -20], [10, -20]] },
+  ];
+  const wideRing = junctionOutline(rims, [0, 0], wideCorners);
+  const slipRing = junctionOutline(rims, [0, 0], slipCorners, corner => corner[0] > 0 && corner[1] > 0);
+  // Only the 3 non-slip corners receive sidewalk corner ribbons; SE slip corner stays within 2.5m of [10, 10].
+  assert.equal(wideCorners.length, 4);
+  assert.equal(slipCorners.length, 3);
+  assert.ok(wideRing.some(([px, pz]) => Math.abs(px - 12.5) < 0.01 && Math.abs(pz - 12.5) < 0.01));
+  const seArc = slipRing.filter(([px, pz]) => px > 10.01 && pz > 10.01);
+  assert.ok(seArc.length >= 4);
+  assert.ok(seArc.every(([px, pz]) => Math.hypot(px - 10, pz - 10) <= 2.45));
+});
+
+test('inbound crosswalk paint steps upstream across a short approach split and clears markings', () => {
+  const upstream = road(0, 35, 11, { next: 1 });
+  const shortIn = road(1, 11, 5, { prev: 0 });
+  const leg = {
+    ctr: [0, 0], a: [1, 0], d: 9, cross: true,
+    markedEdges: new Set([1]),
+    entries: [{ e: shortIn, atStart: false }],
+  };
+  const plan = crossingPlan({ legs: [leg], mouthEnd: new Map([[1, { leg }]]) });
+  const result = planCrossingPaint({ crossings: [] }, { edges: [upstream, shortIn] }, plan, e => e.ref, new Set());
+  const [hit] = result.junctions.get(leg);
+  assert.equal(hit.road, upstream);
+  // Gap clears all of shortIn (0..6m) and the tail of upstream approaching the crosswalk.
+  assert.deepEqual([...paintSpans(0, 6, result.gaps.get(1))], []);
+  const spans0 = [...paintSpans(0, 24, result.gaps.get(0))];
+  assert.equal(spans0.length, 1);
+  assert.ok(spans0[0][1] < 24);
+});
+
+test('narrow acute-nosed concrete dividers survive Strip pavement rounding without eroding away', async () => {
+  const keys = ['major', 'asphalt', 'service', 'aisle', 'slipPavement', 'sidewalk', 'concreteMedians', 'medians',
+    'medianPaving', 'medianPlanting', 'medianApron', 'frontagePlanting', 'curb', 'curbFaces', 'paint', 'paintDim', 'paintYellow', 'reviewedAisles', 'parkingBase'];
+  const x = 150, z = 250;
+  const layers = Object.fromEntries(keys.map(key => {
+    const mesh = {
+      pos: [], idx: [], output: [],
+      vert(vx, vy, vz) { this.pos.push(vx, vy, vz); return this.pos.length / 3 - 1; },
+      polygon(outer, y, holes) { this.output.push({ outer, y, holes }); },
+    };
+    return [key, { m: new Map([[`0,0`, mesh]]), at: () => mesh }];
+  }));
+  // Add drivable Strip carriageways flanking a narrow 0.65m concrete divider with a sharp tapered nose.
+  const rect = (layer, x0, z0, x1, z1) => {
+    const m = layers[layer].at(), b = m.pos.length / 3;
+    m.pos.push(x + x0, 0, z + z0, x + x1, 0, z + z0, x + x1, 0, z + z1, x + x0, 0, z + z1);
+    m.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  };
+  rect('major', -12, 0, -0.4, 30);
+  rect('major', 0.4, 0, 12, 30);
+  const cm = layers.concreteMedians.at();
+  // Tapered acute nose from z=2 to z=28, max width 0.65m (< 1.30m erosion diameter of 0.65m radius)
+  cm.pos.push(x + 0, 0.11, z + 2, x + 0.325, 0.11, z + 6, x + 0.325, 0.11, z + 28, x - 0.325, 0.11, z + 28, x - 0.325, 0.11, z + 6);
+  cm.idx.push(0, 1, 4, 1, 2, 3, 1, 3, 4);
+
+  await finishStripCorridorPavement(layers);
+  assert.ok(layers.concreteMedians.at().output.length >= 1);
+  assert.ok(layers.curb.at().output.length >= 1);
+});
+
+test('3rd-level freeway flyover ramps hold full clearance above elevated main decks', () => {
+  const roads = [
+    // Ground road running N-S at x = 0
+    { id: 1, hw: 'primary', name: 'West Sahara Avenue', n: [1, 2], pts: [[0, -80], [0, 80]] },
+    // Elevated I-15 motorway crossing over Sahara at y = 6.5m, continuing north on an unflagged span
+    { id: 2, hw: 'motorway', name: 'Las Vegas Freeway', br: 1, layer: 1, n: [10, 11], pts: [[-40, -10], [40, -10]] },
+    { id: 3, hw: 'motorway', name: 'Las Vegas Freeway', br: 1, layer: 1, n: [12, 13], pts: [[90, -10], [150, -10]] },
+    { id: 4, hw: 'motorway', name: 'Las Vegas Freeway', n: [11, 12], pts: [[40, -10], [90, -10]] },
+    // Flyover ramp crossing over the interpolated elevated motorway span at x = 65
+    { id: 5, hw: 'motorway_link', br: 1, layer: 1, n: [20, 21, 22], pts: [[65, -90], [65, -10], [65, 90]] },
+  ];
+  solveRoadElevations(roads);
+  const underMid = ((roads[3].y?.[0] ?? 0) + (roads[3].y?.[1] ?? 0)) * 0.5;
+  const flyoverMid = roads[4].y?.[1] ?? 0;
+  assert.ok(underMid >= 5.5, `expected elevated motorway span >= 5.5m, got ${underMid}`);
+  assert.ok(flyoverMid >= underMid + 5.5, `expected flyover ${flyoverMid}m to clear ${underMid}m deck by >= 5.5m`);
+});
+
+test('highway overpass sidewalks and switchback loops are excluded from Strip pedestrian skybridges', () => {
+  const elevRoadEdges = [
+    { lanes: [0, 1, 2, 3], laneWidth: 3.5, ref: { pts: [[-700, 200], [-450, 200]] } },
+  ];
+  // Parallel sidewalk right beside W Flamingo I-15 overpass
+  assert.equal(isHighwayBridgeSidewalk({ pts: [[-650, 186], [-500, 186]] }, elevRoadEdges), true);
+  // Curved/switchback walkway starting and ending on the same highway overpass
+  assert.equal(isHighwayBridgeSidewalk({ pts: [[-690, 178], [-620, 140], [-495, 176]] }, elevRoadEdges), true);
+  // Real Strip pedestrian skybridge crossing ground-level Las Vegas Blvd far from highway overpasses
+  assert.equal(isHighwayBridgeSidewalk({ pts: [[125, 175], [170, 175]] }, elevRoadEdges), false);
 });

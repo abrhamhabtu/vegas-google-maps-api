@@ -2,6 +2,7 @@ import { toLocal } from '../landmarks/georeference.mjs';
 
 // The centreline only blends the pavement material. Lane shapes come from the graph.
 const path = [
+  [36.08050, -115.17278], // South of Welcome sign turnaround
   [36.08206, -115.17278], // Welcome sign
   [36.08800, -115.17286],
   [36.09360, -115.17291], // Mandalay Bay Road
@@ -16,10 +17,19 @@ const path = [
   [36.13580, -115.16254],
   [36.14367, -115.15740], // Sahara Avenue
   [36.14844, -115.15423], // The STRAT and Main Street
+  [36.15135, -115.15245], // Oakey Boulevard north of The STRAT
 ].map(([lat, lng]) => toLocal(lat, lng));
 
 export const STRIP_PAVEMENT = { path, color: 'roadStrip', innerRadius: 72, outerRadius: 155 };
 const stripName = 'South Las Vegas Boulevard';
+
+// OSM way 145661106 (NB Strip past Main St / The STRAT) retains two unsplit sub-spans
+// that were superseded by newer turn-pocket ways 1569897918+1569897917 and 1569897913+1569897911
+// sharing the exact boundary nodes 137360415..2810223941 and 2810323943..2810323953.
+export function isSupersededStripSpan(way, a, b) {
+  if (way.id !== 145661106) return false;
+  return b <= 3 || (a >= 11 && b <= 18);
+}
 
 // Untagged midblock Strip ways that otherwise inherit inflated turn-pocket counts
 // from neighboring intersections (e.g. Venetian NB 5L->4L, Resorts World SB 6L->4L).

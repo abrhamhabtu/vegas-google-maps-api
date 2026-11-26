@@ -1,5 +1,5 @@
 // The South Strip review runs from Reno Avenue south through Russell Road to meet Welcome Sign.
-export const SOUTH_STRIP_BOUNDS = [-167, 1980, 320, 3627];
+export const SOUTH_STRIP_BOUNDS = [-167, 1980, 320, 3632];
 const [west, north, east, south] = SOUTH_STRIP_BOUNDS;
 
 export function inSouthStrip(x, z, margin = 0) {
@@ -7,9 +7,11 @@ export function inSouthStrip(x, z, margin = 0) {
 }
 
 export function isSouthStripRoad(way) {
-  return !way.br && !way.tn && !way.hw.startsWith('motorway') && !way.hw.startsWith('trunk') &&
-    (way.name === 'South Las Vegas Boulevard' ||
-      way.pts.every(([x, z]) => inSouthStrip(x, z, 24))) &&
+  if (way.br || way.tn || way.hw.startsWith('motorway') || way.hw.startsWith('trunk')) return false;
+  if (way.name === 'South Las Vegas Boulevard' && way.pts.some(([x, z]) => x >= west - 24 && x <= east + 24 && z >= north && z <= 4035)) {
+    return true;
+  }
+  return way.pts.every(([x, z]) => inSouthStrip(x, z, 24)) &&
     way.pts.some(([x, z]) => inSouthStrip(x, z)) &&
     (way.name || way.hw === 'service' || way.hw.endsWith('_link'));
 }
@@ -120,7 +122,10 @@ export function alignMappedCrossing(leg, ids, crossings, offset, axis = leg.a) {
 }
 
 // Trace the outer corners from the ends of the lane rims at each arm.
-export function junctionOutline(mouths, center, corners = []) {
+// When a channelized right-turn slip lane bypasses a corner (`isSlipCorner`), keep the main
+// intersection box tight to `corner` (small 2.5m nose radius, no interior sidewalk ribbon)
+// so the curbed triangular pork-chop refuge island is not paved over by a sweeping fillet.
+export function junctionOutline(mouths, center, corners = [], isSlipCorner = null) {
   const arms = mouths.map(({dir, pts}) => {
     const side = p => (p[1] - center[1]) * dir[0] - (p[0] - center[0]) * dir[1];
     const ends = pts.slice().sort((a, b) => side(a) - side(b));
@@ -139,6 +144,21 @@ export function junctionOutline(mouths, center, corners = []) {
     const e = (dx * a[1] - dz * a[0]) / cross;
     if (d >= -0.1 || e >= -0.1 || d < -45 || e < -45) continue;
     const corner = [high[0] + a[0] * d, high[1] + a[1] * d];
+    if (isSlipCorner?.(corner, high, next)) {
+      const rA = Math.min(2.4, Math.abs(d) * 0.85), rB = Math.min(2.4, Math.abs(e) * 0.85);
+      const c0 = [corner[0] + a[0] * rA, corner[1] + a[1] * rA];
+      const c2 = [corner[0] + b[0] * rB, corner[1] + b[1] * rB];
+      ring.push(c0);
+      for (let k = 1; k < 6; k++) {
+        const t = k / 6, u = 1 - t;
+        ring.push([
+          u * u * c0[0] + 2 * u * t * corner[0] + t * t * c2[0],
+          u * u * c0[1] + 2 * u * t * corner[1] + t * t * c2[1],
+        ]);
+      }
+      ring.push(c2);
+      continue;
+    }
     const curve = [high];
     for (let k = 1; k < 12; k++) {
       const t = k / 12, u = 1 - t;
