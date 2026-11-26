@@ -437,10 +437,11 @@ export const BELLAGIO_CLIP_POLY = [
 export const BELLAGIO_ISLAND_SPECS = {
   // Iconic oval roundabout garden & fountain court in front of Bellagio porte-cochere
   roundaboutGarden: [
-    [-48.8, 454.0],
-    [-45.0, 444.8],
-    [-37.5, 441.5],
-    [-29.5, 442.2],
+    [-50.4, 455.0],
+    [-48.0, 446.5],
+    [-43.2, 442.0],
+    [-36.5, 440.8],
+    [-29.2, 442.0],
     [-22.5, 447.5],
     [-18.0, 457.0],
     [-13.5, 471.0],
@@ -451,7 +452,7 @@ export const BELLAGIO_ISLAND_SPECS = {
     [-36.5, 510.5],
     [-44.5, 503.5],
     [-48.8, 492.0],
-    [-49.8, 476.0],
+    [-50.0, 475.0],
   ],
   // Slender curbed separator island between NW outer taxi curve & inner arrival lanes
   taxiSeparator: [
@@ -572,8 +573,8 @@ export function finishBellagioDrivePavement(layers) {
   };
   const ebRightOff = (_t, s) => {
     const p = samplePoly(ebMainCenter, ebMainCum, s);
-    if (p.x < -12) return 5.0;
-    if (p.x < 12) return 5.0 + 1.65 * Math.max(0, Math.min(1, (p.x + 12) / 24));
+    if (p.x < -12) return 5.35;
+    if (p.x < 12) return 5.35 + 1.3 * Math.max(0, Math.min(1, (p.x + 12) / 24));
     if (p.x < 54) return 6.65 + 1.65 * Math.max(0, Math.min(1, (p.x - 12) / 36));
     if (p.x < 64) return 8.3 - 3.25 * Math.max(0, Math.min(1, (p.x - 54) / 10));
     return 5.05;
@@ -686,15 +687,15 @@ export function finishBellagioDrivePavement(layers) {
 
   // E3) Broad continuous Bellagio Porte-Cochere Motor Court / Valet Forecourt (unifies all 3 arrival lanes)
   const porteCochereForecourt = roundCorners([toClipRing([
-    [-79.8, 454.5],
-    [-50.8, 454.5],
-    [-50.5, 484.0],
+    [-81.2, 454.5],
+    [-50.6, 454.5],
+    [-50.4, 484.0],
     [-49.5, 495.5],
     [-44.0, 505.5],
-    [-51.5, 512.0],
-    [-66.5, 506.0],
-    [-75.5, 498.5],
-    [-79.8, 487.5],
+    [-52.0, 513.0],
+    [-64.5, 509.5],
+    [-75.5, 501.0],
+    [-81.2, 489.0],
   ])], 2.4);
 
   // E4) Roundabout Turn-Back Loop (311030162: EB W Bellagio Dr curving NE around garden into hillside portal)
@@ -851,7 +852,8 @@ export function finishBellagioDrivePavement(layers) {
   emitCurbFaces(curbFaces, exToPaths(clipOp(ctIntersection, outerCurbUnclipped, clipSection)), 0, 0.17, BELLAGIO_CLIP_POLY);
 
   // ── 3. RAZOR-SHARP GOOGLE MAPS / APPLE MAPS LANE PAINT (aligned to AV lane graph & satellite) ──
-  const whitePolys = [];
+  const laneWhitePolys = [];
+  const goreWhitePolys = [];
   const dimPolys = [];
   const addRibbon = (target, pts, halfW) => {
     const r = ribbonRing(pts, halfW);
@@ -870,27 +872,27 @@ export function finishBellagioDrivePavement(layers) {
   // 3-lane upper section (x = -46 .. -10): dashed lane dividers at ±1.65 m (3 lanes x 3.3 m)
   const eb3Seg = slicePoly(ebMainCenter, ebMainCum, 8, 56);
   if (eb3Seg.length >= 2) {
-    addDashed(whitePolys, offsetPoly(eb3Seg, -1.65), 2.4, 4.4, 0.072);
-    addDashed(whitePolys, offsetPoly(eb3Seg, 1.65), 2.4, 4.4, 0.072);
-    addRibbon(whitePolys, offsetPoly(eb3Seg, -4.72), 0.078);
-    addRibbon(whitePolys, offsetPoly(eb3Seg, 4.72), 0.078);
+    addDashed(laneWhitePolys, offsetPoly(eb3Seg, -1.65), 2.4, 4.4, 0.072);
+    addDashed(laneWhitePolys, offsetPoly(eb3Seg, 1.65), 2.4, 4.4, 0.072);
+    addRibbon(laneWhitePolys, offsetPoly(eb3Seg, -4.72), 0.078);
+    addRibbon(laneWhitePolys, offsetPoly(eb3Seg, 4.92), 0.078);
   }
   // 4-to-5-lane middle section (x = -8 .. 54): dashed dividers at -3.3, 0, +3.3 (+ outer 5th lane flare)
   const ebMidSeg = slicePoly(ebMainCenter, ebMainCum, 58, ebMainLen - 70);
   if (ebMidSeg.length >= 2) {
     for (const off of [-3.3, 0, 3.3]) {
-      addDashed(whitePolys, offsetPoly(ebMidSeg, off), 2.5, 4.6, 0.072);
+      addDashed(laneWhitePolys, offsetPoly(ebMidSeg, off), 2.5, 4.6, 0.072);
     }
-    addRibbon(whitePolys, offsetPoly(ebMidSeg, -6.35), 0.078);
+    addRibbon(laneWhitePolys, offsetPoly(ebMidSeg, -6.35), 0.078);
   }
 
   // 3b. EB 3 Left-Turn ONLY lanes (x = 62 .. 113): dashed dividers + solid edges + stop bar + 2 rows LEFT arrows + ONLY
   const ebLeftSeg = slicePoly(ebMainCenter, ebMainCum, ebMainLen - 64, ebMainLen - 12.2);
   if (ebLeftSeg.length >= 2) {
-    addDashed(whitePolys, offsetPoly(ebLeftSeg, -1.65), 2.2, 3.8, 0.075);
-    addDashed(whitePolys, offsetPoly(ebLeftSeg, 1.65), 2.2, 3.8, 0.075);
-    addRibbon(whitePolys, offsetPoly(ebLeftSeg, -4.8), 0.08);
-    addRibbon(whitePolys, offsetPoly(ebLeftSeg, 4.8), 0.08);
+    addDashed(laneWhitePolys, offsetPoly(ebLeftSeg, -1.65), 2.2, 3.8, 0.075);
+    addDashed(laneWhitePolys, offsetPoly(ebLeftSeg, 1.65), 2.2, 3.8, 0.075);
+    addRibbon(laneWhitePolys, offsetPoly(ebLeftSeg, -4.8), 0.08);
+    addRibbon(laneWhitePolys, offsetPoly(ebLeftSeg, 4.8), 0.08);
 
     const segCum = polyCum(ebLeftSeg);
     const segLen = segCum[segCum.length - 1];
@@ -901,14 +903,14 @@ export function finishBellagioDrivePavement(layers) {
       const nxN = -pNear.hz, nzN = pNear.hx;
       const nxO = -pOnly.hz, nzO = pOnly.hx;
       const nxF = -pFar.hz, nzF = pFar.hx;
-      whitePolys.push(...arrowPolysWorld(pNear.x + nxN * laneOff, pNear.z + nzN * laneOff, pNear.hx, pNear.hz, ['left'], 3.1));
-      whitePolys.push(...onlyTextPolys(pOnly.x + nxO * laneOff, pOnly.z + nzO * laneOff, pOnly.hx, pOnly.hz, 0.56));
-      whitePolys.push(...arrowPolysWorld(pFar.x + nxF * laneOff, pFar.z + nzF * laneOff, pFar.hx, pFar.hz, ['left'], 3.1));
+      laneWhitePolys.push(...arrowPolysWorld(pNear.x + nxN * laneOff, pNear.z + nzN * laneOff, pNear.hx, pNear.hz, ['left'], 3.1));
+      laneWhitePolys.push(...onlyTextPolys(pOnly.x + nxO * laneOff, pOnly.z + nzO * laneOff, pOnly.hx, pOnly.hz, 0.56));
+      laneWhitePolys.push(...arrowPolysWorld(pFar.x + nxF * laneOff, pFar.z + nzF * laneOff, pFar.hx, pFar.hz, ['left'], 3.1));
     }
     // Crisp stop bar strictly west of the LV Blvd zebra crosswalk (x ~ 112.5)
     const pStop = samplePoly(ebLeftSeg, segCum, segLen - 0.6);
     const nxS = -pStop.hz, nzS = pStop.hx;
-    addRibbon(whitePolys, [
+    addRibbon(laneWhitePolys, [
       [pStop.x - nxS * 4.8, pStop.z - nzS * 4.8],
       [pStop.x + nxS * 4.8, pStop.z + nzS * 4.8],
     ], 0.24);
@@ -918,9 +920,9 @@ export function finishBellagioDrivePavement(layers) {
   const ebRtLen = ebRightTurnCum[ebRightTurnCum.length - 1];
   const ebRtSeg = slicePoly(ebRightTurnCenter, ebRightTurnCum, 14, ebRtLen - 13.5);
   if (ebRtSeg.length >= 2) {
-    addDashed(whitePolys, ebRtSeg, 2.2, 3.8, 0.075);
-    addRibbon(whitePolys, offsetPoly(ebRtSeg, -3.25), 0.08);
-    addRibbon(whitePolys, offsetPoly(ebRtSeg, 3.25), 0.08);
+    addDashed(laneWhitePolys, ebRtSeg, 2.2, 3.8, 0.075);
+    addRibbon(laneWhitePolys, offsetPoly(ebRtSeg, -3.25), 0.08);
+    addRibbon(laneWhitePolys, offsetPoly(ebRtSeg, 3.25), 0.08);
     const rCum = polyCum(ebRtSeg);
     const rLen = rCum[rCum.length - 1];
     for (const laneOff of [-1.65, 1.65]) {
@@ -930,26 +932,26 @@ export function finishBellagioDrivePavement(layers) {
       const nxN = -pNear.hz, nzN = pNear.hx;
       const nxO = -pOnly.hz, nzO = pOnly.hx;
       const nxF = -pFar.hz, nzF = pFar.hx;
-      whitePolys.push(...arrowPolysWorld(pNear.x + nxN * laneOff, pNear.z + nzN * laneOff, pNear.hx, pNear.hz, ['right'], 3.1));
-      whitePolys.push(...onlyTextPolys(pOnly.x + nxO * laneOff, pOnly.z + nzO * laneOff, pOnly.hx, pOnly.hz, 0.56));
-      whitePolys.push(...arrowPolysWorld(pFar.x + nxF * laneOff, pFar.z + nzF * laneOff, pFar.hx, pFar.hz, ['right'], 3.1));
+      laneWhitePolys.push(...arrowPolysWorld(pNear.x + nxN * laneOff, pNear.z + nzN * laneOff, pNear.hx, pNear.hz, ['right'], 3.1));
+      laneWhitePolys.push(...onlyTextPolys(pOnly.x + nxO * laneOff, pOnly.z + nzO * laneOff, pOnly.hx, pOnly.hz, 0.56));
+      laneWhitePolys.push(...arrowPolysWorld(pFar.x + nxF * laneOff, pFar.z + nzF * laneOff, pFar.hx, pFar.hz, ['right'], 3.1));
     }
   }
 
   // Chevron-hatched white gore separating EB 3 Left-Turn lanes & 2 Right-Turn lanes (west of concrete splitter!)
-  whitePolys.push(...buildChevronGore(
+  goreWhitePolys.push(...buildChevronGore(
     [[72.0, 585.4], [88.0, 584.7], [104.0, 583.6]],
     [[72.0, 585.4], [88.0, 586.5], [104.0, 586.8]],
     2.6, 0.085
   ));
 
-  // 3d. Westbound W Bellagio Dr lane dividers + SB LV Blvd slip chevron gore
+  // 3d. Westbound W Bellagio Dr lane dividers + SB LV Blvd slip chevron gore (stops strictly SE of Fork #2 gore!)
   const wbLen = wbMainCum[wbMainCum.length - 1];
-  const wbSeg = slicePoly(wbMainCenter, wbMainCum, 13.0, wbLen - 4.5);
+  const wbSeg = slicePoly(wbMainCenter, wbMainCum, 13.0, wbLen - 11.5);
   if (wbSeg.length >= 2) {
-    addDashed(whitePolys, offsetPoly(wbSeg, -1.65), 2.5, 4.6, 0.075);
-    addDashed(whitePolys, offsetPoly(wbSeg, 1.65), 2.5, 4.6, 0.075);
-    addRibbon(whitePolys, offsetPoly(wbSeg, -4.85), 0.08);
+    addDashed(laneWhitePolys, offsetPoly(wbSeg, -1.65), 2.5, 4.6, 0.075);
+    addDashed(laneWhitePolys, offsetPoly(wbSeg, 1.65), 2.5, 4.6, 0.075);
+    addRibbon(laneWhitePolys, offsetPoly(wbSeg, -4.85), 0.08);
     const wCum = polyCum(wbSeg);
     for (const d of [14, 34]) {
       const q = samplePoly(wbSeg, wCum, d);
@@ -958,27 +960,35 @@ export function finishBellagioDrivePavement(layers) {
   }
 
   // Chevron-hatched white gore between SB LV Blvd right-turn slip & WB Bellagio Dr (west of wbSlipIsland!)
-  whitePolys.push(...buildChevronGore(
+  goreWhitePolys.push(...buildChevronGore(
     [[74.0, 550.2], [89.0, 549.5], [104.0, 548.6]],
     [[74.0, 550.2], [89.0, 551.0], [104.0, 551.6]],
     2.5, 0.085
   ));
 
-  // 3e. Non-intersecting V-shaped white gore lines at the two underground tunnel splits!
+  // 3e. Non-intersecting V-shaped white gore noses at the two underground tunnel splits!
   // Fork #1: Lakeside Bellagio Dr vs Middle Tunnel Portal #1 (strictly north of z = 531)
-  addRibbon(whitePolys, [[34.5, 530.8], [26.8, 524.8], [21.5, 519.2]], 0.085);
-  addRibbon(whitePolys, [[34.5, 530.8], [27.5, 528.2], [21.5, 526.8]], 0.085);
+  addRibbon(goreWhitePolys, [[34.5, 530.8], [26.8, 524.8], [21.5, 519.2]], 0.085);
+  addRibbon(goreWhitePolys, [[34.5, 530.8], [27.5, 528.2], [21.5, 526.8]], 0.085);
   // Fork #2: Middle Tunnel Portal #1 vs South Tunnel Portal #2 (strictly south of z = 534.5)
-  addRibbon(whitePolys, [[44.2, 540.5], [36.5, 536.2], [30.2, 534.5]], 0.085);
-  addRibbon(whitePolys, [[44.2, 540.5], [36.5, 540.2], [30.2, 539.8]], 0.085);
+  addRibbon(goreWhitePolys, [[44.2, 540.5], [36.5, 536.2], [30.2, 534.5]], 0.085);
+  addRibbon(goreWhitePolys, [[44.2, 540.5], [36.5, 540.2], [30.2, 539.8]], 0.085);
 
-  // 3f. Lakeside Bellagio Drive & North Roundabout Loop lane markings (2 lanes around curve!)
+  // Gore exclusion masks: lane lines & edge paint MUST stop at gore edges and NEVER cross through any gore!
+  const goreMasks = [
+    toClipRing([[34.8, 531.0], [26.8, 524.8], [20.5, 518.2], [17.5, 524.8], [21.2, 526.8], [27.5, 528.2]]),
+    toClipRing([[44.6, 540.6], [36.5, 536.2], [29.6, 534.3], [27.5, 537.2], [29.6, 539.9], [36.5, 540.3]]),
+    toClipRing([[71.8, 585.4], [88.0, 584.7], [104.5, 583.5], [104.5, 586.9], [88.0, 586.5]]),
+    toClipRing([[73.8, 550.2], [89.0, 549.5], [104.5, 548.5], [104.5, 551.7], [89.0, 551.0]]),
+  ];
+
+  // 3f. Lakeside Bellagio Drive & North Roundabout Loop lane markings (starts cleanly NW of Fork #1 gore!)
   const lakeLen = lakeRoundaboutCum[lakeRoundaboutCum.length - 1];
-  const lakePaintSeg = slicePoly(lakeRoundaboutCenter, lakeRoundaboutCum, 4.0, lakeLen - 46.0);
+  const lakePaintSeg = slicePoly(lakeRoundaboutCenter, lakeRoundaboutCum, 18.0, lakeLen - 46.0);
   if (lakePaintSeg.length >= 2) {
-    addDashed(whitePolys, lakePaintSeg, 2.5, 4.5, 0.072);
-    addRibbon(whitePolys, offsetPoly(lakePaintSeg, 3.2), 0.075);
-    addRibbon(whitePolys, offsetPoly(lakePaintSeg, -3.2), 0.075);
+    addDashed(laneWhitePolys, lakePaintSeg, 2.5, 4.5, 0.072);
+    addRibbon(laneWhitePolys, offsetPoly(lakePaintSeg, 3.2), 0.075);
+    addRibbon(laneWhitePolys, offsetPoly(lakePaintSeg, -3.2), 0.075);
     const lCum = polyCum(lakePaintSeg);
     for (const frac of [0.22, 0.55, 0.82]) {
       const q = samplePoly(lakePaintSeg, lCum, lCum[lCum.length - 1] * frac);
@@ -1009,7 +1019,7 @@ export function finishBellagioDrivePavement(layers) {
       const a1 = [pA[0] + ux * lo + nx * (depth / 2), pA[1] + uz * lo + nz * (depth / 2)];
       const b1 = [pA[0] + ux * hi + nx * (depth / 2), pA[1] + uz * hi + nz * (depth / 2)];
       const b0 = [pA[0] + ux * hi - nx * (depth / 2), pA[1] + uz * hi - nz * (depth / 2)];
-      whitePolys.push(toClipRing([a0, a1, b1, b0]));
+      laneWhitePolys.push(toClipRing([a0, a1, b1, b0]));
     }
   };
   // Crosswalk across WB Bellagio Dr at LV Blvd (x ~ 115.8)
@@ -1025,10 +1035,12 @@ export function finishBellagioDrivePavement(layers) {
   // Crosswalk across Bellagio Self-Parking Garage Exit Driveway (exact satellite position!)
   addZebra([-38.2, 535.2], [-37.4, 542.6], 2.8);
 
-  // Clip all paint strictly inside drivable asphalt (zero paint ever bleeds onto curbs or islands!)
-  const whiteEx = clipOp(ctIntersection, exToPaths(clipOp(ctUnion, whitePolys)), drivablePaths);
+  // Subtract gore interiors from all lane paint, then union with gore strokes and clip strictly inside drivable asphalt
+  const cleanLaneWhite = exToPaths(clipOp(ctDifference, exToPaths(clipOp(ctUnion, laneWhitePolys)), goreMasks));
+  const whiteEx = clipOp(ctIntersection, exToPaths(clipOp(ctUnion, [...cleanLaneWhite, ...goreWhitePolys])), drivablePaths);
   const whitePaths = exToPaths(whiteEx);
-  const dimEx = clipOp(ctDifference, exToPaths(clipOp(ctIntersection, exToPaths(clipOp(ctUnion, dimPolys)), drivablePaths)), whitePaths);
+  const cleanDim = exToPaths(clipOp(ctDifference, exToPaths(clipOp(ctUnion, dimPolys)), goreMasks));
+  const dimEx = clipOp(ctDifference, exToPaths(clipOp(ctIntersection, cleanDim, drivablePaths)), whitePaths);
 
   emitPolygons(paint, whiteEx, 0, 0.005);
   emitPolygons(paintDim, dimEx, 0, 0.005);

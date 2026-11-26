@@ -273,4 +273,10 @@ test('Bellagio drive flattens porte-cochere ways, keeps open Strip mouths curb-f
     assert.equal(inLayer('medianPlanting', tx, tz), true, `tree at (${tx}, ${tz}) not on medianPlanting`);
     assert.equal(inLayer('major', tx, tz), false, `tree at (${tx}, ${tz}) overlaps drivable asphalt`);
   }
+
+  // Fork #1 and Fork #2 V-gore interiors must remain clear of stray lane dividers or edge paint
+  for (const [gx, gz] of [[28.5, 527.0], [25.0, 525.2], [35.5, 538.0], [38.5, 538.8]]) {
+    assert.equal(inLayer('paint', gx, gz), false, `stray white lane paint inside gore at (${gx}, ${gz})`);
+    assert.equal(inLayer('paintDim', gx, gz), false, `stray dim paint inside gore at (${gx}, ${gz})`);
+  }
 });
