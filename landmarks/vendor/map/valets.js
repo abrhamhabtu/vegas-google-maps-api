@@ -528,7 +528,9 @@ export function buildValets(data, plan, graph) {
             // Strict lane & drive clearance so columns NEVER clip into drivable valet lanes or custom motor courts
             const inCustomCourt = (wx, wz) =>
                 (wx > -79.8 && wx < -50.2 && wz > 454 && wz < 506) ||
-                (wx > 1.2 && wx < 22.5 && wz > -16 && wz < 35);
+                (wx > 1.2 && wx < 22.5 && wz > -16 && wz < 35) ||
+                (wx > -79.0 && wx < 17.0 && wz > 798 && wz < 852) ||
+                (Math.hypot(wx - (-107.5), wz - 995.5) < 42.5);
             const r = ringArea(b.pts) > 0 ? b.pts : b.pts.slice().reverse();
             const every = area > 800 ? 13 : 8.5;
             let acc = 0;
@@ -701,8 +703,8 @@ export function buildValets(data, plan, graph) {
     const bays = new Soup();
     for (const st of stops){
         if (!st.main) continue;
-        // Bellagio and Caesars Palace have custom multi-lane porte-cochere motor courts
-        if (/^(bellagio|caesars palace)$/i.test(st.name ?? '')) continue;
+        // Custom multi-lane porte-cochere motor courts handle their own pavement and markings
+        if (/^(bellagio|caesars palace|the cosmopolitan|aria)$/i.test(st.name ?? '')) continue;
         const e = graph.edges[st.edge];
         if (!e) continue;
         const W = e.lanes.length * e.laneWidth;
