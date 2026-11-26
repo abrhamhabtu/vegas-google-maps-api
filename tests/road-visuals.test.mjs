@@ -14,6 +14,8 @@ import { finishCaesarsDrivePavement } from '../world/caesars-drive-roads.mjs';
 import { finishParisDrivePavement } from '../world/paris-drive-roads.mjs';
 import { finishCosmoDrivePavement } from '../world/cosmo-drive-roads.mjs';
 import { finishAriaDrivePavement } from '../world/aria-drive-roads.mjs';
+import { finishWynnEncoreDrivePavement } from '../world/wynn-encore-drive-roads.mjs';
+import { finishVenetianPalazzoDrivePavement } from '../world/venetian-palazzo-drive-roads.mjs';
 import { junctionOutline } from '../world/south-strip-roads.mjs';
 import { stripLaneCount, stripLaneWidth } from '../world/strip-streets.mjs';
 
@@ -379,4 +381,33 @@ test('Caesars Palace valet rotary and Paris Arc rotary keep open mouths curb-fre
   assert.equal(inLayer(aria, 'concreteMedians', -107.5, 995.5), true, 'ARIA Lumia fountain island present');
   assert.equal(inLayer(aria, 'medianPlanting', -54.0, 1014.0), true, 'ARIA west boulevard median planted');
   assert.equal(inLayer(aria, 'medianPlanting', -10.0, 1030.0), true, 'ARIA mid boulevard median planted');
+
+  const wynn = makeLayers();
+  finishWynnEncoreDrivePavement(wynn);
+  for (const [x, z] of [
+    [624.0, -1253.0], // Wynn open west Strip inbound mouth
+    [626.0, -1267.0], // Wynn open west Strip outbound mouth
+    [695.0, -1210.0], // Wynn porte-cochere south lane
+    [910.0, -1475.0], // Encore porte-cochere court
+    [958.0, -1464.0], // Encore open east mouth
+  ]) {
+    assert.equal(inLayer(wynn, 'major', x, z), true, `Wynn/Encore missing asphalt at (${x}, ${z})`);
+    assert.equal(inLayer(wynn, 'curb', x, z), false, `Wynn/Encore curb on asphalt at (${x}, ${z})`);
+  }
+  assert.equal(inLayer(wynn, 'medianPlanting', 692.0, -1236.0), true, 'Wynn circular garden planted');
+
+  const ven = makeLayers();
+  finishVenetianPalazzoDrivePavement(ven);
+  for (const [x, z] of [
+    [329.0, -554.0], // Venetian west inbound valet lane
+    [364.0, -554.0], // Venetian east porte-cochere lane
+    [460.0, -442.0], // Venetian south valet motor court
+    [474.0, -836.0], // Palazzo east rotary lane
+    [447.0, -866.0], // Palazzo north porte-cochere lane
+  ]) {
+    assert.equal(inLayer(ven, 'major', x, z), true, `Venetian/Palazzo missing asphalt at (${x}, ${z})`);
+    assert.equal(inLayer(ven, 'curb', x, z), false, `Venetian/Palazzo curb on asphalt at (${x}, ${z})`);
+  }
+  assert.equal(inLayer(ven, 'medianPlanting', 346.0, -555.0), true, 'Venetian oval garden planted');
+  assert.equal(inLayer(ven, 'medianPlanting', 447.0, -836.0), true, 'Palazzo circular fountain garden planted');
 });
