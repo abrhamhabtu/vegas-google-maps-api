@@ -1,7 +1,7 @@
 // Adapted from abrhamhabtu/vegas-strip-v2; see landmarks/PROVENANCE.md.
 import { boundaryLine, sample } from './lanegraph.js';
 import { rebuildMovements } from './movements.js';
-import { isStripEdge, isWynnGateJunction, wynnCrossingIds } from '../../../world/strip-streets.mjs';
+import { isStripChannelizedLeft, isStripEdge, isWynnGateJunction, wynnCrossingIds } from '../../../world/strip-streets.mjs';
 import { alignMappedCrossing, alignSouthStripCrossing, isMandalayLaneFan } from '../../../world/south-strip-roads.mjs';
 import { CROSSWALK_OFFSET, crossingStation } from '../../../world/road-crossings.mjs';
 export function planIntersections(data, g) {
@@ -285,6 +285,7 @@ export function planIntersections(data, g) {
                     if (leg.cross && leg.entries.some(({ e })=>e.cls === 'arterial') && !nearSignal(ctr[0], ctr[1], 40) && !nearSignal(mx, mz, 35) && !pedSignalAt(ctr[0], ctr[1], 25)) leg.cross = false;
                     if (leg.cross && spans.some((sp)=>Math.hypot(sp.x - mx, sp.z - mz) < 42 && Math.abs(sp.hx * leg.a[0] + sp.hz * leg.a[1]) < 0.45)) leg.cross = false;
                     if (leg.cross && leg.entries.some(({ e })=>e.cls === 'arterial') && spans.filter((sp)=>Math.hypot(sp.x - ctr[0], sp.z - ctr[1]) < 95).length >= 2) leg.cross = false;
+                    if (leg.cross && leg.entries.every(({ e })=>isStripChannelizedLeft(e))) leg.cross = false;
                     if (leg.cross && alignSouthStripCrossing(leg, group, crossingsById, CROSSWALK_OFFSET)) leg.mapped = true;
                     if (wynnGate && alignMappedCrossing(leg, wynnCrossingIds(leg), crossingsById, CROSSWALK_OFFSET)) {
                         leg.cross = leg.mapped = true;

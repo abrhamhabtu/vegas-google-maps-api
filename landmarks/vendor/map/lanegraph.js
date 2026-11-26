@@ -4,7 +4,7 @@ import { isSouthStripRoad, roundSouthStripRoad, southStripLaneCount } from '../.
 import { parisDriveLaneCount, parisDriveTurns } from '../../../world/paris-drive-roads.mjs';
 import { bellagioWayHeights, isBellagioFlattenedBridge } from '../../../world/bellagio-drive-roads.mjs';
 import { isStripCorridorRoad } from '../../../world/strip-corridor-pavement.mjs';
-import { wynnGateShape, wynnMedianInset } from '../../../world/strip-streets.mjs';
+import { stripLaneCount, stripLaneWidth, wynnGateShape, wynnMedianInset } from '../../../world/strip-streets.mjs';
 export const CLASS = {
     motorway: 'motorway',
     motorway_link: 'ramp',
@@ -367,6 +367,12 @@ function parseTurns(tag, n) {
 }
 export function isPassage(r) {
     if (!r.tn) return false;
+    // Grade-separated underground tunnels (e.g. Wilbur Clark Desert Inn superarterial,
+    // Vegas Loop / Resorts World Connectors) run beneath the Strip and must not cut y=0.
+    if ((r.layer ?? 0) < 0 && (
+        r.hw === 'primary' || r.hw === 'primary_link' || r.hw === 'motorway' || r.hw === 'motorway_link' ||
+        /Loop|Connector/i.test(r.name ?? '')
+    )) return false;
     let L = 0;
     for(let i = 1; i < r.pts.length; i++)L += Math.hypot(r.pts[i][0] - r.pts[i - 1][0], r.pts[i][1] - r.pts[i - 1][1]);
     return L <= 150;
@@ -547,10 +553,10 @@ export function buildLaneGraph(data) {
             const customTurn = parisDriveTurns(w);
             const rawTurn = customTurn ?? (w.ow === 1 ? w.turn ?? w.tf : w.ow === -1 ? w.turn ?? w.tb : undefined);
             const turnCount = rawTurn ? rawTurn.split('|').length : undefined;
-            const known = parisDriveLaneCount(w) ?? (southStrip ? southStripLaneCount(w) : undefined) ?? w.lanes ?? inheritedLanes.get(w.id);
+            const known = parisDriveLaneCount(w) ?? (southStrip ? southStripLaneCount(w) : undefined) ?? stripLaneCount(w) ?? w.lanes ?? inheritedLanes.get(w.id);
             const turnInflatedByEmptyPipe = !!(rawTurn && w.lanes !== undefined && rawTurn.endsWith('||'));
             const total = (turnCount && known && turnCount > known && !turnInflatedByEmptyPipe ? turnCount : known) ?? turnCount ?? (w.ow ? cls === 'service' ? 1 : cls === 'ramp' ? 1 : 2 : cls === 'arterial' ? 4 : 2);
-            let laneW = LANE_W[cls];
+            let laneW = stripLaneWidth(w, total, cls, southStrip, stripCorridor) ?? LANE_W[cls];
             if (w.w && total > 0) laneW = Math.min(4.2, Math.max(2.8, w.w / total));
             let dirs;
             const rev = ()=>pts.slice().reverse();
@@ -860,7 +866,7 @@ export function buildLaneGraph(data) {
         let D = ((pn.x - pw.x) * mj[0] + (pn.z - pw.z) * mj[1]) / mj2;
         if (Math.abs(D) > 9 || extra > 3) continue;
         const right = (t)=>!!t && t.length === 1 && t[0] === 'right';
-        const left = (t)=>!!t && t.length === 1 && t[0] === 'left';
+        const left = (t)=>!!t && t.length > 0 && t.every((m)=>m === 'left' || m === 'uturn');
         const countLeft = (e)=>{
             const idx = e.turns.findIndex((t)=>!left(t));
             return idx < 0 ? left(e.turns[0]) ? e.lanes.length : 0 : idx;
@@ -883,14 +889,21 @@ export function buildLaneGraph(data) {
         const tagged = W.turns.some((t)=>left(t) || right(t));
         const nTagged = N.turns.some((t)=>left(t) || right(t));
         const skip = !W.oneway ? 0 : hasSlipAtJoint ? Math.min(extra, Math.max(0, leftW - leftN)) : tagged && nTagged ? rightW > rightN && leftW <= leftN ? 0 : Math.min(extra, Math.max(0, leftW - leftN)) : tagged ? Math.min(extra, leftW) : onRight ? 0 : extra;
+        const inStripReviewed = !!(W.southStrip || W.stripCorridor || N.southStrip || N.stripCorridor);
         if (extra > 0 && W.oneway && pw.y < 3 && (wideIsA ? A.prev : B.next) === undefined) {
             let S = D - skip * W.laneWidth;
-            if (S < 0) S = -Math.min(-S, Math.max(0, medianRoom(W) - 1));
+            if (inStripReviewed) {
+                const maxShift = Math.min(1.5, extra * W.laneWidth * 0.35);
+                S = Math.max(-maxShift, Math.min(maxShift, S));
+                if (S < 0) S = -Math.min(-S, Math.max(0, medianRoom(W) - 2.2));
+            } else if (S < 0) {
+                S = -Math.min(-S, Math.max(0, medianRoom(W) - 1));
+            }
             if (Math.abs(S) > 0.05) {
                 W.ref = makeLine(offsetBy(W.ref, ()=>S, W.mitreStart, W.mitreEnd).pts, W.ref.y);
                 D -= S;
             }
-        } else if (extra > 0 && N.oneway && pn.y < 3) {
+        } else if (!inStripReviewed && extra > 0 && N.oneway && pn.y < 3) {
             const chain = [];
             let cur = N, len = 0;
             while(cur && cur.lanes.length === nN && len + cur.ref.length < 75 && chain.length < 2){
@@ -963,6 +976,57 @@ export function buildLaneGraph(data) {
             }
         }
         e.ref = densify(e.ref, e.taperStart ?? 0, L - (e.taperEnd ?? 0), 3);
+    }
+    // Guarantee opposing one-way Strip carriageways never overlap across the median.
+    // Where wide turn pockets exceed raw centerline separation, gently shift outward
+    // weighted toward the wider approach while keeping split joints aligned.
+    {
+        const stripOneway = edges.filter((e)=>e.oneway && !e.elevated && (e.southStrip || e.stripCorridor) &&
+            e.cls === 'arterial' && e.way.name === 'South Las Vegas Boulevard');
+        const MIN_MEDIAN = 1.05;
+        for (let pass = 0; pass < 2; pass++){
+            const shifts = new Map();
+            for (const e of stripOneway){
+                const samples = e.ref.length < 12 ? [0.5] : [0.15, 0.35, 0.5, 0.65, 0.85];
+                let worstNeed = 0;
+                for (const f of samples){
+                    const s = e.ref.length * f;
+                    const q = sample(e.ref, s), nx = -q.hz, nz = q.hx;
+                    const b0 = boundaryAt(e, 0, s);
+                    const px = q.x + nx * b0, pz = q.z + nz * b0;
+                    const lx = q.hz, lz = -q.hx;
+                    for (const o of stripOneway){
+                        if (o === e) continue;
+                        const opt = o.ref.pts;
+                        for (let k = 0; k + 1 < opt.length; k++){
+                            const a = opt[k], b = opt[k + 1];
+                            const sx = b[0] - a[0], sz = b[1] - a[1], L2 = sx * sx + sz * sz || 1, L = Math.sqrt(L2);
+                            if ((sx * q.hx + sz * q.hz) / L > -0.65) continue;
+                            const t = Math.max(0, Math.min(1, ((px - a[0]) * sx + (pz - a[1]) * sz) / L2));
+                            const oSt = o.ref.cum[k] + t * L;
+                            const ob0 = boundaryAt(o, 0, oSt);
+                            const onx = -sz / L, onz = sx / L;
+                            const ox = a[0] + sx * t + onx * ob0, oz = a[1] + sz * t + onz * ob0;
+                            const fwd = Math.abs((ox - px) * q.hx + (oz - pz) * q.hz);
+                            if (fwd > 4) continue;
+                            const gap = (ox - px) * lx + (oz - pz) * lz;
+                            if (gap < MIN_MEDIAN && gap > -14) {
+                                const need = MIN_MEDIAN - gap;
+                                const share = e.lanes.length > o.lanes.length ? 0.78 : e.lanes.length < o.lanes.length ? 0.22 : 0.5;
+                                worstNeed = Math.max(worstNeed, need * share);
+                            }
+                        }
+                    }
+                }
+                if (worstNeed > 0.04) shifts.set(e, Math.min(worstNeed, 2.8));
+            }
+            if (!shifts.size) break;
+            for (const [e, shift] of shifts){
+                e.ref = makeLine(offsetBy(e.ref, ()=>shift, e.mitreStart, e.mitreEnd).pts, e.ref.y);
+                if (e.jointStart) e.jointStart = e.jointStart.map((v)=>v - shift);
+                if (e.jointEnd) e.jointEnd = e.jointEnd.map((v)=>v - shift);
+            }
+        }
     }
     alignRampBranches(edges, nodes);
     for (const e of edges){

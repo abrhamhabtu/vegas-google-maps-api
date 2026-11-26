@@ -1,5 +1,5 @@
-// The first review runs from Four Seasons Drive to the Reno Avenue approaches.
-export const SOUTH_STRIP_BOUNDS = [-167, 1980, 320, 3060];
+// The South Strip review runs from Reno Avenue south through Russell Road to meet Welcome Sign.
+export const SOUTH_STRIP_BOUNDS = [-167, 1980, 320, 3627];
 const [west, north, east, south] = SOUTH_STRIP_BOUNDS;
 
 export function inSouthStrip(x, z, margin = 0) {
@@ -62,7 +62,7 @@ const signalCrossings = new Map([
 
 // These short ways carry legal turn movements across the median or between
 // split approach nodes. They are movements inside the parent road.
-const internalTurns = new Set([399559948, 399559949, 1383403543, 1383403544, 1016851854]);
+const internalTurns = new Set([399559948, 399559949, 594495316, 1383403543, 1383403544, 1016851854]);
 export const isSouthStripTurn = edge => internalTurns.has(edge.way.id);
 
 // These are channelized openings and merges on the Strip. Keep the asphalt
