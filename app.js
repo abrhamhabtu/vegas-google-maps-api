@@ -121,7 +121,7 @@ function initApp() {
 // sidewalks, medians, and plazas). Strip them from the active ground tiles so only clean
 // land and water remain underneath our 3D world.
 const GOOGLE_GROUND_STYLE = "&apistyle=" + encodeURIComponent(
-  "s.t:2|p.v:off,s.t:3|p.v:off,s.t:4|p.v:off,s.t:81|p.v:off"
+  "s.t:1|s.e:l|p.v:off,s.t:2|p.v:off,s.t:3|p.v:off,s.t:4|p.v:off,s.t:5|s.e:l|p.v:off,s.t:6|s.e:l|p.v:off,s.t:81|p.v:off"
 );
 // Fallback roadmap style with Google roads kept visible, used only when 3D streets are toggled off.
 const GOOGLE_FALLBACK_ROADMAP_STYLE = "&apistyle=" + encodeURIComponent(

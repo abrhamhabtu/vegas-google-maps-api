@@ -251,3 +251,33 @@ test('inbound crosswalk paint steps upstream across a short approach split and c
   assert.equal(spans0.length, 1);
   assert.ok(spans0[0][1] < 24);
 });
+
+test('narrow acute-nosed concrete dividers survive Strip pavement rounding without eroding away', async () => {
+  const keys = ['major', 'asphalt', 'service', 'aisle', 'slipPavement', 'sidewalk', 'concreteMedians', 'medians',
+    'medianPaving', 'medianPlanting', 'medianApron', 'frontagePlanting', 'curb', 'curbFaces', 'paint', 'paintDim', 'paintYellow', 'reviewedAisles', 'parkingBase'];
+  const x = 150, z = 250;
+  const layers = Object.fromEntries(keys.map(key => {
+    const mesh = {
+      pos: [], idx: [], output: [],
+      vert(vx, vy, vz) { this.pos.push(vx, vy, vz); return this.pos.length / 3 - 1; },
+      polygon(outer, y, holes) { this.output.push({ outer, y, holes }); },
+    };
+    return [key, { m: new Map([[`0,0`, mesh]]), at: () => mesh }];
+  }));
+  // Add drivable Strip carriageways flanking a narrow 0.65m concrete divider with a sharp tapered nose.
+  const rect = (layer, x0, z0, x1, z1) => {
+    const m = layers[layer].at(), b = m.pos.length / 3;
+    m.pos.push(x + x0, 0, z + z0, x + x1, 0, z + z0, x + x1, 0, z + z1, x + x0, 0, z + z1);
+    m.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  };
+  rect('major', -12, 0, -0.4, 30);
+  rect('major', 0.4, 0, 12, 30);
+  const cm = layers.concreteMedians.at();
+  // Tapered acute nose from z=2 to z=28, max width 0.65m (< 1.30m erosion diameter of 0.65m radius)
+  cm.pos.push(x + 0, 0.11, z + 2, x + 0.325, 0.11, z + 6, x + 0.325, 0.11, z + 28, x - 0.325, 0.11, z + 28, x - 0.325, 0.11, z + 6);
+  cm.idx.push(0, 1, 4, 1, 2, 3, 1, 3, 4);
+
+  await finishStripCorridorPavement(layers);
+  assert.ok(layers.concreteMedians.at().output.length >= 1);
+  assert.ok(layers.curb.at().output.length >= 1);
+});

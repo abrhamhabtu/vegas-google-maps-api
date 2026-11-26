@@ -478,6 +478,54 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         });
         return { width: bestT + 0.08, from, to };
     };
+    // Dedicated opposing-carriageway span finder for Strip medianApron: ignores cross-streets,
+    // turn connectors, and gate throats so dark Strip asphalt continuously seals every T-junction
+    // and driveway opening between NB and SB carriageways with zero base-map holes.
+    const opposingSpanAt = (e, x, z, hx, hz, y)=>{
+        if (!e.way.name) return 0;
+        const lx = hz, lz = -hx;
+        let bestT = 28, bestM = null, bestDirX = 0, bestDirZ = 0;
+        const eId = e.id, eWayId = e.way.id, eTwin = e.twin, ePrev = e.prev, eNext = e.next;
+        const cx = Math.floor(x / 40), cz = Math.floor(z / 40);
+        for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++){
+            const list = medGrid.get(cellKey(cx + a, cz + b));
+            if (!list) continue;
+            for (let idx = 0, len = list.length; idx < len; idx++){
+                const s = list[idx];
+                if (s.isLinkM || !s.m.oneway || s.m.way.name !== e.way.name) continue;
+                if (s.mId === eId || s.wayId === eWayId || s.mId === eTwin || s.mId === ePrev || s.mId === eNext) continue;
+                if (hx * s.mhx + hz * s.mhz >= -0.65) continue;
+                const den = lx * s.mnx + lz * s.mnz;
+                if (Math.abs(den) < 0.35) continue;
+                const invDen = 1 / den;
+                const tRef = ((s.ux - x) * s.mnx + (s.uz - z) * s.mnz) * invDen;
+                const along = (x + lx * tRef - s.ux) * s.mhx + (z + lz * tRef - s.uz) * s.mhz;
+                if (along < -3.0 || along > s.L + 3.0) continue;
+                const clamped = Math.max(0, Math.min(s.L, along));
+                if (Math.abs(y - (s.y0 + s.dy * clamped * s.invL)) > 0.7) continue;
+                let b0, b1;
+                if (!s.tapered) {
+                    b0 = s.flat0; b1 = s.flat1;
+                } else {
+                    const st = s.cum0 + clamped;
+                    b0 = boundaryAt(s.m, 0, st) - 0.15;
+                    b1 = boundaryAt(s.m, s.nLanes, st) + 0.15;
+                }
+                const t0 = tRef + b0 * invDen, t1 = tRef + b1 * invDen;
+                const tNear = t0 < t1 ? t0 : t1;
+                if (tNear > 0.05 && tNear < bestT) {
+                    bestT = tNear;
+                    bestM = s.m;
+                    bestDirX = s.mhx;
+                    bestDirZ = s.mhz;
+                }
+            }
+        }
+        if (!bestM || bestT > 27) return 0;
+        const dx = hx - bestDirX, dz = hz - bestDirZ;
+        if ((Math.abs(dx) >= Math.abs(dz) ? dx : dz) <= 0) return 0;
+        return bestT + 0.25;
+    };
     const boundaryCache = new Map();
     const laneBoundary = (e, i)=>{
         let lines = boundaryCache.get(e.id);
@@ -783,7 +831,12 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             // the full edge length between opposing carriageways so crosswalk noses, T-junction driveways,
             // turn-pocket gores, and South Strip median openings never expose base-map gaps.
             if (stripApproach && !air) {
-                const apronSpans = clearSpans(0, e.ref.length, 1.4, (d)=>!!profileAt(d));
+                const apronAt = (d)=>{
+                    const q = atStation(e, left, d);
+                    if (atWelcome(q.x, q.z)) return 0;
+                    return opposingSpanAt(e, q.x, q.z, q.hx, q.hz, q.y);
+                };
+                const apronSpans = clearSpans(0, e.ref.length, 1.4, (d)=>apronAt(d) > 0.05);
                 for (const [a0, a1] of apronSpans){
                     const aLen = a1 - a0, aSteps = Math.max(2, Math.ceil(aLen / 1.5));
                     const aStations = Array.from({ length: aSteps + 1 }, (_, i)=>i === aSteps ? a1 : a0 + aLen * i / aSteps);
@@ -793,10 +846,10 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                     for (const d of aStations){
                         const q = atStation(e, left, d), prev = aPts.at(-1);
                         if (prev && Math.hypot(prev[0] - q.x, prev[1] - q.z) < 0.005) continue;
-                        const profile = profileAt(d);
-                        if (!profile) continue;
+                        const w = apronAt(d);
+                        if (w <= 0.05) continue;
                         aPts.push([q.x, q.z]);
-                        aWidths.push(profile.width);
+                        aWidths.push(w);
                         aHeights.push(0);
                     }
                     if (aPts.length >= 2) {
@@ -819,7 +872,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                     const profile = profileAt(d);
                     pts.push([q.x, q.z]);
                     widths.push(profile?.width ?? 0);
-                    crowns.push(profile && profile.to - profile.from >= (stripApproach ? 0.52 : 0.85) ? { ...profile } : null);
+                    crowns.push(profile && profile.to - profile.from >= (stripApproach ? 0.36 : 0.85) ? { ...profile } : null);
                     heights.push(air ? roadHeight(q.y) : 0);
                     dists.push(d);
                 }
@@ -838,7 +891,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                     if (!crowns[start]) continue;
                     let end = start + 1;
                     while(end < pts.length && crowns[end] &&
-                        Math.min(crowns[end - 1].to, crowns[end].to) - Math.max(crowns[end - 1].from, crowns[end].from) > 0.25) end++;
+                        Math.min(crowns[end - 1].to, crowns[end].to) - Math.max(crowns[end - 1].from, crowns[end].from) > (stripApproach ? 0.16 : 0.25)) end++;
                     const last = end - 1, len = dists[last] - dists[start];
                     if (len >= 2 && !inFlamingoJunctionCore(pts[(start + last) >> 1][0], pts[(start + last) >> 1][1])){
                         // Smooth minor local sampling jitter along continuous median runs without blurring nose tapers.
