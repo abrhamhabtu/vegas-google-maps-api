@@ -4,7 +4,7 @@ import { isSouthStripRoad, roundSouthStripRoad, southStripLaneCount } from '../.
 import { parisDriveLaneCount, parisDriveTurns } from '../../../world/paris-drive-roads.mjs';
 import { bellagioWayHeights, isBellagioFlattenedBridge } from '../../../world/bellagio-drive-roads.mjs';
 import { isStripCorridorRoad } from '../../../world/strip-corridor-pavement.mjs';
-import { stripLaneCount, stripLaneWidth, wynnGateShape, wynnMedianInset } from '../../../world/strip-streets.mjs';
+import { isSupersededStripSpan, stripLaneCount, stripLaneWidth, wynnGateShape, wynnMedianInset } from '../../../world/strip-streets.mjs';
 export const CLASS = {
     motorway: 'motorway',
     motorway_link: 'ramp',
@@ -230,7 +230,9 @@ function alignRampBranches(edges, nodes) {
         if (!through || !road.oneway || !through.oneway) continue;
         const branch = pair.find(e=>e !== through);
         const raised = minorNode && (road.elevated || branch.elevated || through.elevated);
-        if (!raised && (!road.way.name || road.way.name !== through.way.name || !branch.way.hw.endsWith('_link'))) continue;
+        const motorwayRamp = road.cls === 'motorway' && through.cls === 'motorway' && branch.cls === 'ramp';
+        const namedLink = !!road.way.name && road.way.name === through.way.name && branch.way.hw.endsWith('_link');
+        if (!raised && !motorwayRamp && !namedLink) continue;
         const added = road.lanes.length - through.lanes.length;
         const roadAt = split ? road.ref.length : 0, throughAt = split ? 0 : through.ref.length;
         const p = sample(road.ref, roadAt), q = sample(through.ref, throughAt);
@@ -279,7 +281,6 @@ function alignRampBranches(edges, nodes) {
             road.jointStart.every((v, i)=>Math.abs(v - road.jointEnd[i]) < 0.4));
         if (road.joinAcross) road.rampJoin = true;
         for (const join of joins) {
-            if (!road.joinAcross && !road.elevated && !join.branch.elevated) continue;
             applyJoin(join);
             road.rampJoin = true;
         }
@@ -548,6 +549,7 @@ export function buildLaneGraph(data) {
         const ys = bellagioWayHeights(w) ?? w.y ?? w.pts.map(()=>0);
         for(let c = 0; c < cuts.length - 1; c++){
             const a = cuts[c], b = cuts[c + 1];
+            if (isSupersededStripSpan(w, a, b)) continue;
             const pts = w.pts.slice(a, b + 1), y = ys.slice(a, b + 1);
             if (pts.length < 2) continue;
             const customTurn = parisDriveTurns(w);
@@ -864,7 +866,8 @@ export function buildLaneGraph(data) {
         const mj = wideIsA ? A.mitreEnd : B.mitreStart;
         const mj2 = mj[0] * mj[0] + mj[1] * mj[1];
         let D = ((pn.x - pw.x) * mj[0] + (pn.z - pw.z) * mj[1]) / mj2;
-        if (Math.abs(D) > 9 || extra > 3) continue;
+        const maxExtra = W.cls === 'motorway' || W.cls === 'ramp' ? 4 : 3;
+        if (Math.abs(D) > 9 || extra > maxExtra) continue;
         const right = (t)=>!!t && t.length === 1 && t[0] === 'right';
         const left = (t)=>!!t && t.length > 0 && t.every((m)=>m === 'left' || m === 'uturn');
         const countLeft = (e)=>{
@@ -1021,14 +1024,79 @@ export function buildLaneGraph(data) {
                 if (worstNeed > 0.04) shifts.set(e, Math.min(worstNeed, 2.8));
             }
             if (!shifts.size) break;
-            for (const [e, shift] of shifts){
+            // Smooth shifts along connected Strip chains so adjacent same-width segments share gentle transitions.
+            const smoothed = new Map(shifts);
+            for (const e of stripOneway) {
+                const sSelf = shifts.get(e) ?? 0;
+                const prevE = e.prev !== undefined ? edges[e.prev] : null;
+                const nextE = e.next !== undefined ? edges[e.next] : null;
+                const sPrev = prevE && stripOneway.includes(prevE) ? (shifts.get(prevE) ?? 0) : sSelf;
+                const sNext = nextE && stripOneway.includes(nextE) ? (shifts.get(nextE) ?? 0) : sSelf;
+                const blended = Math.max(sSelf, 0.25 * sPrev + 0.5 * sSelf + 0.25 * sNext);
+                if (blended > 0.04) smoothed.set(e, Math.min(blended, 2.8));
+            }
+            for (const [e, shift] of smoothed){
                 e.ref = makeLine(offsetBy(e.ref, ()=>shift, e.mitreStart, e.mitreEnd).pts, e.ref.y);
-                if (e.jointStart) e.jointStart = e.jointStart.map((v)=>v - shift);
-                if (e.jointEnd) e.jointEnd = e.jointEnd.map((v)=>v - shift);
+                if (e.jointStart) {
+                    const sp = e.prev !== undefined ? (smoothed.get(edges[e.prev]) ?? 0) : 0;
+                    e.jointStart = e.jointStart.map((v)=>v + sp - shift);
+                }
+                if (e.jointEnd) {
+                    const sn = e.next !== undefined ? (smoothed.get(edges[e.next]) ?? 0) : 0;
+                    e.jointEnd = e.jointEnd.map((v)=>v + sn - shift);
+                }
+            }
+            // Reconcile any residual shift differential across same-lane A -> B joints so midblock seams stay 0.00m flush.
+            for (const A of stripOneway) {
+                if (A.next === undefined) continue;
+                const B = edges[A.next];
+                if (!B || A.lanes.length !== B.lanes.length || A.jointEnd || B.jointStart) continue;
+                const sA = smoothed.get(A) ?? 0, sB = smoothed.get(B) ?? 0;
+                const diff = sA - sB;
+                if (Math.abs(diff) <= 0.03) continue;
+                const useA = A.ref.length >= B.ref.length;
+                const T = useA ? A : B;
+                const delta = useA ? -diff : diff;
+                const joint = Array.from({ length: T.lanes.length + 1 }, (_, i)=>i * T.laneWidth + delta);
+                const tLen = Math.min(T.ref.length * (T.taperStart || T.taperEnd ? 0.45 : 0.85), Math.max(18, Math.abs(delta) * 22));
+                if (useA) { T.jointEnd = joint; T.taperEnd = tLen; }
+                else { T.jointStart = joint; T.taperStart = tLen; }
+                T.ref = densify(T.ref, T.taperStart ?? 0, T.ref.length - (T.taperEnd ?? 0), 3);
             }
         }
     }
     alignRampBranches(edges, nodes);
+    // Where hasSlipAtJoint left an outer lane untapered expecting a rampJoin, but the _link
+    // could not geometrically align as a rampJoin, taper the extra outer lane cleanly to N's rim.
+    for (const A of edges) {
+        if (A.next === undefined) continue;
+        const B = edges[A.next];
+        if (A.lanes.length === B.lanes.length) continue;
+        const jNode = nodes.get(A.toNode);
+        const branchJoined = [...jNode.inEdges, ...jNode.outEdges].some((ei)=>
+            ei !== A.id && ei !== B.id && edges[ei].twin !== A.id && edges[ei].twin !== B.id && edges[ei].rampJoin);
+        if (branchJoined) continue;
+        const wideIsA = A.lanes.length > B.lanes.length;
+        const W = wideIsA ? A : B, N = wideIsA ? B : A;
+        const curJoint = wideIsA ? A.jointEnd : B.jointStart;
+        const p = sample(A.ref, A.ref.length), q = sample(B.ref, 0);
+        const m = A.mitreEnd ?? [-p.hz, p.hx];
+        const aR = boundaryAt(A, A.lanes.length, A.ref.length), bR = boundaryAt(B, B.lanes.length, 0);
+        const stepR = Math.hypot(p.x + m[0] * aR - (q.x + m[0] * bR), p.z + m[1] * aR - (q.z + m[1] * bR));
+        if (stepR <= 0.45) continue;
+        const pw = wideIsA ? p : q, pn = wideIsA ? q : p;
+        const mj2 = m[0] * m[0] + m[1] * m[1] || 1;
+        const D = ((pn.x - pw.x) * m[0] + (pn.z - pw.z) * m[1]) / mj2;
+        const nW = W.lanes.length, nN = N.lanes.length;
+        const base0 = curJoint ? curJoint[0] : D;
+        const clamped = Array.from({ length: nW + 1 }, (_, i)=>base0 + Math.min(nN, i) * N.laneWidth);
+        const move = Math.max(...clamped.map((v, i)=>Math.abs(v - i * W.laneWidth)));
+        const hasOther = wideIsA ? !!A.taperStart : !!B.taperEnd;
+        const want = Math.min(W.ref.length * (hasOther ? 0.48 : 0.9), Math.max(24, Math.min(move * 16, 95)));
+        if (wideIsA) { A.jointEnd = clamped; A.taperEnd = want; }
+        else { B.jointStart = clamped; B.taperStart = want; }
+        W.ref = densify(W.ref, W.taperStart ?? 0, W.ref.length - (W.taperEnd ?? 0), 3);
+    }
     for (const e of edges){
         if (!e.southStrip && !e.stripCorridor && !e.rampJoin && e.next === undefined && e.prev === undefined) continue;
         e.lanes.forEach((id, i)=>{

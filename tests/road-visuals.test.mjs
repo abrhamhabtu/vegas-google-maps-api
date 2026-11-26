@@ -5,7 +5,7 @@ import { surfaceMask, supportsTree } from '../world/road-planting.mjs';
 import { finishSouthStripPavement } from '../world/south-strip-pavement.mjs';
 import { finishStripCorridorPavement } from '../world/strip-corridor-pavement.mjs';
 import { junctionOutline } from '../world/south-strip-roads.mjs';
-import { stripLaneCount, stripLaneWidth } from '../world/strip-streets.mjs';
+import { isSupersededStripSpan, stripLaneCount, stripLaneWidth } from '../world/strip-streets.mjs';
 
 globalThis.window = { THREE: {} };
 const { guideClearsCrossing, paintSpans, planCrossingPaint } = await import('../world/road-crossings.mjs');
@@ -201,4 +201,53 @@ test('Strip pavement finishers clip orphan curbs and clear stray vertical curb f
     assert.equal(layers.curb.at().output.length, 0);
     assert.equal(layers.curbFaces.at().idx.length, 0);
   }
+});
+
+test('superseded North Strip unsplit spans at The STRAT are skipped while valid spans remain', () => {
+  const stratDup = { id: 145661106 };
+  assert.equal(isSupersededStripSpan(stratDup, 0, 3), true);
+  assert.equal(isSupersededStripSpan(stratDup, 3, 5), false);
+  assert.equal(isSupersededStripSpan(stratDup, 9, 11), false);
+  assert.equal(isSupersededStripSpan(stratDup, 11, 14), true);
+  assert.equal(isSupersededStripSpan(stratDup, 16, 18), true);
+  assert.equal(isSupersededStripSpan(stratDup, 18, 20), false);
+  assert.equal(isSupersededStripSpan({ id: 1569897918 }, 0, 3), false);
+});
+
+test('slip-lane corner outlines stay tight so pork-chop islands are not paved over', () => {
+  const wideCorners = [], slipCorners = [];
+  const rims = [
+    { dir: [1, 0], pts: [[20, -10], [20, 10]] },
+    { dir: [0, 1], pts: [[10, 20], [-10, 20]] },
+    { dir: [-1, 0], pts: [[-20, 10], [-20, -10]] },
+    { dir: [0, -1], pts: [[-10, -20], [10, -20]] },
+  ];
+  const wideRing = junctionOutline(rims, [0, 0], wideCorners);
+  const slipRing = junctionOutline(rims, [0, 0], slipCorners, corner => corner[0] > 0 && corner[1] > 0);
+  // Only the 3 non-slip corners receive sidewalk corner ribbons; SE slip corner stays within 2.5m of [10, 10].
+  assert.equal(wideCorners.length, 4);
+  assert.equal(slipCorners.length, 3);
+  assert.ok(wideRing.some(([px, pz]) => Math.abs(px - 12.5) < 0.01 && Math.abs(pz - 12.5) < 0.01));
+  const seArc = slipRing.filter(([px, pz]) => px > 10.01 && pz > 10.01);
+  assert.ok(seArc.length >= 4);
+  assert.ok(seArc.every(([px, pz]) => Math.hypot(px - 10, pz - 10) <= 2.45));
+});
+
+test('inbound crosswalk paint steps upstream across a short approach split and clears markings', () => {
+  const upstream = road(0, 35, 11, { next: 1 });
+  const shortIn = road(1, 11, 5, { prev: 0 });
+  const leg = {
+    ctr: [0, 0], a: [1, 0], d: 9, cross: true,
+    markedEdges: new Set([1]),
+    entries: [{ e: shortIn, atStart: false }],
+  };
+  const plan = crossingPlan({ legs: [leg], mouthEnd: new Map([[1, { leg }]]) });
+  const result = planCrossingPaint({ crossings: [] }, { edges: [upstream, shortIn] }, plan, e => e.ref, new Set());
+  const [hit] = result.junctions.get(leg);
+  assert.equal(hit.road, upstream);
+  // Gap clears all of shortIn (0..6m) and the tail of upstream approaching the crosswalk.
+  assert.deepEqual([...paintSpans(0, 6, result.gaps.get(1))], []);
+  const spans0 = [...paintSpans(0, 24, result.gaps.get(0))];
+  assert.equal(spans0.length, 1);
+  assert.ok(spans0[0][1] < 24);
 });

@@ -49,9 +49,27 @@ function distancePastPlane(ref, line, leg, plane, atStart) {
 
 function outboundCrossing(edge, leg, edges) {
   const plane = leg.d + CROSSWALK_OFFSET;
-  for (let road = edge, walked = 0; road && walked < 34 && !road.elevated; road = continuation(edges, road, true)) {
+  for (let road = edge, walked = 0; road && walked < 38 && !road.elevated; road = continuation(edges, road, true)) {
     const station = distancePastPlane(road.ref, road.ref, leg, plane, true);
-    if (station >= CROSSWALK_HALF && station <= road.ref.length - CROSSWALK_HALF) return { road, station };
+    const minS = road === edge ? CROSSWALK_HALF : 0;
+    const maxS = continuation(edges, road, true) ? road.ref.length : road.ref.length - CROSSWALK_HALF;
+    if (station >= minS && station <= maxS && (station > 0 || road !== edge) && station < road.ref.length) {
+      return { road, station };
+    }
+    walked += road.ref.length;
+  }
+}
+
+function inboundCrossing(edge, leg, edges) {
+  const plane = leg.d + CROSSWALK_OFFSET;
+  for (let road = edge, walked = 0; road && walked < 38 && !road.elevated; road = continuation(edges, road, false)) {
+    const distFromEnd = distancePastPlane(road.ref, road.ref, leg, plane, false);
+    const station = road.ref.length - distFromEnd;
+    const minS = continuation(edges, road, false) ? 0 : CROSSWALK_HALF;
+    const maxS = road === edge ? road.ref.length - CROSSWALK_HALF : road.ref.length;
+    if (distFromEnd > 0 && distFromEnd < road.ref.length && station >= minS && station <= maxS) {
+      return { road, station };
+    }
     walked += road.ref.length;
   }
 }
@@ -72,7 +90,7 @@ function closestStation(line, x, z) {
 
 export function planCrossingPaint(data, graph, plan, laneBoundary, stripSlipEdges) {
   const { edges } = graph;
-  const junctions = new Map(), arrivals = new Map(), departures = new Map(), gaps = new Map();
+  const junctions = new Map(), arrivals = new Map(), arrivalHits = new Map(), departures = new Map(), gaps = new Map();
   const reserve = (road, from, to) => {
     if (to - from <= 0.001) return;
     const list = gaps.get(road.id);
@@ -88,12 +106,16 @@ export function planCrossingPaint(data, graph, plan, laneBoundary, stripSlipEdge
       if (mouth.band) {
         const middle = (mouth.band[0] + mouth.band[1]) / 2;
         hit = { road: e, station: atStart ? middle : e.ref.length - middle };
-      } else if (atStart && leg.cross && leg.markedEdges?.has(e.id)) {
-        hit = outboundCrossing(e, leg, edges);
+      } else if (leg.cross && leg.markedEdges?.has(e.id)) {
+        hit = atStart ? outboundCrossing(e, leg, edges) : inboundCrossing(e, leg, edges);
       }
       if (!hit) continue;
       paint.push(hit);
-      (atStart ? departures : arrivals).set(e.id, leg);
+      if (atStart) departures.set(e.id, leg);
+      else {
+        arrivals.set(e.id, leg);
+        arrivalHits.set(e.id, hit);
+      }
       const plane = leg.d + CROSSWALK_OFFSET + CROSSWALK_HALF + CLEARANCE;
       for (let road = e, walked = 0; road && walked < leg.d + 36; road = continuation(edges, road, atStart)) {
         const length = road.ref.length;
@@ -157,7 +179,7 @@ export function planCrossingPaint(data, graph, plan, laneBoundary, stripSlipEdge
     if (twin) reserveBand(twin, closestStation(twin.ref, point.x, point.z).station);
   }
   for (const list of gaps.values()) list.sort((a, b) => a[0] - b[0]);
-  return { junctions, standalone, arrivals, departures, gaps };
+  return { junctions, standalone, arrivals, arrivalHits, departures, gaps };
 }
 
 export function* paintSpans(from, to, gaps) {

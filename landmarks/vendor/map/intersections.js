@@ -291,6 +291,14 @@ export function planIntersections(data, g) {
                         leg.cross = leg.mapped = true;
                         leg.markedEdges = new Set(leg.entries.map(({e})=>e.id));
                     }
+                    // On divided streets, a crosswalk spans all non-service carriageways of the leg,
+                    // even when the OSM crossing node was mapped on only one carriageway or beyond a short split.
+                    if (leg.cross && (stripJunction || leg.markedEdges?.size || leg.entries.length >= 2)) {
+                        leg.markedEdges ??= new Set();
+                        for (const { e } of leg.entries) {
+                            if (e.cls !== 'service' && !isStripChannelizedLeft(e)) leg.markedEdges.add(e.id);
+                        }
+                    }
                     const target = (t, e, atStart, max = e.ref.length * 0.5)=>{
                         if (leg.mapped) {
                             const mid = (crossingStation(e, boundaryLine(e, 0), leg, t, atStart, max) +
@@ -310,19 +318,23 @@ export function planIntersections(data, g) {
                         const marked = leg.cross && leg.markedEdges?.has(e.id);
                         const otherNode = atStart ? e.toNode : e.fromNode;
                         const half = e.ref.length * 0.5;
-                        const max = marked ? Math.max(half, e.ref.length - Math.max(2, endSetback(e, otherNode) + 1.5)) : half;
-                        const room = max > inner + (marked ? 5.2 : 8);
+                        const otherClear = setback.has(otherNode) ? Math.max(1.5, endSetback(e, otherNode) + 1.0) : 0.4;
+                        const max = marked ? Math.max(half, e.ref.length - otherClear) : half;
+                        const room = max > inner + (marked ? 4.2 : 8);
                         const cross = leg.cross && room;
                         const band = [
                             target(leg.d + 0.6, e, atStart, max),
                             target(leg.d + 3.8, e, atStart, max)
                         ];
-                        const stopWith = target(leg.d + 5.0, e, atStart, max);
+                        const stopMax = marked && !setback.has(otherNode) ? e.ref.length - 0.15 : max;
+                        const stopWith = target(leg.d + 5.0, e, atStart, stopMax);
                         const fits = cross && band[1] > band[0] && stopWith > band[1];
+                        const noCrossStop = e.cls === 'arterial' && stripJunction ? 2.6 : 0.6;
+                        const noCrossClear = e.cls === 'arterial' && stripJunction ? 2.2 : 0.6;
                         const m = {
                             inner,
-                            stop: fits ? stopWith : target(leg.d + 0.6, e, atStart),
-                            clear: fits ? target(leg.d + 4.4, e, atStart, max) : target(leg.d + 0.6, e, atStart),
+                            stop: fits ? stopWith : target(leg.d + noCrossStop, e, atStart),
+                            clear: fits ? target(leg.d + 4.4, e, atStart, max) : target(leg.d + noCrossClear, e, atStart),
                             band: fits ? band : undefined,
                             leg
                         };
