@@ -525,6 +525,18 @@ export function buildValets(data, plan, graph) {
             // Recessed coffered soffit rim + warm illuminated ceiling pan
             prism(g, b.pts, c, y0 - 0.12, y0, d.coffer, 0.988);
             prism(g, b.pts, c, y0 - 0.06, y0 - 0.01, d.soffit, 0.93);
+            // Strict lane & drive clearance so columns NEVER clip into drivable valet lanes or custom motor courts
+            const inCustomCourt = (wx, wz) =>
+                (wx > -79.8 && wx < -50.2 && wz > 454 && wz < 506) ||
+                (wx > 1.2 && wx < 22.5 && wz > -16 && wz < 35) ||
+                (wx > -79.0 && wx < 17.0 && wz > 798 && wz < 852) ||
+                (Math.hypot(wx - (-107.5), wz - 995.5) < 42.5) ||
+                (Math.hypot(wx - 692.5, wz - (-1233.5)) < 34.0) ||
+                (wx > 840 && wx < 958 && wz > -1532 && wz < -1454) ||
+                (wx > 324 && wx < 520 && wz > -605 && wz < -435) ||
+                (wx > 418 && wx < 484 && wz > -876 && wz < -786) ||
+                (wx > 495 && wx < 622 && wz > 1582 && wz < 1685) ||
+                (wx > 16 && wx < 98 && wz > 2620 && wz < 2736);
             const r = ringArea(b.pts) > 0 ? b.pts : b.pts.slice().reverse();
             const every = area > 800 ? 13 : 8.5;
             let acc = 0;
@@ -532,8 +544,7 @@ export function buildValets(data, plan, graph) {
                 const p = r[i], q = r[(i + 1) % r.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]);
                 for(let s = every - acc; s < L; s += every){
                     const t = s / L, x = p[0] + (q[0] - p[0]) * t, z = p[1] + (q[1] - p[1]) * t;
-                    // Strict lane & drive clearance so columns NEVER clip into drivable valet lanes
-                    if (onDrive(data, x, z, 4.9) || onRoad(x, z, 2.4)) continue;
+                    if (inCustomCourt(x, z) || onDrive(data, x, z, 4.9) || onRoad(x, z, 2.4)) continue;
                     addArchitecturalColumn(g, x - c[0], z - c[1], baseY, y0 - baseY, d, 0.33, 0.40);
                 }
                 acc = (acc + L) % every;
@@ -698,6 +709,8 @@ export function buildValets(data, plan, graph) {
     const bays = new Soup();
     for (const st of stops){
         if (!st.main) continue;
+        // Custom multi-lane porte-cochere motor courts handle their own pavement and markings
+        if (/^(bellagio|caesars palace|the cosmopolitan|aria|wynn las vegas|encore|the venetian|mgm grand|mandalay bay)$/i.test(st.name ?? '')) continue;
         const e = graph.edges[st.edge];
         if (!e) continue;
         const W = e.lanes.length * e.laneWidth;
@@ -866,7 +879,8 @@ export function buildValets(data, plan, graph) {
             [planterOffsetX, 13.5]
         ]){
             const wx = anchor[0] + lx * cs + lz * sn, wz = anchor[1] - lx * sn + lz * cs;
-            if (onDrive(data, wx, wz, 5.2) || onRoad(wx, wz, 2.5)) continue;
+            // Never plant a palm inside a porte-cochere canopy footprint (prevents palms poking through roofs!)
+            if (insideExistingCanopy([wx, wz], 3.0) || onDrive(data, wx, wz, 5.2) || onRoad(wx, wz, 2.5)) continue;
             const dx = wx - anchor[0], dz = wz - anchor[1];
             const box = new THREE.Mesh(new THREE.CylinderGeometry(2.15, 2.35, 0.68, 16), planter);
             box.position.set(dx, baseY + 0.34, dz);
@@ -879,7 +893,8 @@ export function buildValets(data, plan, graph) {
         }
         // Subtle architectural curb-side bollards framing the drop-off zone (strictly on curb/sidewalk, clear of lanes)
         const bollardOffsetX = Math.max(5.6, roadW * 0.5 + 1.9);
-        for (const lz of [-9.0, -3.0, 3.0, 9.0]) for (const side of [-1, 1]){
+        const skipBollards = /^(bellagio|caesars palace)$/i.test(resortName);
+        if (!skipBollards) for (const lz of [-9.0, -3.0, 3.0, 9.0]) for (const side of [-1, 1]){
             const lx = side * bollardOffsetX;
             const wx = anchor[0] + lx * cs + lz * sn, wz = anchor[1] - lx * sn + lz * cs;
             if (onDrive(data, wx, wz, 3.8) || onRoad(wx, wz, 1.6)) continue;
