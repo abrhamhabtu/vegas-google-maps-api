@@ -12,6 +12,8 @@ import {
 } from '../world/bellagio-drive-roads.mjs';
 import { finishCaesarsDrivePavement } from '../world/caesars-drive-roads.mjs';
 import { finishParisDrivePavement } from '../world/paris-drive-roads.mjs';
+import { finishCosmoDrivePavement } from '../world/cosmo-drive-roads.mjs';
+import { finishAriaDrivePavement } from '../world/aria-drive-roads.mjs';
 import { junctionOutline } from '../world/south-strip-roads.mjs';
 import { stripLaneCount, stripLaneWidth } from '../world/strip-streets.mjs';
 
@@ -347,4 +349,34 @@ test('Caesars Palace valet rotary and Paris Arc rotary keep open mouths curb-fre
   }
   assert.equal(inLayer(paris, 'medianPlanting', 178.5, 518.4), true, 'Paris west median planted');
   assert.equal(inLayer(paris, 'medianPlanting', 214.0, 518.4), true, 'Paris east median planted');
+
+  const cosmo = makeLayers();
+  finishCosmoDrivePavement(cosmo);
+  for (const [x, z] of [
+    [-72.0, 765.5], // Cosmo north Harmon mouth (inbound)
+    [-61.0, 765.5], // Cosmo north Harmon mouth (outbound)
+    [-74.8, 798.5], // South valet loop Harmon mouth (inbound)
+    [-61.8, 798.5], // South valet loop Harmon mouth (outbound)
+    [11.5, 832.0],  // Wide east turnaround covering Google Road & Satellite
+  ]) {
+    assert.equal(inLayer(cosmo, 'major', x, z), true, `Cosmo missing asphalt at (${x}, ${z})`);
+    assert.equal(inLayer(cosmo, 'curb', x, z), false, `Cosmo curb on asphalt at (${x}, ${z})`);
+  }
+  assert.equal(inLayer(cosmo, 'medianPlanting', -15.0, 830.0), true, 'Cosmo/Crystals valet oval planted');
+
+  const aria = makeLayers();
+  finishAriaDrivePavement(aria);
+  for (const [x, z] of [
+    [-136.0, 995.5], // ARIA porte-cochere outer rotary west
+    [-107.5, 965.0], // ARIA rotary north
+    [83.5, 1052.5],  // Open east WB Strip mouth
+    [83.5, 1080.0],  // Open east EB Strip mouth
+    [-108.0, 1095.5], // Open south access mouth
+  ]) {
+    assert.equal(inLayer(aria, 'major', x, z), true, `ARIA missing asphalt at (${x}, ${z})`);
+    assert.equal(inLayer(aria, 'curb', x, z), false, `ARIA curb on asphalt at (${x}, ${z})`);
+  }
+  assert.equal(inLayer(aria, 'concreteMedians', -107.5, 995.5), true, 'ARIA Lumia fountain island present');
+  assert.equal(inLayer(aria, 'medianPlanting', -54.0, 1014.0), true, 'ARIA west boulevard median planted');
+  assert.equal(inLayer(aria, 'medianPlanting', -10.0, 1030.0), true, 'ARIA mid boulevard median planted');
 });

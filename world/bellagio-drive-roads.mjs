@@ -1,6 +1,8 @@
 import clipper from '../landmarks/vendor/clipper/clipper.mjs';
 import { arrowMarking, dashRuns, zebraBars } from './road-visuals.mjs';
 import { finishCaesarsDrivePavement } from './caesars-drive-roads.mjs';
+import { finishCosmoDrivePavement } from './cosmo-drive-roads.mjs';
+import { finishAriaDrivePavement } from './aria-drive-roads.mjs';
 
 // W Bellagio Drive, Bellagio Roundabout & Porte-Cochere Forecourt,
 // Underground Valet/Underpass Portals, Landscaped Hillside & Pedestrian Bridge.
@@ -1048,6 +1050,8 @@ export function finishBellagioDrivePavement(layers) {
 
   // Dispatch additional Neon-owned resort drive finishers without editing Carbon-owned roads.js
   finishCaesarsDrivePavement(layers);
+  finishCosmoDrivePavement(layers);
+  finishAriaDrivePavement(layers);
 }
 
 // ───────────────────────── 3D Architecture: Roundabout Fountain, Portals, Hillside & Skybridge ─────────────────────────
