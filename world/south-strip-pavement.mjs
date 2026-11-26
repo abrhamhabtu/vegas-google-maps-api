@@ -30,7 +30,58 @@ function emit(soup, polygons, y, minimumArea = 0) {
   }
 }
 
-function emitCurbFaces(curbFaces, polygons, y0 = 0, y1 = 0.17, minimumArea = 0.12) {
+function extendAcrossBlockBounds(ringPaths, bounds, padMeters) {
+  if (!ringPaths.length || !bounds) return ringPaths;
+  const X0 = Math.round(bounds[0] * mm), Z0 = Math.round(bounds[1] * mm);
+  const X1 = Math.round(bounds[2] * mm), Z1 = Math.round(bounds[3] * mm);
+  const pad = Math.round(padMeters * mm);
+  const eps = 5;
+  const ghosts = [];
+  let hitNW = false, hitNE = false, hitSE = false, hitSW = false;
+  const addRect = (rx0, rz0, rx1, rz1) => {
+    if (rx1 <= rx0 || rz1 <= rz0) return;
+    ghosts.push([
+      { X: rx0, Y: rz0 },
+      { X: rx1, Y: rz0 },
+      { X: rx1, Y: rz1 },
+      { X: rx0, Y: rz1 },
+    ]);
+  };
+  for (const ring of ringPaths) {
+    const n = ring.length;
+    if (n < 3) continue;
+    for (let i = 0; i < n; i++) {
+      const a = ring[i], b = ring[(i + 1) % n];
+      const onW = Math.abs(a.X - X0) <= eps, onE = Math.abs(a.X - X1) <= eps;
+      const onN = Math.abs(a.Y - Z0) <= eps, onS = Math.abs(a.Y - Z1) <= eps;
+      if (onW && onN) hitNW = true;
+      if (onE && onN) hitNE = true;
+      if (onE && onS) hitSE = true;
+      if (onW && onS) hitSW = true;
+      if (onW && Math.abs(b.X - X0) <= eps) addRect(X0 - pad, Math.min(a.Y, b.Y), X0 + 2, Math.max(a.Y, b.Y));
+      if (onE && Math.abs(b.X - X1) <= eps) addRect(X1 - 2, Math.min(a.Y, b.Y), X1 + pad, Math.max(a.Y, b.Y));
+      if (onN && Math.abs(b.Y - Z0) <= eps) addRect(Math.min(a.X, b.X), Z0 - pad, Math.max(a.X, b.X), Z0 + 2);
+      if (onS && Math.abs(b.Y - Z1) <= eps) addRect(Math.min(a.X, b.X), Z1 - 2, Math.max(a.X, b.X), Z1 + pad);
+    }
+  }
+  if (hitNW) addRect(X0 - pad, Z0 - pad, X0 + 2, Z0 + 2);
+  if (hitNE) addRect(X1 - 2, Z0 - pad, X1 + pad, Z0 + 2);
+  if (hitSE) addRect(X1 - 2, Z1 - 2, X1 + pad, Z1 + pad);
+  if (hitSW) addRect(X0 - pad, Z1 - 2, X0 + 2, Z1 + pad);
+  return ghosts.length ? paths(clip(ctUnion, [...ringPaths, ...ghosts])) : ringPaths;
+}
+
+function edgeOnBlockBound(a, b, bounds, eps = 6) {
+  if (!bounds) return false;
+  const X0 = Math.round(bounds[0] * mm), Z0 = Math.round(bounds[1] * mm);
+  const X1 = Math.round(bounds[2] * mm), Z1 = Math.round(bounds[3] * mm);
+  return (Math.abs(a.X - X0) <= eps && Math.abs(b.X - X0) <= eps) ||
+    (Math.abs(a.X - X1) <= eps && Math.abs(b.X - X1) <= eps) ||
+    (Math.abs(a.Y - Z0) <= eps && Math.abs(b.Y - Z0) <= eps) ||
+    (Math.abs(a.Y - Z1) <= eps && Math.abs(b.Y - Z1) <= eps);
+}
+
+function emitCurbFaces(curbFaces, polygons, y0 = 0, y1 = 0.17, minimumArea = 0.12, bounds = null) {
   if (!curbFaces) return;
   const minScaled = minimumArea * mm * mm;
   for (const { outer, holes } of polygons) {
@@ -41,6 +92,7 @@ function emitCurbFaces(curbFaces, polygons, y0 = 0, y1 = 0.17, minimumArea = 0.1
       const soup = curbFaces.at(path[0].X / mm, path[0].Y / mm);
       for (let i = 0; i < n; i++) {
         const a = path[i], b = path[(i + 1) % n];
+        if (edgeOnBlockBound(a, b, bounds)) continue;
         const ax = a.X / mm, az = a.Y / mm, bx = b.X / mm, bz = b.Y / mm;
         if (Math.hypot(bx - ax, bz - az) < 0.02) continue;
         const v0 = soup.vert(ax, y0, az);
@@ -178,7 +230,8 @@ function finishBlock(layers, block, inputs) {
     co.Execute(out, delta * mm);
     return out;
   };
-  const islandInterior = offset(islands, -0.15);
+  const islandExtended = islands.length ? extendAcrossBlockBounds(islands, block.bounds, 0.35) : [];
+  const islandInterior = offset(islandExtended, -0.15);
   const islandRim = islands.length ? paths(clip(ctDifference, islands, islandInterior)) : [];
   const raisedBase = [...islands, ...paths(walks), ...plazaPaths];
   if ((curbRaw.length || islandRim.length) && raisedBase.length) {
@@ -191,7 +244,7 @@ function finishBlock(layers, block, inputs) {
     if (curbAll.length) {
       const curbClear = clip(ctDifference, curbAll, drivable);
       add(curb, curbClear, 0.17, 0.12);
-      emitCurbFaces(layers.curbFaces, curbClear, 0, 0.17, 0.12);
+      emitCurbFaces(layers.curbFaces, curbClear, 0, 0.17, 0.12, block.bounds);
     }
   }
   const yellow = clip(ctIntersection, paths(take(paintYellow)), drivable);

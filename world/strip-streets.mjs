@@ -142,8 +142,8 @@ export function hasPavedStripMedian(edge, x, z) {
 // shows a continuous paved corner with one outer curb beside the Palazzo.
 export const flushStripCorner = edge => edge.way.id === 277512381 ? sands : undefined;
 
-// Dedicated median-crossing dual left-turn links at MGM Road / Bruno Mars Drive.
-const MGM_LEFT_LINKS = new Set([277512377, 277512378, 1123959362]);
+// Dedicated median-crossing left-turn links at MGM Road / Bruno Mars Drive and Aria Place / CityCenter.
+const MGM_LEFT_LINKS = new Set([277512377, 277512378, 1123959362, 423685440, 1419080678]);
 export const isStripChannelizedLeft = edge => MGM_LEFT_LINKS.has(edge.way.id);
 
 // Landscaped median envelopes bracketing the MGM / Bruno Mars diagonal left-turn bays;

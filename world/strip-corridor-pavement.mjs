@@ -118,12 +118,63 @@ function offsetPaths(paths, deltaMeters) {
 
 // Detect polygons containing sharp acute tips (< ~65 deg, e.g. diagonal gore wedges)
 // and blunt those tips into smooth circular noses via morphological round-opening,
-// while leaving clean right-angled / already-smooth polygons untouched.
-function hasAcuteCorner(ring, maxCos = 0.42) {
+// while leaving clean right-angled / already-smooth polygons and block-boundary seams untouched.
+function onBlockBound(p, bounds, eps = 5) {
+  if (!bounds) return false;
+  const [x0, z0, x1, z1] = bounds;
+  return Math.abs(p.X - Math.round(x0 * MM)) <= eps ||
+    Math.abs(p.X - Math.round(x1 * MM)) <= eps ||
+    Math.abs(p.Y - Math.round(z0 * MM)) <= eps ||
+    Math.abs(p.Y - Math.round(z1 * MM)) <= eps;
+}
+
+function extendAcrossBlockBounds(paths, bounds, padMeters) {
+  if (!paths.length || !bounds) return paths;
+  const X0 = Math.round(bounds[0] * MM), Z0 = Math.round(bounds[1] * MM);
+  const X1 = Math.round(bounds[2] * MM), Z1 = Math.round(bounds[3] * MM);
+  const pad = Math.round(padMeters * MM);
+  const eps = 5;
+  const ghosts = [];
+  let hitNW = false, hitNE = false, hitSE = false, hitSW = false;
+  const addRect = (rx0, rz0, rx1, rz1) => {
+    if (rx1 <= rx0 || rz1 <= rz0) return;
+    ghosts.push([
+      { X: rx0, Y: rz0 },
+      { X: rx1, Y: rz0 },
+      { X: rx1, Y: rz1 },
+      { X: rx0, Y: rz1 },
+    ]);
+  };
+  for (const ring of paths) {
+    const n = ring.length;
+    if (n < 3) continue;
+    for (let i = 0; i < n; i++) {
+      const a = ring[i], b = ring[(i + 1) % n];
+      const onW = Math.abs(a.X - X0) <= eps, onE = Math.abs(a.X - X1) <= eps;
+      const onN = Math.abs(a.Y - Z0) <= eps, onS = Math.abs(a.Y - Z1) <= eps;
+      if (onW && onN) hitNW = true;
+      if (onE && onN) hitNE = true;
+      if (onE && onS) hitSE = true;
+      if (onW && onS) hitSW = true;
+      if (onW && Math.abs(b.X - X0) <= eps) addRect(X0 - pad, Math.min(a.Y, b.Y), X0 + 2, Math.max(a.Y, b.Y));
+      if (onE && Math.abs(b.X - X1) <= eps) addRect(X1 - 2, Math.min(a.Y, b.Y), X1 + pad, Math.max(a.Y, b.Y));
+      if (onN && Math.abs(b.Y - Z0) <= eps) addRect(Math.min(a.X, b.X), Z0 - pad, Math.max(a.X, b.X), Z0 + 2);
+      if (onS && Math.abs(b.Y - Z1) <= eps) addRect(Math.min(a.X, b.X), Z1 - 2, Math.max(a.X, b.X), Z1 + pad);
+    }
+  }
+  if (hitNW) addRect(X0 - pad, Z0 - pad, X0 + 2, Z0 + 2);
+  if (hitNE) addRect(X1 - 2, Z0 - pad, X1 + pad, Z0 + 2);
+  if (hitSE) addRect(X1 - 2, Z1 - 2, X1 + pad, Z1 + pad);
+  if (hitSW) addRect(X0 - pad, Z1 - 2, X0 + 2, Z1 + pad);
+  return ghosts.length ? toPaths(clipOp(ctUnion, [...paths, ...ghosts])) : paths;
+}
+
+function hasAcuteCorner(ring, maxCos = 0.42, bounds = null) {
   const n = ring.length;
   if (n < 3) return false;
   for (let i = 0; i < n; i++) {
     const prev = ring[(i + n - 1) % n], cur = ring[i], next = ring[(i + 1) % n];
+    if (onBlockBound(cur, bounds)) continue;
     const ax = prev.X - cur.X, ay = prev.Y - cur.Y, la = Math.hypot(ax, ay);
     const bx = next.X - cur.X, by = next.Y - cur.Y, lb = Math.hypot(bx, by);
     if (la < 200 || lb < 200) continue;
@@ -133,14 +184,15 @@ function hasAcuteCorner(ring, maxCos = 0.42) {
   return false;
 }
 
-function roundAcutePolys(polys, radiusMeters = 0.65) {
+function roundAcutePolys(polys, radiusMeters = 0.65, bounds = null) {
   const out = [];
   for (const poly of polys) {
-    if (!hasAcuteCorner(poly.outer)) {
+    if (!hasAcuteCorner(poly.outer, 0.42, bounds)) {
       out.push(poly);
       continue;
     }
-    const eroded = offsetPaths([poly.outer, ...poly.holes], -radiusMeters);
+    const base = bounds ? extendAcrossBlockBounds([poly.outer, ...poly.holes], bounds, radiusMeters + 0.35) : [poly.outer, ...poly.holes];
+    const eroded = offsetPaths(base, -radiusMeters);
     if (!eroded.length) continue;
     const opened = offsetPaths(eroded, radiusMeters);
     if (!opened.length) continue;
@@ -158,7 +210,17 @@ function emit(soup, polys, y, minimumArea = 0) {
   }
 }
 
-function emitCurbFaces(curbFaces, polys, y0 = 0, y1 = 0.17, minimumArea = 0.15) {
+function edgeOnBlockBound(a, b, bounds, eps = 6) {
+  if (!bounds) return false;
+  const X0 = Math.round(bounds[0] * MM), Z0 = Math.round(bounds[1] * MM);
+  const X1 = Math.round(bounds[2] * MM), Z1 = Math.round(bounds[3] * MM);
+  return (Math.abs(a.X - X0) <= eps && Math.abs(b.X - X0) <= eps) ||
+    (Math.abs(a.X - X1) <= eps && Math.abs(b.X - X1) <= eps) ||
+    (Math.abs(a.Y - Z0) <= eps && Math.abs(b.Y - Z0) <= eps) ||
+    (Math.abs(a.Y - Z1) <= eps && Math.abs(b.Y - Z1) <= eps);
+}
+
+function emitCurbFaces(curbFaces, polys, y0 = 0, y1 = 0.17, minimumArea = 0.15, bounds = null) {
   if (!curbFaces) return;
   const minScaled = minimumArea * MM * MM;
   for (const { outer, holes } of polys) {
@@ -169,6 +231,7 @@ function emitCurbFaces(curbFaces, polys, y0 = 0, y1 = 0.17, minimumArea = 0.15) 
       const soup = curbFaces.at(path[0].X / MM, path[0].Y / MM);
       for (let i = 0; i < n; i++) {
         const a = path[i], b = path[(i + 1) % n];
+        if (edgeOnBlockBound(a, b, bounds)) continue;
         const ax = a.X / MM, az = a.Y / MM, bx = b.X / MM, bz = b.Y / MM;
         if (Math.hypot(bx - ax, bz - az) < 0.02) continue;
         const v0 = soup.vert(ax, y0, az);
@@ -350,7 +413,7 @@ function finishBlock(layers, block, inputs) {
   // with crisp minimum-area thresholds to wipe out jagged shards and stub triangles.
   const medRaw = raw(concreteMedians, medians, medianPaving);
   const mediansRawClear = medRaw.length ? clipOp(ctDifference, medRaw, drivable) : [];
-  const mediansClear = mediansRawClear.length ? roundAcutePolys(mediansRawClear, 0.65) : [];
+  const mediansClear = mediansRawClear.length ? roundAcutePolys(mediansRawClear, 0.65, block.bounds) : [];
   const medianPaths = toPaths(mediansClear);
   add(concreteMedians, mediansClear, 0.11, 0.65);
 
@@ -366,7 +429,8 @@ function finishBlock(layers, block, inputs) {
   const plantRaw = raw(medians, medianPlanting);
   if (plantRaw.length && medianPaths.length) add(medianPlanting, clipOp(ctIntersection, plantRaw, medianPaths), 0.122, 0.75);
   const curbRaw = raw(curb);
-  const medianInterior = medianPaths.length ? offsetPaths(medianPaths, -0.15) : [];
+  const medianExtended = medianPaths.length ? extendAcrossBlockBounds(medianPaths, block.bounds, 0.35) : [];
+  const medianInterior = medianExtended.length ? offsetPaths(medianExtended, -0.15) : [];
   const islandRim = medianPaths.length
     ? toPaths(clipOp(ctDifference, medianPaths, medianInterior))
     : [];
@@ -383,7 +447,7 @@ function finishBlock(layers, block, inputs) {
     if (curbAll.length) {
       const curbClear = clipOp(ctDifference, curbAll, drivable);
       add(curb, curbClear, 0.17, 0.15);
-      emitCurbFaces(layers.curbFaces, curbClear, 0, 0.17, 0.15);
+      emitCurbFaces(layers.curbFaces, curbClear, 0, 0.17, 0.15, block.bounds);
     }
   }
 

@@ -428,6 +428,9 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             for (let idx = 0, len = list.length; idx < len; idx++){
                 const s = list[idx];
                 if (s.mId === eId || s.wayId === eWayId || s.mId === eTwin || s.mId === ePrev || s.mId === eNext) continue;
+                // Ignore median-embedded turn-pocket links (e.g. Aria Place 3-lane left pocket) when locating
+                // the opposing named carriageway; widestClearSpan below carves out the link cleanly.
+                if (s.isLinkM && e.way.name) continue;
                 const den = lx * s.mnx + lz * s.mnz;
                 if (Math.abs(den) < 0.35) continue;
                 const invDen = 1 / den;
@@ -459,7 +462,8 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 }
             }
         }
-        if (!bestM || bestT < 0.35 || bestT > 21 || bestIsLink || bestHd >= -0.65 || !bestM.oneway) return;
+        const maxMedianSpan = e.way.name === 'South Las Vegas Boulevard' ? 26 : 21;
+        if (!bestM || bestT < 0.35 || bestT > maxMedianSpan || bestIsLink || bestHd >= -0.65 || !bestM.oneway) return;
         if (e.way.name ? bestM.way.name !== e.way.name : bestM.way.name || bestM.cls !== e.cls) return;
         // Use one carriageway as the reference for the entire divider. Opposing
         // halves otherwise leave seams where their splits and tapers differ.
@@ -757,8 +761,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             if (!lane.raw) continue;
             for (const run of departures(lane.line, lane.raw, lane.width / 2))surfaceFor(e).at(run[0][0], run[0][1]).ribbon(run, -lane.width / 2 - 0.3, lane.width / 2 + 0.3, 0);
         }
-        if (!e.internal && e.oneway && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local' && e.way.name) && !isLink && e.ref.length > 5 &&
-            !(e.southStrip && e.way.name === 'South Las Vegas Boulevard' && e.ref.pts.every(p=>inSouthStrip(...p)))) {
+        if (!e.internal && e.oneway && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local' && e.way.name) && !isLink && e.ref.length > 5) {
             const startMouth = mouthStart.get(e.id), endMouth = mouthEnd.get(e.id);
             const cut0 = Math.min((stripApproach ? startMouth?.band?.[0] : undefined) ?? startMouth?.clear ?? edgeCut(e, true), e.ref.length / 2);
             const cut1 = Math.min((stripApproach ? endMouth?.band?.[0] : undefined) ?? endMouth?.stop ?? edgeCut(e, false), e.ref.length / 2);
@@ -776,6 +779,33 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 }
                 return profiles.get(d);
             };
+            // On Strip approaches (including South Strip), emit continuous dark asphalt medianApron across
+            // the full edge length between opposing carriageways so crosswalk noses, T-junction driveways,
+            // turn-pocket gores, and South Strip median openings never expose base-map gaps.
+            if (stripApproach && !air) {
+                const apronSpans = clearSpans(0, e.ref.length, 1.4, (d)=>!!profileAt(d));
+                for (const [a0, a1] of apronSpans){
+                    const aLen = a1 - a0, aSteps = Math.max(2, Math.ceil(aLen / 1.5));
+                    const aStations = Array.from({ length: aSteps + 1 }, (_, i)=>i === aSteps ? a1 : a0 + aLen * i / aSteps);
+                    for (const d of e.ref.cum) if (d > a0 + 0.01 && d < a1 - 0.01) aStations.push(d);
+                    aStations.sort((a, b)=>a - b);
+                    const aPts = [], aWidths = [], aHeights = [];
+                    for (const d of aStations){
+                        const q = atStation(e, left, d), prev = aPts.at(-1);
+                        if (prev && Math.hypot(prev[0] - q.x, prev[1] - q.z) < 0.005) continue;
+                        const profile = profileAt(d);
+                        if (!profile) continue;
+                        aPts.push([q.x, q.z]);
+                        aWidths.push(profile.width);
+                        aHeights.push(0);
+                    }
+                    if (aPts.length >= 2) {
+                        const aNs = normals(aPts);
+                        const aOpp = aWidths.map((w, i)=>[aPts[i][0] - aNs[i][0] * w, aPts[i][1] - aNs[i][1] * w]);
+                        ribbonY(medianApron.at(aPts[0][0], aPts[0][1]), {pts: aOpp, y: aHeights}, {pts: aPts, y: aHeights}, null);
+                    }
+                }
+            }
             const mSpans = clearSpans(cut0, e.ref.length - cut1, 1.4, (d)=>!!profileAt(d));
             for (const [s0, s1] of mSpans){
                 const length = s1 - s0, steps = Math.max(2, Math.ceil(length / 1.15));
@@ -797,9 +827,13 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 const [x, z] = pts[0], ns = normals(pts);
                 const across = (i, w)=>[pts[i][0] - ns[i][0] * w, pts[i][1] - ns[i][1] * w];
                 const opposite = widths.map((w, i)=>across(i, w));
-                // A separate apron fills the gap around the curb and rounded
-                // nose without entering the asphalt mask that cuts the island.
-                if (!air) ribbonY((stripApproach ? medianApron : surface).at(x, z), {pts: opposite, y: heights}, {pts, y: heights}, null);
+                // Non-Strip divided roads still fill the asphalt apron here; Strip approaches already emitted
+                // their full-length medianApron above.
+                if (!air && !stripApproach) ribbonY(surface.at(x, z), {pts: opposite, y: heights}, {pts, y: heights}, null);
+                // South of Reno Ave (z >= 2112), mapped OSM isSouthStripMedian polygons define the raised
+                // islands and exact median openings; north of Reno Ave (z < 2112), keep procedural medians.
+                const midZ = pts[pts.length >> 1][1];
+                if (e.southStrip && e.way.name === 'South Las Vegas Boulevard' && midZ >= 2112 && midZ <= 3345) continue;
                 for (let start = 0; start < pts.length - 1; start++){
                     if (!crowns[start]) continue;
                     let end = start + 1;
