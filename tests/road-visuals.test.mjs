@@ -10,6 +10,8 @@ import {
   finishBellagioDrivePavement,
   isBellagioFlattenedBridge,
 } from '../world/bellagio-drive-roads.mjs';
+import { finishCaesarsDrivePavement } from '../world/caesars-drive-roads.mjs';
+import { finishParisDrivePavement } from '../world/paris-drive-roads.mjs';
 import { junctionOutline } from '../world/south-strip-roads.mjs';
 import { stripLaneCount, stripLaneWidth } from '../world/strip-streets.mjs';
 
@@ -279,4 +281,70 @@ test('Bellagio drive flattens porte-cochere ways, keeps open Strip mouths curb-f
     assert.equal(inLayer('paint', gx, gz), false, `stray white lane paint inside gore at (${gx}, ${gz})`);
     assert.equal(inLayer('paintDim', gx, gz), false, `stray dim paint inside gore at (${gx}, ${gz})`);
   }
+});
+
+test('Caesars Palace valet rotary and Paris Arc rotary keep open mouths curb-free and medians planted', () => {
+  const makeLayers = () => {
+    const keys = ['major', 'asphalt', 'service', 'slipPavement', 'sidewalk', 'concreteMedians', 'medians',
+      'medianPaving', 'medianPlanting', 'frontagePlanting', 'curb', 'curbFaces', 'paint', 'paintDim', 'paintYellow'];
+    return Object.fromEntries(keys.map(key => {
+      const mesh = {
+        pos: [], idx: [], polys: [],
+        vert(vx, vy, vz) { this.pos.push(vx, vy, vz); return this.pos.length / 3 - 1; },
+        polygon(outer, y, holes = []) { this.polys.push({ outer, y, holes }); },
+      };
+      return [key, { m: new Map([['0,0', mesh]]), at: () => mesh }];
+    }));
+  };
+  const inRing = (x, z, ring) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, zi] = ring[i], [xj, zj] = ring[j];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const inLayer = (layers, key, x, z) => layers[key].at().polys.some(({ outer, holes }) =>
+    inRing(x, z, outer) && !holes.some(h => inRing(x, z, h)));
+
+  const caesars = makeLayers();
+  finishCaesarsDrivePavement(caesars);
+  for (const [x, z] of [
+    [10.0, 10.0],   // Porte-cochere outer lane
+    [48.5, 10.0],   // Rotary east lane
+    [31.0, 32.0],   // Rotary south lane
+    [68.0, -76.0],  // Inbound boulevard
+    [79.2, -76.0],  // Outbound boulevard
+    [69.5, -107.2], // North approach (inbound)
+    [79.5, -107.2], // North approach (outbound)
+    [82.8, -46.8],  // Open VIP staging lot mouth
+    [52.0, -26.5],  // Continuous throat between teardrop & outbound
+    [123.5, -130.5], // Open east Caesars Palace Dr WB Strip mouth
+    [123.5, -120.0], // Open east Caesars Palace Dr EB Strip mouth
+    [69.0, -146.0],  // Open north Colosseum NW leg
+  ]) {
+    assert.equal(inLayer(caesars, 'major', x, z), true, `Caesars missing asphalt at (${x}, ${z})`);
+    assert.equal(inLayer(caesars, 'curb', x, z), false, `Caesars curb on asphalt at (${x}, ${z})`);
+  }
+  assert.equal(inLayer(caesars, 'service', 105.0, -60.0), true, 'Caesars solid VIP staging lot covers hollow OSM loop');
+  assert.equal(inLayer(caesars, 'concreteMedians', 30.6, 10.6), true, 'Caesars fountain island present');
+  assert.equal(inLayer(caesars, 'medianPlanting', 73.6, -80.0), true, 'Caesars N-S median planted');
+  assert.equal(inLayer(caesars, 'medianPlanting', 43.5, -19.0), true, 'Caesars teardrop median planted');
+  assert.equal(inLayer(caesars, 'medianPlanting', 105.0, -125.0), true, 'Caesars north E-W median planted');
+  assert.equal(inLayer(caesars, 'medianPlanting', 102.0, -104.0), true, 'Caesars north lot island planted');
+
+  const paris = makeLayers();
+  finishParisDrivePavement(paris);
+  for (const [x, z] of [
+    [163.0, 509.4], // Open west LV Blvd WB mouth
+    [163.0, 525.7], // Open west LV Blvd EB mouth
+    [265.4, 490.0], // Arc rotary north lane
+    [265.4, 543.0], // Arc rotary south lane
+    [325.2, 546.5], // Open east Paris Dr mouth
+  ]) {
+    assert.equal(inLayer(paris, 'major', x, z), true, `Paris missing asphalt at (${x}, ${z})`);
+    assert.equal(inLayer(paris, 'curb', x, z), false, `Paris curb on asphalt at (${x}, ${z})`);
+  }
+  assert.equal(inLayer(paris, 'medianPlanting', 178.5, 518.4), true, 'Paris west median planted');
+  assert.equal(inLayer(paris, 'medianPlanting', 214.0, 518.4), true, 'Paris east median planted');
 });
