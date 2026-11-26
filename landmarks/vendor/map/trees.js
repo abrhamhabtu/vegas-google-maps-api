@@ -85,12 +85,50 @@ export function plantTrees(data, g, planting) {
     const onRoad = roadMask(g);
     const palms = [];
     const round = [];
+    const onBarePavement = (x, z)=>{
+        if (!planting.paved) return false;
+        const r = 0.38;
+        for (const [px, pz] of [[x, z], [x - r, z], [x + r, z], [x, z - r], [x, z + r]]) {
+            if (planting.paved(px, pz) && !planting.sidewalk(px, pz)) return true;
+        }
+        return false;
+    };
+    const connGrid = new Map();
+    for (const k of g.lanes){
+        if (!k.connector || k.line.pts.length < 2 || k.line.y.some(y=>y > 2)) continue;
+        const hw = (k.width ?? 3.5) * 0.5;
+        for(let i = 0; i < k.line.pts.length - 1; i++){
+            const a = k.line.pts[i], b = k.line.pts[i + 1];
+            const mx = (a[0] + b[0]) * 0.5, mz = (a[1] + b[1]) * 0.5;
+            const cKey = `${Math.floor(mx / 30)},${Math.floor(mz / 30)}`;
+            let list = connGrid.get(cKey);
+            if (!list) connGrid.set(cKey, list = []);
+            list.push([
+                a[0],
+                a[1],
+                b[0],
+                b[1],
+                hw
+            ]);
+        }
+    }
+    const onConn = (x, z, margin = 0.8)=>{
+        const cx = Math.floor(x / 30), cz = Math.floor(z / 30);
+        for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [ax, az, bx, bz, hw] of connGrid.get(`${cx + a},${cz + b}`) ?? []){
+            const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
+            const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2));
+            if (Math.hypot(x - (ax + dx * t), z - (az + dz * t)) <= hw + margin) return true;
+        }
+        return false;
+    };
     const t = data.trees;
     for(let i = 0; i < t.length; i += 3){
         const x = t[i], z = t[i + 1], k = t[i + 2];
         const welcome = atWelcome(x, z);
         if (onRoad(x, z, 0.8) || welcome && !supportsTree(planting.welcome, x, z, 0.4) &&
             !supportsTree(planting.median, x, z, 0.4)) continue;
+        // Never plant OSM trees on bare concrete medians, paved gores, asphalt, or turn connectors.
+        if (!supportsTree(planting.median, x, z, 0.43) && (onBarePavement(x, z) || onConn(x, z, 0.75))) continue;
         const r = hash(i);
         (k === 1 || welcome && r < 0.8 ? palms : round).push([
             x,
@@ -161,34 +199,6 @@ export function plantTrees(data, g, planting) {
             }
         }
     }
-    const connGrid = new Map();
-    for (const k of g.lanes){
-        if (!k.connector || k.line.pts.length < 2 || k.line.y.some(y=>y > 2)) continue;
-        const hw = (k.width ?? 3.5) * 0.5;
-        for(let i = 0; i < k.line.pts.length - 1; i++){
-            const a = k.line.pts[i], b = k.line.pts[i + 1];
-            const mx = (a[0] + b[0]) * 0.5, mz = (a[1] + b[1]) * 0.5;
-            const cKey = `${Math.floor(mx / 30)},${Math.floor(mz / 30)}`;
-            let list = connGrid.get(cKey);
-            if (!list) connGrid.set(cKey, list = []);
-            list.push([
-                a[0],
-                a[1],
-                b[0],
-                b[1],
-                hw
-            ]);
-        }
-    }
-    const onConn = (x, z, margin = 0.8)=>{
-        const cx = Math.floor(x / 30), cz = Math.floor(z / 30);
-        for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [ax, az, bx, bz, hw] of connGrid.get(`${cx + a},${cz + b}`) ?? []){
-            const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
-            const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2));
-            if (Math.hypot(x - (ax + dx * t), z - (az + dz * t)) <= hw + margin) return true;
-        }
-        return false;
-    };
     const onCarriageway = (x, z, margin = 0.85, excludeWayId = -1, excludeEdgeId = -1)=>{
         const cx = Math.floor(x / 40), cz = Math.floor(z / 40);
         for(let a = -1; a <= 1; a++)for(let b = -1; b <= 1; b++)for (const [m, seg] of medGrid.get(`${cx + a},${cz + b}`) ?? []){
@@ -258,7 +268,7 @@ export function plantTrees(data, g, planting) {
                 const roadMargin = gap < 2.2 ? 0.35 : 0.65;
                 if (occupied.has(key(x, z)) || atWelcome(x, z) || onRoad(x, z, roadMargin) || onCarriageway(x, z, roadMargin) || onConn(x, z, 0.75)) continue;
                 const reviewed = stripEdge || inSouthStrip(x, z) || inStripCorridor(x, z);
-                if (reviewed && !supportsTree(planting.median, x, z, 0.43)) continue;
+                if ((reviewed || onBarePavement(x, z)) && !supportsTree(planting.median, x, z, 0.45)) continue;
                 occupied.add(key(x, z));
                 const h = hash(Math.round(x * 7 + z * 3));
                 const yaw = hash(Math.round(x + z * 5)) * 6.28;
@@ -285,7 +295,7 @@ export function plantTrees(data, g, planting) {
                     ]){
                         const sx2 = x + lx * off + q.hx * 4.2, sz2 = z + lz * off + q.hz * 4.2;
                         if (!occupied.has(key(sx2, sz2)) && !atWelcome(sx2, sz2) && !onRoad(sx2, sz2, 0.7) && !onCarriageway(sx2, sz2, 0.65) && !onConn(sx2, sz2, 0.8) &&
-                            (!reviewed || supportsTree(planting.median, sx2, sz2, 0.48))) {
+                            (!(reviewed || onBarePavement(sx2, sz2)) || supportsTree(planting.median, sx2, sz2, 0.48))) {
                             occupied.add(key(sx2, sz2));
                             const h2 = hash(Math.round(sx2 * 5 + sz2));
                             (h2 > 0.62 ? round : palms).push([

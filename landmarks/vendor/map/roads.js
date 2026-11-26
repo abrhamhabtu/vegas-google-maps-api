@@ -85,8 +85,8 @@ import { arrowMarking, dashRuns, offsetStation, widestClearSpan, zebraBars } fro
 import { CROSSWALK_HALF, CROSSWALK_OFFSET, crossingStation, guideClearsCrossing, paintSpans, planCrossingPaint } from '../../../world/road-crossings.mjs';
 import { BRIDGE_SLAB_DEPTH } from '../../../world/road-surface.mjs';
 import { planBridgeDecks } from '../../../world/bridge-decks.mjs';
-import { STRIP_PAVEMENT, WYNN_GATE_APRON, flushStripCorner, hasPavedStripMedian, inWynnGateThroat,
-    isWynnGateMedian, isWynnGateSplit, planStripStreets } from '../../../world/strip-streets.mjs';
+import { MGM_CHANNELIZED_APRONS, MGM_CHANNELIZED_ISLANDS, STRIP_PAVEMENT, WYNN_GATE_APRON, flushStripCorner, hasPavedStripMedian, inWynnGateThroat,
+    isStripChannelizedLeft, isWynnGateMedian, isWynnGateSplit, planStripStreets } from '../../../world/strip-streets.mjs';
 import { inSouthStrip, isSouthStripMedian, isSouthStripMedianOpening, isSouthStripMedianOpeningLane, isSouthStripTurn, junctionOutline,
     roundSouthStripRoad } from '../../../world/south-strip-roads.mjs';
 import { finishSouthStripPavement } from '../../../world/south-strip-pavement.mjs';
@@ -665,7 +665,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             (withinMedianOpening(e.fromNode) && isSouthStripMedianOpeningLane(e))) {
             ribbonY(surface.at(e.ref.pts[0][0], e.ref.pts[0][1]), leftRoad, rightRoad, null);
         }
-        if (!e.internal && !isSouthStripTurn(e) && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local')) {
+        if (!e.internal && !isSouthStripTurn(e) && !isStripChannelizedLeft(e) && (e.cls === 'arterial' || e.cls === 'collector' || e.cls === 'local')) {
             const sw = sidewalkWidth(e);
             const cut0 = edgeCut(e, true), cut1 = e.ref.length - edgeCut(e, false);
             const outer = rightRoad;
@@ -705,7 +705,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             const oSpans = clearSpans(cut0, cut1, 0.9, outerOpen);
             for (const [s0, s1] of oSpans){
                 const piece = sliceStations(e, outer, s0, s1);
-                if (isLink) {
+                if (isLink && (air || !stripSlipEdges.has(e.id))) {
                     sidewalkPiece(piece, 0, 0.25, 0, air);
                 } else {
                     const taperStart = s0 > cut0 + 0.15 ? (byRamp ? 6 : 3.2) : 0;
@@ -832,7 +832,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                             far.push(across(i, to - inset));
                         }
                         const y = heights.slice(start, end);
-                        const stripPlanted = stripApproach && !hasPavedStripMedian(e, ...pts[(start + last) >> 1]) && len >= 4 && maxWidth >= 1.15;
+                        const stripPlanted = stripApproach && !hasPavedStripMedian(e, ...pts[(start + last) >> 1]) && len >= 2 && maxWidth >= 1.15;
                         const planted = len >= 7 && maxWidth >= 1.7;
                         const target = air ? deckMedianPaving : stripPlanted ? medians : stripApproach ? concreteMedians : planted ? medians : medianPaving;
                         ribbonY(target.at(x, z), {pts: far, y}, {pts: near, y}, WALK_HEIGHT);
@@ -951,7 +951,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             if (tail > 1) stripFiltered(line, a1 - tail, a1, 0.075, P, keepDiv);
         }
         if (e.oneway) {
-            if (e.cls !== 'local' && !(stripApproach && !air && !isLinkOrRamp)) {
+            if (e.cls !== 'local' && !(stripApproach && !air && (!isLinkOrRamp || isStripChannelizedLeft(e)))) {
                 const leftEdge = edgeLine(e, (at)=>boundaryAt(e, 0, at) + 0.3);
                 const leftTarget = e.cls === 'motorway' || e.cls === 'ramp' ? PY : air ? deckPaint : paintDim;
                 stripFiltered(leftEdge, a0, a1, 0.075, leftTarget, isLinkOrRamp ? (d)=>{
@@ -973,7 +973,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
                 strip(edgeLine(e, (at)=>boundaryAt(e, 0, at) + 0.13), a0, a1, 0.068, PY);
             }
         }
-        if ((e.cls === 'motorway' || e.cls === 'ramp' || e.cls === 'arterial' || isLink) && !(stripApproach && !air && !isLinkOrRamp)) {
+        if ((e.cls === 'motorway' || e.cls === 'ramp' || e.cls === 'arterial' || isLink) && !(stripApproach && !air && (!isLinkOrRamp || isStripChannelizedLeft(e)))) {
             const rightEdge = edgeLine(e, (at)=>boundaryAt(e, e.lanes.length, at) - 0.3);
             stripFiltered(rightEdge, a0, a1, 0.08, P, isLinkOrRamp ? (d)=>{
                 const q = atStation(e, rightEdge, d);
@@ -1093,30 +1093,57 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             if (inner.length >= 3) slipPavement.at(...junctionCenter).polygon(inner, 0);
             continue;
         }
+        // Bridge tight outer-curb merge/diverge triangles where a slip lane joins or leaves
+        // an arterial so no triangular void or sidewalk wedge intrudes into the merge.
+        const bridgeSlipEnd = (slipEdge, atEnd)=>{
+            const node = g.nodes.get(atEnd ? slipEdge.toNode : slipEdge.fromNode);
+            if (!node) return;
+            const adj = (atEnd ? node.outEdges : node.inEdges).map(i=>g.edges[i])
+                .find(m=>!m.internal && !isAir(m.ref) && m.cls === 'arterial' && !/_link$/.test(m.way.hw));
+            if (!adj) return;
+            const slipR = laneBoundary(slipEdge, slipEdge.lanes.length);
+            const slipL = laneBoundary(slipEdge, 0);
+            const adjR = laneBoundary(adj, adj.lanes.length);
+            const reachSlip = Math.min(14, slipEdge.ref.length);
+            const reachAdj = Math.min(6, adj.ref.length * 0.4);
+            const sPts = [
+                atStation(slipEdge, slipR, atEnd ? slipEdge.ref.length : 0),
+                atStation(slipEdge, slipR, atEnd ? slipEdge.ref.length - reachSlip : reachSlip),
+                atStation(slipEdge, slipL, atEnd ? slipEdge.ref.length : 0),
+                atStation(adj, adjR, atEnd ? 0 : adj.ref.length),
+                atStation(adj, adjR, atEnd ? reachAdj : adj.ref.length - reachAdj),
+            ].map(q=>[q.x, q.z]);
+            const hull = convexHull(sPts);
+            if (hull.length >= 3 && Math.max(...hull.map(p=>Math.hypot(p[0] - node.x, p[1] - node.z))) <= 22) {
+                slipPavement.at(node.x, node.z).polygon(hull, 0);
+            }
+        };
+        bridgeSlipEnd(chain[0], false);
+        bridgeSlipEnd(chain.at(-1), true);
         const line = makeLine(points, points.map(()=>0));
-        const shoulder = 0.34;
+        const shoulder = 0.20;
         const across = (q, d)=>[q.x + q.hz * d, q.z - q.hx * d];
         const widthAt = (s)=>{
             const q = sample(line, s);
-            for (let d = shoulder; d <= 17; d += 0.25) {
+            for (let d = shoulder; d <= 28; d += 0.25) {
                 const [x, z] = across(q, d);
-                if (!onAnyNonServiceRoad(x, z, 0, 0.17) && !onConnector(x, z, 0.22)) continue;
+                if (!onAnyNonServiceRoad(x, z, 0, 0.10) && !onConnector(x, z, 0.14)) continue;
                 let lo = Math.max(shoulder, d - 0.25), hi = d;
                 for (let k = 0; k < 5; k++) {
                     const mid = (lo + hi) * 0.5;
                     const [mx2, mz2] = across(q, mid);
-                    if (!onAnyNonServiceRoad(mx2, mz2, 0, 0.17) && !onConnector(mx2, mz2, 0.22)) lo = mid;
+                    if (!onAnyNonServiceRoad(mx2, mz2, 0, 0.10) && !onConnector(mx2, mz2, 0.14)) lo = mid;
                     else hi = mid;
                 }
                 const bounded = [0, 2, 4].some(delta=>{
                     const [mx, mz] = across(q, lo + delta);
                     return onMainCarriageway(mx, mz, 0, 0.17);
                 });
-                return bounded ? Math.max(0, lo - shoulder - 0.22) : 0;
+                return bounded ? Math.max(0, lo - shoulder - 0.10) : 0;
             }
             return 0;
         };
-        for (const [s0, s1] of clearSpans(1, line.length - 1, 0.65, s=>widthAt(s) > 1.05)){
+        for (const [s0, s1] of clearSpans(1, line.length - 1, 0.65, s=>widthAt(s) > 0.72)){
             const length = s1 - s0;
             if (length < 4.5) continue;
             const sections = Math.max(3, Math.ceil(length / 0.65)), near = [], far = [], y = [];
@@ -1209,6 +1236,8 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         }
     }
     medianApron.at(...WYNN_GATE_APRON[0]).polygon(WYNN_GATE_APRON, 0);
+    for (const apron of MGM_CHANNELIZED_APRONS) medianApron.at(...apron[0]).polygon(apron, 0);
+    for (const island of MGM_CHANNELIZED_ISLANDS) medians.at(...island[0]).polygon(island, WALK_HEIGHT);
     for (const [id, r] of setback){
         const node = g.nodes.get(id);
         const ix = plan.intersectionAt(id);
@@ -1600,7 +1629,7 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
         }
     }
     const ground = { major, asphalt, service, aisle, slipPavement, sidewalk, concreteMedians, medians, medianPaving, medianApron,
-        medianPlanting, frontagePlanting, curb, paint, paintDim, paintYellow, reviewedAisles, parkingBase };
+        medianPlanting, frontagePlanting, curb, curbFaces, paint, paintDim, paintYellow, reviewedAisles, parkingBase };
     const gravel = new Chunked(C);
     const welcomeGround = { ...ground, gravel, plaza: new Chunked(C) };
     const [signX, signZ] = WELCOME_SIGN_POINT;
@@ -1661,8 +1690,14 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
     finishBellagioDrivePavement({ major, asphalt, service, slipPavement, sidewalk, concreteMedians,
         medians, medianPaving, medianPlanting, frontagePlanting, curb, curbFaces, paint, paintDim, paintYellow });
     const clippedPlanting = surfaceMask(medianPlanting), otherMedians = surfaceMask(medians);
-    const planting = { median: (x, z)=>clippedPlanting(x, z) || otherMedians(x, z),
-        sidewalk: surfaceMask(sidewalk), welcome: surfaceMask(gravel) };
+    const concreteMask = surfaceMask(concreteMedians), pavingMask = surfaceMask(medianPaving);
+    const majorMask = surfaceMask(major), apronMask = surfaceMask(medianApron), slipMask = surfaceMask(slipPavement);
+    const planting = {
+        median: (x, z)=>clippedPlanting(x, z) || otherMedians(x, z),
+        sidewalk: surfaceMask(sidewalk),
+        welcome: surfaceMask(gravel),
+        paved: (x, z)=>concreteMask(x, z) || pavingMask(x, z) || majorMask(x, z) || apronMask(x, z) || slipMask(x, z),
+    };
     const add = (arr)=>arr.forEach((m)=>group.add(m));
     const roadMat = surfaceMaterial('road', { grain: 0.16, weathering: 0.08, corridor: STRIP_PAVEMENT });
     const serviceMat = surfaceMaterial('service', {

@@ -30,6 +30,53 @@ function emit(soup, polygons, y, minimumArea = 0) {
   }
 }
 
+function emitCurbFaces(curbFaces, polygons, y0 = 0, y1 = 0.17, minimumArea = 0.12) {
+  if (!curbFaces) return;
+  const minScaled = minimumArea * mm * mm;
+  for (const { outer, holes } of polygons) {
+    if (Math.abs(clipper.Clipper.Area(outer)) < minScaled) continue;
+    for (const path of [outer, ...holes]) {
+      const n = path.length;
+      if (n < 3) continue;
+      const soup = curbFaces.at(path[0].X / mm, path[0].Y / mm);
+      for (let i = 0; i < n; i++) {
+        const a = path[i], b = path[(i + 1) % n];
+        const ax = a.X / mm, az = a.Y / mm, bx = b.X / mm, bz = b.Y / mm;
+        if (Math.hypot(bx - ax, bz - az) < 0.02) continue;
+        const v0 = soup.vert(ax, y0, az);
+        const v1 = soup.vert(bx, y0, bz);
+        const v2 = soup.vert(bx, y1, bz);
+        const v3 = soup.vert(ax, y1, az);
+        soup.idx.push(v0, v1, v2, v0, v2, v3);
+      }
+    }
+  }
+}
+
+function clearVerticalFaces(layer, bounds) {
+  if (!layer) return;
+  const [west, north, east, south] = bounds;
+  const size = layer.size || 1400;
+  for (const [key, soup] of layer.m.entries()) {
+    const comma = key.indexOf(',');
+    if (comma > 0) {
+      const cx = Number(key.slice(0, comma)) * size;
+      const cz = Number(key.slice(comma + 1)) * size;
+      if (cx + size + 500 < west || cx - 500 > east || cz + size + 500 < north || cz - 500 > south) continue;
+    }
+    const { pos, idx } = soup;
+    const keep = [];
+    for (let i = 0; i < idx.length; i += 3) {
+      const a = idx[i] * 3, b = idx[i + 1] * 3, c = idx[i + 2] * 3;
+      const mx = (pos[a] + pos[b] + pos[c]) / 3;
+      const mz = (pos[a + 2] + pos[b + 2] + pos[c + 2]) / 3;
+      if (mx > west && mx < east && mz > north && mz < south) continue;
+      keep.push(idx[i], idx[i + 1], idx[i + 2]);
+    }
+    soup.idx = keep;
+  }
+}
+
 function closing(paths) {
   const offset = (rings, delta) => {
     const output = new clipper.Paths();
@@ -122,7 +169,31 @@ function finishBlock(layers, block, inputs) {
   add(major, clip(ctDifference, paths(take(medianApron)), [...drivable, ...islands, ...paths(walks)]));
   add(frontagePlanting, clip(ctDifference, paths(take(frontagePlanting)), [...drivable, ...paths(parking)]), 0.065, 1.0);
   add(medianPlanting, clip(ctIntersection, paths(take(medians, medianPlanting)), islands), 0.122, 0.6);
-  add(curb, clip(ctDifference, paths(take(curb)), drivable), 0.17, 0.12);
+  const curbRaw = paths(take(curb));
+  const offset = (rings, delta) => {
+    if (!rings.length) return [];
+    const out = new clipper.Paths();
+    const co = new clipper.ClipperOffset(2.0, 12.0);
+    co.AddPaths(rings, clipper.JoinType.jtRound, clipper.EndType.etClosedPolygon);
+    co.Execute(out, delta * mm);
+    return out;
+  };
+  const islandInterior = offset(islands, -0.15);
+  const islandRim = islands.length ? paths(clip(ctDifference, islands, islandInterior)) : [];
+  const raisedBase = [...islands, ...paths(walks), ...plazaPaths];
+  if ((curbRaw.length || islandRim.length) && raisedBase.length) {
+    const support = offset(raisedBase, 0.30);
+    let curbTrimmed = curbRaw.length ? paths(clip(ctIntersection, curbRaw, support)) : [];
+    if (curbTrimmed.length && islandInterior.length) {
+      curbTrimmed = paths(clip(ctDifference, curbTrimmed, islandInterior));
+    }
+    const curbAll = [...curbTrimmed, ...islandRim];
+    if (curbAll.length) {
+      const curbClear = clip(ctDifference, curbAll, drivable);
+      add(curb, curbClear, 0.17, 0.12);
+      emitCurbFaces(layers.curbFaces, curbClear, 0, 0.17, 0.12);
+    }
+  }
   const yellow = clip(ctIntersection, paths(take(paintYellow)), drivable);
   const white = clip(ctDifference, paths(clip(ctIntersection, paths(take(paint)), drivable)), paths(yellow));
   add(paintYellow, yellow);
@@ -144,7 +215,11 @@ export async function finishSouthStripPavement(layers, pause, bounds = SOUTH_STR
   }
   const section = rectangle(bounds);
   const inputs = new Map();
-  for (const layer of Object.values(layers)) {
+  for (const [name, layer] of Object.entries(layers)) {
+    if (name === 'curbFaces') {
+      clearVerticalFaces(layer, bounds);
+      continue;
+    }
     const rings = new Map(blocks.map(block => [block, []]));
     collect(layer, blocks, section, bounds, rings);
     inputs.set(layer, rings);

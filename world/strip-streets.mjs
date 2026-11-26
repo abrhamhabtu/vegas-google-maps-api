@@ -20,6 +20,40 @@ const path = [
 
 export const STRIP_PAVEMENT = { path, color: 'roadStrip', innerRadius: 72, outerRadius: 155 };
 const stripName = 'South Las Vegas Boulevard';
+
+// Untagged midblock Strip ways that otherwise inherit inflated turn-pocket counts
+// from neighboring intersections (e.g. Venetian NB 5L->4L, Resorts World SB 6L->4L).
+const STRIP_LANE_OVERRIDES = new Map([
+  [255169900, 4],   // NB Strip fronting Venetian / Treasure Island
+  [1037094415, 4],  // SB Strip fronting Resorts World
+  [1077672936, 4],  // SB Strip at Convention Center Dr
+]);
+
+export function stripLaneCount(way) {
+  return STRIP_LANE_OVERRIDES.get(way.id);
+}
+
+// Calibrated Las Vegas Strip urban arterial lane widths (10.0-10.5 ft on Strip
+// turn-pocket approaches vs 11.5 ft generic arterial default) so carriageways
+// align cleanly with aerial curbs and preserve central dividers.
+export function stripLaneWidth(way, total, cls, southStrip, stripCorridor) {
+  if (!southStrip && !stripCorridor) return undefined;
+  if (way.w) return undefined;
+  if (way.name === stripName || way.name === 'Las Vegas Boulevard South') {
+    if (total >= 6) return 3.05;
+    if (total === 5) return 3.12;
+    return 3.20;
+  }
+  if (cls === 'arterial') {
+    if (total >= 6) return 3.10;
+    if (total === 5) return 3.18;
+    return 3.28;
+  }
+  if (cls === 'collector') {
+    return total >= 4 ? 3.15 : 3.25;
+  }
+  return undefined;
+}
 const flamingo = toLocal(36.11468, -115.17288);
 const tropicana = toLocal(36.10086, -115.17296);
 const sands = toLocal(36.12547, -115.16932);
@@ -99,19 +133,42 @@ export function hasPavedStripMedian(edge, x, z) {
   const name = edge.way.name;
   if (name === 'East Flamingo Road' || name === 'West Flamingo Road') return Math.hypot(x - flamingo[0], z - flamingo[1]) < 145;
   if (name === 'Sands Avenue' || name === 'Spring Mountain Road') return Math.hypot(x - sands[0], z - sands[1]) < 150;
-  // Leave the exposed concrete noses at the junctions. The planted stretches
-  // farther back include the palms north of the Flamingo pedestrian bridge.
-  return Math.hypot(x - tropicana[0], z - tropicana[1]) < 47 ||
-    Math.hypot(x - flamingo[0], z - flamingo[1]) < 38;
+  // Keep S Las Vegas Blvd medians continuously landscaped right up to their
+  // smoothly rounded curbed noses instead of abruptly slamming into flat gray wedges.
+  return false;
 }
 
 // The southwest Sands turn is mapped as a separate path, but the aerial view
 // shows a continuous paved corner with one outer curb beside the Palazzo.
 export const flushStripCorner = edge => edge.way.id === 277512381 ? sands : undefined;
 
+// Dedicated median-crossing dual left-turn links at MGM Road / Bruno Mars Drive.
+const MGM_LEFT_LINKS = new Set([277512377, 277512378, 1123959362]);
+export const isStripChannelizedLeft = edge => MGM_LEFT_LINKS.has(edge.way.id);
+
+// Landscaped median envelopes bracketing the MGM / Bruno Mars diagonal left-turn bays;
+// the Strip corridor CSG pass carves out the exact drivable lanes and rounds acute gore tips.
+export const MGM_CHANNELIZED_ISLANDS = [
+  [[133.0, 1264], [151.0, 1264], [151.0, 1367], [133.0, 1367]],
+  [[132.0, 1385], [151.0, 1385], [151.0, 1494], [132.0, 1494]],
+];
+
+// Underlying asphalt apron across the MGM / Bruno Mars median zone so rounded
+// island noses and intersection throats never expose hollow base-map voids.
+export const MGM_CHANNELIZED_APRONS = [
+  [[130.0, 1263], [153.5, 1263], [153.5, 1495], [130.0, 1495]],
+];
+
 function collectSlipLanes(graph, junctionRoads) {
   const { edges, nodes } = graph;
   const isLink = e => e.oneway && !e.elevated && !e.internal && e.way.hw === 'primary_link';
+  const dirEnd = (edge, atStart) => {
+    const pts = edge.ref.pts;
+    const a = atStart ? pts[0] : pts[pts.length - 2];
+    const b = atStart ? pts[1] : pts[pts.length - 1];
+    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1;
+    return [dx / L, dz / L];
+  };
   const chains = [];
   for (const edge of edges) {
     if (!isLink(edge)) continue;
@@ -123,21 +180,25 @@ function collectSlipLanes(graph, junctionRoads) {
     const chain = [edge];
     let length = edge.ref.length;
     let outgoing = nodes.get(edge.toNode).outEdges.map(i => edges[i]);
-    while (outgoing.length === 1 && isLink(outgoing[0]) && !chain.includes(outgoing[0]) && length < 105) {
+    while (outgoing.length === 1 && isLink(outgoing[0]) && !chain.includes(outgoing[0]) && length < 130) {
       const next = outgoing[0];
       chain.push(next);
       length += next.ref.length;
       outgoing = nodes.get(next.toNode).outEdges.map(i => edges[i]);
     }
-    if (length < 18 || length > 105) continue;
+    if (length < 18 || length > 130) continue;
     const [a, b] = edge.ref.pts;
     const [c, d] = chain.at(-1).ref.pts.slice(-2);
     const turn = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0]);
     if (turn <= 0) continue;
-    const attached = nearby.some(([, names]) => inbound.some(a =>
-      a.cls === 'arterial' && names.has(a.way.name) && outgoing.some(b =>
-        b.cls === 'arterial' && names.has(b.way.name) && a.way.name !== b.way.name &&
-        (a.way.name === stripName || b.way.name === stripName))));
+    const attached = nearby.some(([, names]) => inbound.some(inE =>
+      inE.cls === 'arterial' && names.has(inE.way.name) && outgoing.some(outE => {
+        if (outE.cls !== 'arterial' || !names.has(outE.way.name) || inE.way.name === outE.way.name) return false;
+        if (inE.way.name !== stripName && outE.way.name !== stripName) return false;
+        const [ahx, ahz] = dirEnd(inE, false);
+        const [bhx, bhz] = dirEnd(outE, true);
+        return ahx * bhz - ahz * bhx > 0.25;
+      })));
     if (attached) chains.push(chain);
   }
   return chains;

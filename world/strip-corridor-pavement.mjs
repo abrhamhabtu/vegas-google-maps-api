@@ -47,11 +47,27 @@ const STRIP_CORRIDOR_NAMES = new Set([
   'West Sahara Avenue',
   'Fashion Show Drive',
   'Resorts World Drive',
+  'Resorts World Avenue',
   'Circus Circus Drive',
   'Bellagio Drive',
   'Paris Drive',
   'Center Strip Drive',
   'Via del Nord',
+  'Aria Place',
+  'MGM Road',
+  'Bruno Mars Drive',
+  'Caesars Palace Drive',
+  'Mystère Dreams Avenue',
+  'Wynn Main Gate Drive',
+  'Genting Boulevard',
+  'Encore Resort Boulevard',
+  'Convention Center Drive',
+  'Elvis Presley Boulevard',
+  'Avenue Fontainebleau',
+  'Sky Las Vegas Drive',
+  'Bob Stupak Avenue',
+  'South Main Street',
+  'East Saint Louis Avenue',
 ]);
 
 // Enables seamless lane tapers (no jagged step-jogs) and smooth bend rounding on Strip roads.
@@ -91,12 +107,108 @@ function toPaths(polys) {
   return polys.flatMap(({ outer, holes }) => [outer, ...holes]);
 }
 
+function offsetPaths(paths, deltaMeters) {
+  if (!paths.length) return [];
+  const out = new clipper.Paths();
+  const co = new clipper.ClipperOffset(2.0, 12.0);
+  co.AddPaths(paths, clipper.JoinType.jtRound, clipper.EndType.etClosedPolygon);
+  co.Execute(out, deltaMeters * MM);
+  return out;
+}
+
+// Detect polygons containing sharp acute tips (< ~65 deg, e.g. diagonal gore wedges)
+// and blunt those tips into smooth circular noses via morphological round-opening,
+// while leaving clean right-angled / already-smooth polygons untouched.
+function hasAcuteCorner(ring, maxCos = 0.42) {
+  const n = ring.length;
+  if (n < 3) return false;
+  for (let i = 0; i < n; i++) {
+    const prev = ring[(i + n - 1) % n], cur = ring[i], next = ring[(i + 1) % n];
+    const ax = prev.X - cur.X, ay = prev.Y - cur.Y, la = Math.hypot(ax, ay);
+    const bx = next.X - cur.X, by = next.Y - cur.Y, lb = Math.hypot(bx, by);
+    if (la < 200 || lb < 200) continue;
+    const cos = (ax * bx + ay * by) / (la * lb);
+    if (cos > maxCos) return true;
+  }
+  return false;
+}
+
+function roundAcutePolys(polys, radiusMeters = 0.65) {
+  const out = [];
+  for (const poly of polys) {
+    if (!hasAcuteCorner(poly.outer)) {
+      out.push(poly);
+      continue;
+    }
+    const eroded = offsetPaths([poly.outer, ...poly.holes], -radiusMeters);
+    if (!eroded.length) continue;
+    const opened = offsetPaths(eroded, radiusMeters);
+    if (!opened.length) continue;
+    out.push(...clipOp(ctIntersection, opened, [poly.outer]));
+  }
+  return out;
+}
+
 function emit(soup, polys, y, minimumArea = 0) {
   const toRing = path => path.map(({ X, Y }) => [X / MM, Y / MM]);
   const minScaled = minimumArea * MM * MM;
   for (const { outer, holes } of polys) {
     if (Math.abs(clipper.Clipper.Area(outer)) < minScaled) continue;
     soup.polygon(toRing(outer), y, holes.map(toRing));
+  }
+}
+
+function emitCurbFaces(curbFaces, polys, y0 = 0, y1 = 0.17, minimumArea = 0.15) {
+  if (!curbFaces) return;
+  const minScaled = minimumArea * MM * MM;
+  for (const { outer, holes } of polys) {
+    if (Math.abs(clipper.Clipper.Area(outer)) < minScaled) continue;
+    for (const path of [outer, ...holes]) {
+      const n = path.length;
+      if (n < 3) continue;
+      const soup = curbFaces.at(path[0].X / MM, path[0].Y / MM);
+      for (let i = 0; i < n; i++) {
+        const a = path[i], b = path[(i + 1) % n];
+        const ax = a.X / MM, az = a.Y / MM, bx = b.X / MM, bz = b.Y / MM;
+        if (Math.hypot(bx - ax, bz - az) < 0.02) continue;
+        const v0 = soup.vert(ax, y0, az);
+        const v1 = soup.vert(bx, y0, bz);
+        const v2 = soup.vert(bx, y1, bz);
+        const v3 = soup.vert(ax, y1, az);
+        soup.idx.push(v0, v1, v2, v0, v2, v3);
+      }
+    }
+  }
+}
+
+function clearVerticalFaces(layer, layout) {
+  if (!layer) return;
+  const { strips, gBounds } = layout;
+  const [gWest, gNorth, gEast, gSouth] = gBounds;
+  const size = layer.size || 1400;
+  for (const [key, soup] of layer.m.entries()) {
+    const comma = key.indexOf(',');
+    if (comma > 0) {
+      const cx = Number(key.slice(0, comma)) * size;
+      const cz = Number(key.slice(comma + 1)) * size;
+      if (cx + size + 500 < gWest || cx - 500 > gEast || cz + size + 500 < gNorth || cz - 500 > gSouth) continue;
+    }
+    const { pos, idx } = soup;
+    const keep = [];
+    for (let i = 0; i < idx.length; i += 3) {
+      const a = idx[i] * 3, b = idx[i + 1] * 3, c = idx[i + 2] * 3;
+      const mx = (pos[a] + pos[b] + pos[c]) / 3;
+      const mz = (pos[a + 2] + pos[b + 2] + pos[c + 2]) / 3;
+      if (mx <= gWest || mx >= gEast || mz <= gNorth || mz >= gSouth) {
+        keep.push(idx[i], idx[i + 1], idx[i + 2]);
+        continue;
+      }
+      const s = Math.max(0, Math.min(strips.length - 1, Math.floor((mz - gNorth) / STRIP_STEP_Z)));
+      const st = strips[s];
+      if (mx > st.west && mx < st.east && mz > st.z0 && mz < st.z1) continue;
+      keep.push(idx[i], idx[i + 1], idx[i + 2]);
+    }
+    soup.idx = keep;
   }
 }
 
@@ -237,22 +349,43 @@ function finishBlock(layers, block, inputs) {
   // Medians, sidewalks, landscaping, and curbs strictly subtracted from drivable asphalt
   // with crisp minimum-area thresholds to wipe out jagged shards and stub triangles.
   const medRaw = raw(concreteMedians, medians, medianPaving);
-  const mediansClear = medRaw.length ? clipOp(ctDifference, medRaw, drivable) : [];
+  const mediansRawClear = medRaw.length ? clipOp(ctDifference, medRaw, drivable) : [];
+  const mediansClear = mediansRawClear.length ? roundAcutePolys(mediansRawClear, 0.65) : [];
   const medianPaths = toPaths(mediansClear);
   add(concreteMedians, mediansClear, 0.11, 0.65);
 
   const walkRaw = raw(sidewalk);
   const walkClear = walkRaw.length ? clipOp(ctDifference, walkRaw, [...drivable, ...medianPaths, ...parkingPaths]) : [];
+  const walkPaths = toPaths(walkClear);
   add(sidewalk, walkClear, 0.11, 0.65);
   const aprons = raw(medianApron);
-  if (aprons.length) add(major, clipOp(ctDifference, aprons, [...drivable, ...medianPaths, ...toPaths(walkClear)]));
+  if (aprons.length) add(major, clipOp(ctDifference, aprons, [...drivable, ...medianPaths, ...walkPaths]));
 
   const frontRaw = raw(frontagePlanting);
   if (frontRaw.length) add(frontagePlanting, clipOp(ctDifference, frontRaw, [...drivable, ...parkingPaths]), 0.065, 1.0);
   const plantRaw = raw(medians, medianPlanting);
   if (plantRaw.length && medianPaths.length) add(medianPlanting, clipOp(ctIntersection, plantRaw, medianPaths), 0.122, 0.75);
   const curbRaw = raw(curb);
-  if (curbRaw.length) add(curb, clipOp(ctDifference, curbRaw, drivable), 0.17, 0.15);
+  const medianInterior = medianPaths.length ? offsetPaths(medianPaths, -0.15) : [];
+  const islandRim = medianPaths.length
+    ? toPaths(clipOp(ctDifference, medianPaths, medianInterior))
+    : [];
+  const raisedBase = [...medianPaths, ...walkPaths];
+  if ((curbRaw.length || islandRim.length) && raisedBase.length) {
+    const support = offsetPaths(raisedBase, 0.30);
+    let curbTrimmed = curbRaw.length ? toPaths(clipOp(ctIntersection, curbRaw, support)) : [];
+    // Never let raw edge curbs slice through the interior of a raised green median;
+    // islandRim already provides the crisp uniform perimeter curb around every median.
+    if (curbTrimmed.length && medianInterior.length) {
+      curbTrimmed = toPaths(clipOp(ctDifference, curbTrimmed, medianInterior));
+    }
+    const curbAll = [...curbTrimmed, ...islandRim];
+    if (curbAll.length) {
+      const curbClear = clipOp(ctDifference, curbAll, drivable);
+      add(curb, curbClear, 0.17, 0.15);
+      emitCurbFaces(layers.curbFaces, curbClear, 0, 0.17, 0.15);
+    }
+  }
 
   // Crisp non-overlapping road markings clipped strictly inside drivable asphalt (yellow > white > dim).
   const yellowRaw = raw(paintYellow);
@@ -277,7 +410,11 @@ function finishBlock(layers, block, inputs) {
 export async function finishStripCorridorPavement(layers, pause) {
   const layout = buildCorridorLayout();
   const inputs = new Map();
-  for (const layer of Object.values(layers)) {
+  for (const [name, layer] of Object.entries(layers)) {
+    if (name === 'curbFaces') {
+      clearVerticalFaces(layer, layout);
+      continue;
+    }
     const rings = new Map(layout.blocks.map(block => [block, []]));
     collectLayer(layer, layout, rings);
     inputs.set(layer, rings);
