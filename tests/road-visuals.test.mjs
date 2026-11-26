@@ -4,6 +4,12 @@ import { arrowMarking, dashRuns, offsetStation, widestClearSpan, zebraBars } fro
 import { surfaceMask, supportsTree } from '../world/road-planting.mjs';
 import { finishSouthStripPavement } from '../world/south-strip-pavement.mjs';
 import { finishStripCorridorPavement } from '../world/strip-corridor-pavement.mjs';
+import {
+  BELLAGIO_TREE_COORDS,
+  bellagioWayHeights,
+  finishBellagioDrivePavement,
+  isBellagioFlattenedBridge,
+} from '../world/bellagio-drive-roads.mjs';
 import { junctionOutline } from '../world/south-strip-roads.mjs';
 import { stripLaneCount, stripLaneWidth } from '../world/strip-streets.mjs';
 
@@ -200,5 +206,71 @@ test('Strip pavement finishers clip orphan curbs and clear stray vertical curb f
     await finish(layers);
     assert.equal(layers.curb.at().output.length, 0);
     assert.equal(layers.curbFaces.at().idx.length, 0);
+  }
+});
+
+test('Bellagio drive flattens porte-cochere ways, keeps open Strip mouths curb-free, and grounds every tree on planting', () => {
+  for (const id of [14293119, 311030164, 789702807, 789702808, 789702810, 789702812, 311030162, 374989475]) {
+    const way = { id, pts: [[0, 0], [10, 0]] };
+    assert.deepEqual(bellagioWayHeights(way), [0, 0]);
+    assert.equal(isBellagioFlattenedBridge(way), true);
+  }
+  const ramp = bellagioWayHeights({ id: 25718279, pts: [[0, 0], [10, 0], [20, 0]] });
+  assert.equal(ramp[0], 0);
+  assert.equal(ramp.at(-1), -4.2);
+
+  const keys = ['major', 'asphalt', 'service', 'slipPavement', 'sidewalk', 'concreteMedians', 'medians',
+    'medianPaving', 'medianPlanting', 'frontagePlanting', 'curb', 'curbFaces', 'paint', 'paintDim', 'paintYellow'];
+  const layers = Object.fromEntries(keys.map(key => {
+    const mesh = {
+      pos: [], idx: [],
+      vert(vx, vy, vz) { this.pos.push(vx, vy, vz); return this.pos.length / 3 - 1; },
+      polygon(outer, y, holes = []) {
+        // Fan/ear-clip check via simple triangulation is unnecessary for convex; use Clipper-compatible point-in-polygon via polygon records
+        this.polys.push({ outer, y, holes });
+      },
+      polys: [],
+    };
+    return [key, { m: new Map([['0,0', mesh]]), at: () => mesh }];
+  }));
+
+  finishBellagioDrivePavement(layers);
+
+  const inRing = (x, z, ring) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, zi] = ring[i], [xj, zj] = ring[j];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const inLayer = (key, x, z) => layers[key].at().polys.some(({ outer, holes }) =>
+    inRing(x, z, outer) && !holes.some(h => inRing(x, z, h)));
+
+  // Every key Bellagio carriageway & motor-court lane sits on finished drivable asphalt
+  const drivableCheckpoints = [
+    [-75.0, 472.0], // Porte-cochere outer valet/taxi lane
+    [-62.5, 472.0], // Porte-cochere main arrival lane
+    [-55.1, 472.0], // Porte-cochere inner lane
+    [-38.0, 435.8], // North roundabout arc
+    [-18.0, 515.0], // Roundabout turn-back loop
+    [-38.0, 539.0], // Self-parking garage exit
+    [95.0, 579.4],  // EB 3 left-turn lanes
+    [95.0, 589.8],  // EB 2 right-turn lanes
+    [95.0, 555.4],  // WB 3 lanes
+    [118.0, 567.0], // Strip intersection mouth (no curb/sidewalk gap)
+    [121.0, 557.5], // WB mouth at Strip seam
+    [121.0, 577.5], // EB mouth at Strip seam
+  ];
+  for (const [x, z] of drivableCheckpoints) {
+    assert.equal(inLayer('major', x, z), true, `expected drivable asphalt at (${x}, ${z})`);
+    assert.equal(inLayer('curb', x, z), false, `unexpected curb on asphalt at (${x}, ${z})`);
+    assert.equal(inLayer('sidewalk', x, z), false, `unexpected sidewalk on asphalt at (${x}, ${z})`);
+  }
+
+  // Every Bellagio tree stands strictly inside finished medianPlanting and clear of asphalt
+  for (const [tx, tz] of BELLAGIO_TREE_COORDS) {
+    assert.equal(inLayer('medianPlanting', tx, tz), true, `tree at (${tx}, ${tz}) not on medianPlanting`);
+    assert.equal(inLayer('major', tx, tz), false, `tree at (${tx}, ${tz}) overlaps drivable asphalt`);
   }
 });
