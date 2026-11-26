@@ -849,31 +849,70 @@ export async function buildRoads(data, g, valetZones = [], plan = planIntersecti
             // the full edge length between opposing carriageways so crosswalk noses, T-junction driveways,
             // turn-pocket gores, and South Strip median openings never expose base-map gaps.
             if (stripApproach && !air) {
-                const apronAt = (d)=>{
+                const rawApronAt = (d)=>{
                     const q = atStation(e, left, d);
                     if (atWelcome(q.x, q.z)) return 0;
                     return opposingSpanAt(e, q.x, q.z, q.hx, q.hz, q.y);
                 };
-                const apronSpans = clearSpans(0, e.ref.length, 1.4, (d)=>apronAt(d) > 0.05);
-                for (const [a0, a1] of apronSpans){
-                    const aLen = a1 - a0, aSteps = Math.max(2, Math.ceil(aLen / 1.5));
-                    const aStations = Array.from({ length: aSteps + 1 }, (_, i)=>i === aSteps ? a1 : a0 + aLen * i / aSteps);
-                    for (const d of e.ref.cum) if (d > a0 + 0.01 && d < a1 - 0.01) aStations.push(d);
-                    aStations.sort((a, b)=>a - b);
-                    const aPts = [], aWidths = [], aHeights = [];
-                    for (const d of aStations){
-                        const q = atStation(e, left, d), prev = aPts.at(-1);
-                        if (prev && Math.hypot(prev[0] - q.x, prev[1] - q.z) < 0.005) continue;
-                        const w = apronAt(d);
-                        if (w <= 0.05) continue;
-                        aPts.push([q.x, q.z]);
-                        aWidths.push(w);
-                        aHeights.push(0);
+                // Sample along the full edge and bridge short opposing T-junction gaps (<= 36 m, where
+                // planIntersections marks the opposing carriageway span internal) so no white hole appears.
+                const nSamples = Math.max(2, Math.ceil(e.ref.length / 1.5));
+                const sDists = Array.from({ length: nSamples + 1 }, (_, i)=>i === nSamples ? e.ref.length : e.ref.length * i / nSamples);
+                for (const d of e.ref.cum) if (d > 0.01 && d < e.ref.length - 0.01) sDists.push(d);
+                sDists.sort((a, b)=>a - b);
+                const uDists = [], uVals = [];
+                for (const d of sDists){
+                    if (uDists.length && d - uDists[uDists.length - 1] < 0.01) continue;
+                    uDists.push(d);
+                    uVals.push(rawApronAt(d));
+                }
+                for (let i = 0; i < uVals.length; ){
+                    if (uVals[i] > 0.05) { i++; continue; }
+                    let j = i;
+                    while (j < uVals.length && uVals[j] <= 0.05) j++;
+                    const prevIdx = i - 1, nextIdx = j < uVals.length ? j : -1;
+                    if (prevIdx >= 0 && nextIdx >= 0) {
+                        const gap = uDists[nextIdx] - uDists[prevIdx];
+                        const midQ = atStation(e, left, (uDists[prevIdx] + uDists[nextIdx]) * 0.5);
+                        if (gap <= 38 && !atWelcome(midQ.x, midQ.z)) {
+                            const w0 = uVals[prevIdx], w1 = uVals[nextIdx];
+                            for (let k = i; k < j; k++){
+                                const t = (uDists[k] - uDists[prevIdx]) / (gap || 1);
+                                uVals[k] = w0 + (w1 - w0) * t;
+                            }
+                        }
+                    } else if (prevIdx >= 0 && uDists[uDists.length - 1] - uDists[prevIdx] <= 18) {
+                        for (let k = i; k < j; k++){
+                            const qk = atStation(e, left, uDists[k]);
+                            if (!atWelcome(qk.x, qk.z)) uVals[k] = uVals[prevIdx];
+                        }
+                    } else if (nextIdx >= 0 && uDists[nextIdx] - uDists[0] <= 18) {
+                        for (let k = i; k < j; k++){
+                            const qk = atStation(e, left, uDists[k]);
+                            if (!atWelcome(qk.x, qk.z)) uVals[k] = uVals[nextIdx];
+                        }
                     }
-                    if (aPts.length >= 2) {
-                        const aNs = normals(aPts);
-                        const aOpp = aWidths.map((w, i)=>[aPts[i][0] - aNs[i][0] * w, aPts[i][1] - aNs[i][1] * w]);
-                        ribbonY(medianApron.at(aPts[0][0], aPts[0][1]), {pts: aOpp, y: aHeights}, {pts: aPts, y: aHeights}, null);
+                    i = j;
+                }
+                let runStart = -1;
+                for (let idx = 0; idx <= uVals.length; idx++){
+                    const active = idx < uVals.length && uVals[idx] > 0.05;
+                    if (active && runStart < 0) runStart = idx;
+                    else if (!active && runStart >= 0) {
+                        const aPts = [], aWidths = [], aHeights = [];
+                        for (let k = runStart; k < idx; k++){
+                            const q = atStation(e, left, uDists[k]), prev = aPts.at(-1);
+                            if (prev && Math.hypot(prev[0] - q.x, prev[1] - q.z) < 0.005) continue;
+                            aPts.push([q.x, q.z]);
+                            aWidths.push(uVals[k]);
+                            aHeights.push(0);
+                        }
+                        if (aPts.length >= 2) {
+                            const aNs = normals(aPts);
+                            const aOpp = aWidths.map((w, k)=>[aPts[k][0] - aNs[k][0] * w, aPts[k][1] - aNs[k][1] * w]);
+                            ribbonY(medianApron.at(aPts[0][0], aPts[0][1]), {pts: aOpp, y: aHeights}, {pts: aPts, y: aHeights}, null);
+                        }
+                        runStart = -1;
                     }
                 }
             }
