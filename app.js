@@ -116,15 +116,38 @@ function initApp() {
   window.setupMapChrome({ getMap: () => glMap, getLayer: () => threeStripLayer });
 }
 
-// Google's own POI pins, transit icons and flat building shapes fight the 3D city drawn on top,
-// so the ground tiles are styled down to roads, water, land use and street names.
-const GOOGLE_GROUND_STYLE = "&apistyle=" + encodeURIComponent("s.t:2|p.v:off,s.t:4|s.e:l.i|p.v:off,s.t:81|p.v:off");
+// Google's own POI pins, vector roads, transit lines/icons, and flat building shapes fight
+// the 3D city & street network drawn on top (bleeding light-blue road/path lines beside 3D
+// sidewalks, medians, and plazas). Strip them from the active ground tiles so only clean
+// land and water remain underneath our 3D world.
+const GOOGLE_GROUND_STYLE = "&apistyle=" + encodeURIComponent(
+  "s.t:2|p.v:off,s.t:3|p.v:off,s.t:4|p.v:off,s.t:81|p.v:off"
+);
+// Fallback roadmap style with Google roads kept visible, used only when 3D streets are toggled off.
+const GOOGLE_FALLBACK_ROADMAP_STYLE = "&apistyle=" + encodeURIComponent(
+  "s.t:2|p.v:off,s.t:4|s.e:l.i|p.v:off,s.t:81|p.v:off"
+);
+
+function syncBasemapLayers() {
+  if (!glMap) return;
+  const show3DStreets = !threeStripLayer || threeStripLayer.areStreetsVisible?.() !== false;
+  if (glMap.getLayer("google-satellite-layer")) {
+    glMap.setLayoutProperty("google-satellite-layer", "visibility", isSatelliteView ? "visible" : "none");
+  }
+  if (glMap.getLayer("google-roadmap-layer")) {
+    glMap.setLayoutProperty("google-roadmap-layer", "visibility", !isSatelliteView && show3DStreets ? "visible" : "none");
+  }
+  if (glMap.getLayer("google-roadmap-streets-layer")) {
+    glMap.setLayoutProperty("google-roadmap-streets-layer", "visibility", !isSatelliteView && !show3DStreets ? "visible" : "none");
+  }
+}
+window.syncVegasBasemapLayers = syncBasemapLayers;
 
 function initWebGLVegasMap() {
   // Open on the central Strip; Street lanes still jumps to the original MGM intersection.
   glMap = new maplibregl.Map({
     container: "map-gl",
-    style: { version: 8, sources: {}, layers: [{ id: 'map-background', type: 'background', paint: { 'background-color': '#dce4e6' } }] },
+    style: { version: 8, sources: {}, layers: [{ id: 'map-background', type: 'background', paint: { 'background-color': '#f5f1e6' } }] },
     attributionControl: { compact: true, customAttribution: '3D data © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' },
     center: [-115.1744, 36.1128],
     zoom: 16.3,
@@ -167,6 +190,19 @@ function initWebGLVegasMap() {
       attribution: "Map data ©2026 Google",
     });
 
+    glMap.addSource("google-roadmap-streets", {
+      type: "raster",
+      tiles: [
+        "https://mt0.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2" + GOOGLE_FALLBACK_ROADMAP_STYLE,
+        "https://mt1.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2" + GOOGLE_FALLBACK_ROADMAP_STYLE,
+        "https://mt2.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2" + GOOGLE_FALLBACK_ROADMAP_STYLE,
+        "https://mt3.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&scale=2" + GOOGLE_FALLBACK_ROADMAP_STYLE,
+      ],
+      tileSize: 256,
+      maxzoom: 22,
+      attribution: "Map data ©2026 Google",
+    });
+
     // 3. Add Google Maps Satellite Hybrid (`lyrs=y&scale=2`) & Live Traffic (`lyrs=h,traffic`)
     glMap.addSource("google-satellite", {
       type: "raster",
@@ -194,6 +230,20 @@ function initWebGLVegasMap() {
         source: "google-roadmap-lanes",
         layout: {
           visibility: isSatelliteView ? "none" : "visible",
+        },
+        paint: {
+          "raster-fade-duration": 0,
+        },
+      }
+    );
+
+    glMap.addLayer(
+      {
+        id: "google-roadmap-streets-layer",
+        type: "raster",
+        source: "google-roadmap-streets",
+        layout: {
+          visibility: "none",
         },
         paint: {
           "raster-fade-duration": 0,
@@ -696,22 +746,7 @@ function setupUIHandlers() {
   satBtn.addEventListener("click", () => {
     isSatelliteView = !isSatelliteView;
     satBtn.classList.toggle("active", isSatelliteView);
-    if (glMap) {
-      if (glMap.getLayer("google-satellite-layer")) {
-        glMap.setLayoutProperty(
-          "google-satellite-layer",
-          "visibility",
-          isSatelliteView ? "visible" : "none"
-        );
-      }
-      if (glMap.getLayer("google-roadmap-layer")) {
-        glMap.setLayoutProperty(
-          "google-roadmap-layer",
-          "visibility",
-          isSatelliteView ? "none" : "visible"
-        );
-      }
-    }
+    syncBasemapLayers();
   });
 
   const trafficBtn = document.getElementById("toggle-traffic-btn");

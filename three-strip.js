@@ -255,6 +255,21 @@ window.createVegasThreeLayer = function() {
       if (!['day', 'golden', 'night'].includes(name)) return;
       themeName = name;
       theme.apply(name, reducedMotion.matches ? 0 : 0.8);
+      if (map?.getLayer('map-background')) {
+        const bg = { day: '#f5f1e6', golden: '#e4d5c3', night: '#1f232c' }[name];
+        map.setPaintProperty('map-background', 'background-color', bg);
+      }
+      if (map?.getLayer('google-roadmap-streets-layer')) {
+        const palette = {
+          day: { saturation: 0, max: 1, min: 0, contrast: 0 },
+          golden: { saturation: -0.12, max: 0.92, min: 0.025, contrast: 0.04 },
+          night: { saturation: -0.75, max: 0.40, min: 0.015, contrast: 0.14 },
+        }[name];
+        map.setPaintProperty('google-roadmap-streets-layer', 'raster-saturation', palette.saturation);
+        map.setPaintProperty('google-roadmap-streets-layer', 'raster-brightness-max', palette.max);
+        map.setPaintProperty('google-roadmap-streets-layer', 'raster-brightness-min', palette.min);
+        map.setPaintProperty('google-roadmap-streets-layer', 'raster-contrast', palette.contrast);
+      }
       requestFrame();
     },
     setBuildingsVisible(next) {
@@ -262,9 +277,13 @@ window.createVegasThreeLayer = function() {
       if (parts) parts.buildings.visible = next;
       requestFrame();
     },
+    areStreetsVisible() {
+      return detailed;
+    },
     setStreetsVisible(next) {
       detailed = next;
       if (parts) parts.roads.visible = parts.detail.visible = next;
+      window.syncVegasBasemapLayers?.();
       requestFrame();
     },
     setLabelsVisible(next) {
